@@ -209,7 +209,7 @@ void App::Setup()
 
     k3fontDesc fdesc = { 0 };
     fdesc.view_index = 6;
-    fdesc.name = "C:\\Windows\\Fonts\\times.ttf";
+    fdesc.name = "..\\test\\assets\\LapsusPro-Bold.otf";
     fdesc.point_size = 32.0f;
     fdesc.style = k3fontStyle::NORMAL;
     fdesc.weight = k3fontWeight::NORMAL;
