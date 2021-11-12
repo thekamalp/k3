@@ -8,3 +8,7 @@
 *.ilk
 *.pdb
 *.exp
+*.dll
+*.exe
+*.cso
+*.lib

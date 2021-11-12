@@ -492,6 +492,37 @@ K3API void k3cmdBufObj::SetViewToSurface(k3resource surface)
     _data->_cur_viewport.height = static_cast<uint32_t>(view_port.Height);
 }
 
+K3API void k3cmdBufObj::SetViewport(k3rect* rect)
+{
+    D3D12_VIEWPORT view_port;
+
+    view_port.TopLeftX = static_cast<float>(rect->x);
+    view_port.TopLeftY = static_cast<float>(rect->y);
+    view_port.Width = static_cast<float>(rect->width);
+    view_port.Height = static_cast<float>(rect->height);
+    view_port.MinDepth = 0.0f;
+    view_port.MaxDepth = 1.0f;
+
+    _data->_cmd_list->RSSetViewports(1, &view_port);
+    _data->_cur_viewport.x = static_cast<uint32_t>(view_port.TopLeftX);
+    _data->_cur_viewport.y = static_cast<uint32_t>(view_port.TopLeftY);
+    _data->_cur_viewport.width = static_cast<uint32_t>(view_port.Width);
+    _data->_cur_viewport.height = static_cast<uint32_t>(view_port.Height);
+}
+
+K3API void k3cmdBufObj::SetScissor(k3rect* rect)
+{
+    D3D12_RECT scissor_size;
+
+    scissor_size.left = rect->x;
+    scissor_size.top = rect->y;
+    scissor_size.right = static_cast<LONG>(rect->x + rect->width);
+    scissor_size.bottom = static_cast<LONG>(rect->y + rect->height);
+
+    _data->_cmd_list->RSSetScissorRects(1, &scissor_size);
+}
+
+
 K3API void k3cmdBufObj::SetRenderTargets(k3renderTargets* rt)
 {
     if (rt) {

@@ -1285,6 +1285,8 @@ public:
     K3API void SetGfxState(k3gfxState state);
     K3API void SetDrawPrim(k3drawPrimType draw_prim);
     K3API void SetViewToSurface(k3resource surface);
+    K3API void SetViewport(k3rect* rect);
+    K3API void SetScissor(k3rect* rect);
     K3API void SetRenderTargets(k3renderTargets* rt);
     K3API void SetIndexBuffer(k3buffer index_buffer);
     K3API void SetVertexBuffer(uint32_t slot, k3buffer vertex_buffer);
