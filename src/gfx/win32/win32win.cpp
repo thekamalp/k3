@@ -470,17 +470,17 @@ k3key k3win32WinImpl::ConvertVKey(uint32_t vkey, uint32_t scan_code, bool extend
     case VK_LWIN: k = k3key::LWIN; break;
     case VK_RWIN: k = k3key::RWIN; break;
     case VK_APPS: k = k3key::MENU; break;
-    case VK_OEM_3: k = static_cast<k3key>('`'); break;
-    case VK_OEM_MINUS: k = static_cast<k3key>('-'); break;
-    case VK_OEM_PLUS: k = static_cast<k3key>('+'); break;
+    case VK_OEM_3: k = k3key::BACKTICK; break;
+    case VK_OEM_MINUS: k = k3key::MINUS; break;
+    case VK_OEM_PLUS: k = k3key::PLUS; break;
     case VK_BACK: k = k3key::BACKSPACE; break;
     case VK_TAB: k = k3key::TAB; break;
-    case VK_OEM_4: k = static_cast<k3key>('['); break;
-    case VK_OEM_6: k = static_cast<k3key>(']'); break;
-    case VK_OEM_5: k = static_cast<k3key>('\\'); break;
+    case VK_OEM_4: k = k3key::LBRACKET; break;
+    case VK_OEM_6: k = k3key::RBRACKET; break;
+    case VK_OEM_5: k = k3key::BACKSLASH; break;
     case VK_CAPITAL: k = k3key::CAPS_LOCK; break;
-    case VK_OEM_1: k = static_cast<k3key>(';'); break;
-    case VK_OEM_7: k = static_cast<k3key>('\''); break;
+    case VK_OEM_1: k = k3key::SEMICOLON; break;
+    case VK_OEM_7: k = k3key::TICK; break;
     case VK_RETURN: k = (extended) ? k3key::NUM_ENTER : k3key::ENTER; break;
     case VK_SPACE: k = k3key::SPACE; break;
     case VK_SNAPSHOT: k = k3key::SYS_REQ; break;
@@ -511,11 +511,42 @@ k3key k3win32WinImpl::ConvertVKey(uint32_t vkey, uint32_t scan_code, bool extend
     case VK_SUBTRACT: k = k3key::NUM_MINUS; break;
     case VK_MULTIPLY: k = k3key::NUM_TIMES; break;
     case VK_DIVIDE: k = k3key::NUM_DIVIDE; break;
-    default:
-        if ((vkey >= 'A' && vkey <= 'Z') ||
-            (vkey >= '0' && vkey <= '9'))
-            k = static_cast<k3key>(vkey);
-        break;
+    case 'A': k = k3key::A; break;
+    case 'B': k = k3key::B; break;
+    case 'C': k = k3key::C; break;
+    case 'D': k = k3key::D; break;
+    case 'E': k = k3key::E; break;
+    case 'F': k = k3key::F; break;
+    case 'G': k = k3key::G; break;
+    case 'H': k = k3key::H; break;
+    case 'I': k = k3key::I; break;
+    case 'J': k = k3key::J; break;
+    case 'K': k = k3key::K; break;
+    case 'L': k = k3key::L; break;
+    case 'M': k = k3key::M; break;
+    case 'N': k = k3key::N; break;
+    case 'O': k = k3key::O; break;
+    case 'P': k = k3key::P; break;
+    case 'Q': k = k3key::Q; break;
+    case 'R': k = k3key::R; break;
+    case 'S': k = k3key::S; break;
+    case 'T': k = k3key::T; break;
+    case 'U': k = k3key::U; break;
+    case 'V': k = k3key::V; break;
+    case 'W': k = k3key::W; break;
+    case 'X': k = k3key::X; break;
+    case 'Y': k = k3key::Y; break;
+    case 'Z': k = k3key::Z; break;
+    case '0': k = k3key::KEY_0; break;
+    case '1': k = k3key::KEY_1; break;
+    case '2': k = k3key::KEY_2; break;
+    case '3': k = k3key::KEY_3; break;
+    case '4': k = k3key::KEY_4; break;
+    case '5': k = k3key::KEY_5; break;
+    case '6': k = k3key::KEY_6; break;
+    case '7': k = k3key::KEY_7; break;
+    case '8': k = k3key::KEY_8; break;
+    case '9': k = k3key::KEY_9; break;
     }
     return k;
 }
