@@ -1881,14 +1881,18 @@ uint32_t k3imageObj::GetFormatBlockSize(k3fmt format)
     case k3fmt::RGBA32_UNORM:
     case k3fmt::RGBA32_FLOAT:
     case k3fmt::RGB32_FLOAT:
+    case k3fmt::RGB32_UINT:
+    case k3fmt::RGBA32_UINT:
     case k3fmt::RG32_UNORM:
     case k3fmt::RG32_FLOAT:
+    case k3fmt::RG32_UINT:
     case k3fmt::RGBA8_UNORM:
     case k3fmt::BGRA8_UNORM:
     case k3fmt::RGBX8_UNORM:
     case k3fmt::BGRX8_UNORM:
     case k3fmt::RG16_UNORM:
     case k3fmt::RG16_FLOAT:
+    case k3fmt::RG16_UINT:
     case k3fmt::R32_UNORM:
     case k3fmt::R32_UINT:
     case k3fmt::R32_FLOAT:
@@ -1896,6 +1900,7 @@ uint32_t k3imageObj::GetFormatBlockSize(k3fmt format)
     case k3fmt::BGR8_UNORM:
     case k3fmt::RGBA16_UNORM:
     case k3fmt::RGBA16_FLOAT:
+    case k3fmt::RGBA16_UINT:
     case k3fmt::RGB10A2_UNORM:
     case k3fmt::BGR5A1_UNORM:
     case k3fmt::B5G6R5_UNORM:

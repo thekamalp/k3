@@ -22,6 +22,7 @@ private:
     k3surf texture;
     k3sampler sampler;
     k3font font;
+    k3soundBuf sbuf;
     k3uploadBuffer cb_upload_move;
     k3buffer cb_move[NUM_VERSIONS];
     uint32_t cb_move_version;
@@ -57,6 +58,7 @@ void App::Setup()
     win->SetDataPtr(this);
 
     gfx = win->GetGfx();
+    sbuf = win->CreateSoundBuffer(1, 44100, 16, 11025);
 
     cmd_buf = gfx->CreateCmdBuf();
 

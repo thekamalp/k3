@@ -113,6 +113,9 @@ class k3soundBufImpl
 public:
 	k3soundBufImpl();
 	virtual ~k3soundBufImpl();
+	static uint32_t _num_sbuf;
+	static LPDIRECTSOUND8 _dsound;
+
 	LPDIRECTSOUNDBUFFER8 _buf;
 	uint32_t _write_pos;
 	uint32_t _buf_size;
@@ -137,7 +140,6 @@ public:
 	static HCURSOR _app_cursor;
 	static HICON _app_icon;
 	static WNDCLASSEX _win_class;
-	static LPDIRECTSOUND8 _dsound;
 	static const DWORD _windowed_style;
 	static k3win _win_map[MAX_WIN];
 	static k3win32WinImpl* _winimpl_map[MAX_WIN];

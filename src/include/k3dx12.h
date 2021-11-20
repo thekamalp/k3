@@ -167,7 +167,7 @@ public:
     k3gfxImpl();
     static void ConvertToDx12Rect(D3D12_RECT* dst, const k3rect* src);
     static D3D12_CLEAR_FLAGS ConvertToDx12ClearFlags(k3depthSelect clear);
-    static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(k3resourceState state);
+    static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(k3resourceState state, bool is_depth);
     static D3D12_ROOT_PARAMETER_TYPE ConvertToDx12RootParameterType(k3bindingType bind_type);
     static D3D12_BLEND ConvertToDx12Blend(k3blend blend);
     static D3D12_BLEND_OP ConvertToDx12BlendOp(k3blendOp blend_op);

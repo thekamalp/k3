@@ -940,7 +940,7 @@ public:
     K3API void UpdateSBuffer(uint32_t offset, const void* data, uint32_t size);
     K3API void* MapForWrite(uint32_t offset, uint32_t size, void** aux, uint32_t* aux_size);
     K3API void Unmap(void* p, uint32_t offset, uint32_t size);
-    K3API void PlaySBuffer(uint32_t offset);
+    K3API void PlaySBuffer(uint32_t offset = 0xFFFFFFFF);
     K3API uint32_t GetPlayPosition();
     K3API uint32_t GetWritePosition();
     K3API void StopSBuffer();
@@ -1341,6 +1341,8 @@ public:
     K3API void SetConstantBuffer(uint32_t index, k3buffer constant_buffer);
     K3API void SetShaderView(uint32_t index, k3surf surf);
     K3API void SetSampler(uint32_t index, k3sampler sampler);
+    K3API void SetBlendFactor(const float* blend_factor);
+    K3API void SetStencilRef(uint8_t stencil_ref);
 
     K3API void Draw(uint32_t vertex_count, uint32_t vertex_start = 0, uint32_t instance_count = 1, uint32_t instance_start = 0);
     K3API void DrawText(const char* text, k3font font, const float fg_color[4], const float bg_color[4], uint32_t x, uint32_t y, k3fontAlignment alignment = k3fontAlignment::TOP_LEFT);

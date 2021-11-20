@@ -61,12 +61,15 @@ K3API uint64_t k3fenceObj::SetGpuFence(k3gpuQueue queue)
 
 K3API bool k3fenceObj::CheckFence(uint64_t value)
 {
-    return (_data->_fence->GetCompletedValue() >= value);
+    uint64_t completed_value = _data->_fence->GetCompletedValue();
+    return (completed_value >= value);
 }
 
 
 K3API void k3fenceObj::WaitCpuFence(uint64_t value)
 {
+    if (CheckFence(value)) return;
+
     HANDLE event = CreateEvent(NULL, false, false, NULL);
     if (event == NULL) {
         k3error::Handler("Could not create event", "k3fenceObj::WaitCpuFence");
@@ -316,26 +319,31 @@ K3API void k3cmdBufObj::Reset()
 {
     // Find a free allocator
     HRESULT hr;
-    uint32_t a;
-    uint64_t smallest_fence = _data->_cmd_alloc_fence[0];
-    uint32_t smallest_alloc = 0;
-    for (a = 0; a < k3cmdBufImpl::MAX_ALLOC; a++) {
-        if (_data->_fence->CheckFence(_data->_cmd_alloc_fence[a])) {
-            // allocator found
-            break;
-        }
-        if (_data->_cmd_alloc_fence[a] <= smallest_fence) {
-            smallest_fence = _data->_cmd_alloc_fence[a];
-            smallest_alloc = a;
-        }
-    }
-    if (a == k3cmdBufImpl::MAX_ALLOC) {
-        // no allocator found, so wait on teh earliest one
-        _data->_fence->WaitCpuFence(smallest_fence);
-        _data->_cur_alloc = smallest_alloc;
-    } else {
-        _data->_cur_alloc = a;
-    }
+    //uint32_t a;
+    //uint64_t smallest_fence = _data->_cmd_alloc_fence[0];
+    //uint32_t smallest_alloc = 0;
+    //for (a = 0; a < k3cmdBufImpl::MAX_ALLOC; a++) {
+    //    if (_data->_fence->CheckFence(_data->_cmd_alloc_fence[a])) {
+    //        // allocator found
+    //        break;
+    //    }
+    //    if (_data->_cmd_alloc_fence[a] <= smallest_fence) {
+    //        smallest_fence = _data->_cmd_alloc_fence[a];
+    //        smallest_alloc = a;
+    //    }
+    //}
+    //if (a == k3cmdBufImpl::MAX_ALLOC) {
+    //    // no allocator found, so wait on teh earliest one
+    //    _data->_fence->WaitCpuFence(smallest_fence);
+    //    _data->_cur_alloc = smallest_alloc;
+    //} else {
+    //    _data->_cur_alloc = a;
+    //}
+
+    _data->_cur_alloc++;
+    if (_data->_cur_alloc >= k3cmdBufImpl::MAX_ALLOC) _data->_cur_alloc = 0;
+    _data->_fence->WaitCpuFence(_data->_cmd_alloc_fence[_data->_cur_alloc]);
+
     hr = _data->_cmd_alloc[_data->_cur_alloc]->Reset();
     if (hr != S_OK) {
         k3error::Handler("Could not reset command allocator", "k3cmdBufObj::Reset");
@@ -366,8 +374,10 @@ K3API void k3cmdBufObj::TransitionResource(k3resource resource, k3resourceState 
     k3resourceImpl* resource_impl = resource->getImpl();
     k3resourceState cur_state = resource_impl->_resource_state;
     if (cur_state == new_state) return;
-    D3D12_RESOURCE_STATES dx12_cur_state = k3gfxImpl::ConvertToDx12ResourceState(cur_state);
-    D3D12_RESOURCE_STATES dx12_new_state = k3gfxImpl::ConvertToDx12ResourceState(new_state);
+    bool is_depth = (resource_impl->_format == k3fmt::D16_UNORM || resource_impl->_format == k3fmt::D24X8_UNORM || resource_impl->_format == k3fmt::D24_UNORM_S8_UINT ||
+        resource_impl->_format == k3fmt::D32_FLOAT || resource_impl->_format == k3fmt::D32_FLOAT_S8X24_UINT);
+    D3D12_RESOURCE_STATES dx12_cur_state = k3gfxImpl::ConvertToDx12ResourceState(cur_state, is_depth);
+    D3D12_RESOURCE_STATES dx12_new_state = k3gfxImpl::ConvertToDx12ResourceState(new_state, is_depth);
     D3D12_RESOURCE_BARRIER barrier;
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
@@ -628,6 +638,18 @@ K3API void k3cmdBufObj::SetSampler(uint32_t index, k3sampler sampler)
     }
     k3samplerImpl* sampler_impl = sampler->getImpl();
     _data->_cmd_list->SetGraphicsRootDescriptorTable(index, sampler_impl->_gpu_view);
+}
+
+K3API void k3cmdBufObj::SetBlendFactor(const float* blend_factor)
+{
+    if (blend_factor) {
+        _data->_cmd_list->OMSetBlendFactor(blend_factor);
+    }
+}
+
+K3API void k3cmdBufObj::SetStencilRef(uint8_t stencil_ref)
+{
+    _data->_cmd_list->OMSetStencilRef(stencil_ref);
 }
 
 
@@ -1045,14 +1067,14 @@ D3D12_CLEAR_FLAGS k3gfxImpl::ConvertToDx12ClearFlags(k3depthSelect clear)
     return dx12_clear;
 }
 
-D3D12_RESOURCE_STATES k3gfxImpl::ConvertToDx12ResourceState(k3resourceState state)
+D3D12_RESOURCE_STATES k3gfxImpl::ConvertToDx12ResourceState(k3resourceState state, bool is_depth)
 {
     D3D12_RESOURCE_STATES dx12_state = D3D12_RESOURCE_STATE_COMMON;
     switch (state) {
     case k3resourceState::COMMON: dx12_state = D3D12_RESOURCE_STATE_COMMON; break;
     case k3resourceState::SHADER_BUFFER: dx12_state = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER; break;
     case k3resourceState::INDEX_BUFFER: dx12_state = D3D12_RESOURCE_STATE_INDEX_BUFFER; break;
-    case k3resourceState::RENDER_TARGET: dx12_state = D3D12_RESOURCE_STATE_RENDER_TARGET; break;
+    case k3resourceState::RENDER_TARGET: dx12_state = (is_depth) ? D3D12_RESOURCE_STATE_DEPTH_WRITE : D3D12_RESOURCE_STATE_RENDER_TARGET; break;
     case k3resourceState::UAV: dx12_state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS; break;
     case k3resourceState::DEPTH_WRITE: dx12_state = D3D12_RESOURCE_STATE_DEPTH_WRITE; break;
     case k3resourceState::DEPTH_READ: dx12_state = D3D12_RESOURCE_STATE_DEPTH_READ; break;
@@ -1179,7 +1201,7 @@ D3D12_COMPARISON_FUNC k3gfxImpl::ConvertToDx12TestFunc(k3testFunc test)
 {
     D3D12_COMPARISON_FUNC dx12_test = D3D12_COMPARISON_FUNC_ALWAYS;
     switch (test) {
-    case k3testFunc::NEVER: dx12_test = D3D12_COMPARISON_FUNC_ALWAYS; break;
+    case k3testFunc::NEVER: dx12_test = D3D12_COMPARISON_FUNC_NEVER; break;
     case k3testFunc::LESS: dx12_test = D3D12_COMPARISON_FUNC_LESS; break;
     case k3testFunc::EQUAL: dx12_test = D3D12_COMPARISON_FUNC_EQUAL; break;
     case k3testFunc::LESS_EQUAL: dx12_test = D3D12_COMPARISON_FUNC_LESS_EQUAL; break;
@@ -1582,6 +1604,7 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
         rtv_heap_desc.NumDescriptors = BACK_BUFFERS;
         rtv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         rtv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        rtv_heap_desc.NodeMask = 0x1;
         hr = gfxImpl->_dev->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap));
         if (hr != S_OK) {
             k3error::Handler("Could not create RTV heap", "k3win32Dx12WinImpl::ResizeBackBuffer");
@@ -1590,8 +1613,9 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
     }
     
     UINT rtv_desc_size = gfxImpl->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle(_rtv_heap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle;// (_rtv_heap->GetCPUDescriptorHandleForHeapStart());
     D3D12_GPU_DESCRIPTOR_HANDLE rtv_gpu_handle(_rtv_heap->GetGPUDescriptorHandleForHeapStart());
+    rtv_handle = _rtv_heap->GetCPUDescriptorHandleForHeapStart();
     for (n = 0; n < BACK_BUFFERS; n++) {
         if (_surf[n] == NULL) _surf[n] = new k3surfObj;
         k3surfImpl* surfImpl = _surf[n]->getImpl();
@@ -1759,7 +1783,7 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
             return NULL;
         }
         k3gfxImpl::_debug_controller->EnableDebugLayer();
-        k3gfxImpl::_debug_controller->SetEnableGPUBasedValidation(true);
+        k3gfxImpl::_debug_controller->SetEnableGPUBasedValidation(false);
         dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
         dc->Release();
         dc = NULL;
@@ -2205,7 +2229,7 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     dx12_resource_desc.Height = rdesc->height;
     dx12_resource_desc.DepthOrArraySize = rdesc->depth;
     dx12_resource_desc.MipLevels = rdesc->mip_levels;
-    dx12_resource_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(rdesc->format, k3DxgiSurfaceType::COLOR);
+    dx12_resource_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(rdesc->format, k3DxgiSurfaceType::DEPTH);
     dx12_resource_desc.SampleDesc.Count = rdesc->num_samples;
     dx12_resource_desc.SampleDesc.Quality = 0;
     dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -2286,7 +2310,7 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
         uint32_t array_size = (rtv_desc->array_size > max_array_size) ? max_array_size : rtv_desc->array_size;
         if (is_depth) {
             D3D12_DEPTH_STENCIL_VIEW_DESC dx12_dsv_desc = { };
-            dx12_dsv_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::TYPELESS);
+            dx12_dsv_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::DEPTH);
             if (resource_impl->_samples > 1) {
                 if (resource_impl->_depth > 1) {
                     dx12_dsv_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY;

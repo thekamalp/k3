@@ -10,12 +10,14 @@ HCURSOR k3win32WinImpl::_app_cursor;
 HICON k3win32WinImpl::_app_icon;
 WNDCLASSEX k3win32WinImpl::_win_class;
 const DWORD k3win32WinImpl::_windowed_style = WS_BORDER | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;;
-LPDIRECTSOUND8 k3win32WinImpl::_dsound = NULL;
 k3win k3win32WinImpl::_win_map[MAX_WIN] = { NULL };
 k3win32WinImpl* k3win32WinImpl::_winimpl_map[MAX_WIN] = { NULL };
 uint32_t k3win32WinImpl::_num_joy = 0;
 k3win32Joy k3win32WinImpl::_joy_map[MAX_JOY] = { NULL };
 bool k3win32WinImpl::_win32_cursor_visible = true;
+
+uint32_t k3soundBufImpl::_num_sbuf = 0;
+LPDIRECTSOUND8 k3soundBufImpl::_dsound = NULL;
 
 // ------------------------------------------------------------
 // sound buffer
@@ -26,6 +28,15 @@ k3soundBufImpl::k3soundBufImpl()
     _buf_size = 0;
     _is_playing = false;
     _last_aux = NULL;
+
+    if (_dsound == NULL) {
+        HRESULT hr;
+        hr = DirectSoundCreate8(NULL, &_dsound, NULL);
+        if (FAILED(hr)) {
+            _dsound = NULL;
+        }
+    }
+    _num_sbuf++;
 }
 
 k3soundBufImpl::~k3soundBufImpl()
@@ -33,6 +44,11 @@ k3soundBufImpl::~k3soundBufImpl()
     if (_buf) {
         _buf->Release();
         _buf = NULL;
+    }
+    _num_sbuf--;
+    if (_num_sbuf == 0 && _dsound != NULL) {
+        _dsound->Release();
+        _dsound = NULL;
     }
 }
 
@@ -193,22 +209,12 @@ void k3win32WinImpl::Initialize()
 
     RegisterClassEx(&_win_class);
 
-    HRESULT hr;
-    hr = DirectSoundCreate8(NULL, &_dsound, NULL);
-    if (FAILED(hr)) {
-        _dsound = NULL;
-    }
 }
 
 void k3win32WinImpl::Uninitialize()
 {
     // Unregister input devices
     RAWINPUTDEVICE rid[1];
-
-    if (_dsound) {
-        _dsound->Release();
-        _dsound = NULL;
-    }
 
     // For joysticks
     rid[0].usUsagePage = 0x01;
@@ -627,16 +633,13 @@ K3API k3win k3winObj::Create(const char* title,
     RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
 
     //ShowWindow( _hwnd, ((_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
+    ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
     d->SetWin32CursorState(d->_is_cursor_visible);
 
     d->_mouse_in_nc = false;
 
     d->ResizeBackBuffer();
 
-    // Set sound cooperative level priority_queue
-    if (k3win32WinImpl::_dsound) {
-        k3win32WinImpl::_dsound->SetCooperativeLevel(d->_hwnd, DSSCL_PRIORITY);
-    }
     return win;
 }
 
@@ -744,9 +747,13 @@ K3API k3timer k3winObj::CreateTimer()
 
 K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples)
 {
-    if (k3win32WinImpl::_dsound) {
-        k3soundBuf sbuf = new k3soundBufObj;
+    k3soundBuf sbuf = new k3soundBufObj;
+    if (k3soundBufImpl::_dsound) {
+        k3win32WinImpl* d = static_cast<k3win32WinImpl*>(_data);
         k3soundBufImpl* sbuf_impl = sbuf->getImpl();
+
+        // Set sound cooperative level priority_queue
+        k3soundBufImpl::_dsound->SetCooperativeLevel(d->_hwnd, DSSCL_PRIORITY);
 
         HRESULT hr;
         WAVEFORMATEX wfx;
@@ -767,7 +774,7 @@ K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t sam
         dsbuf_desc.dwBufferBytes = wfx.nBlockAlign * num_samples;
         dsbuf_desc.lpwfxFormat = &wfx;
 
-        hr = k3win32WinImpl::_dsound->CreateSoundBuffer(&dsbuf_desc, &buf, NULL);
+        hr = k3soundBufImpl::_dsound->CreateSoundBuffer(&dsbuf_desc, &buf, NULL);
         if (SUCCEEDED(hr)) {
             buf->QueryInterface(IID_IDirectSoundBuffer8, (LPVOID*) &sbuf_impl->_buf);
             buf->Release();
@@ -851,8 +858,12 @@ void k3winObj::WindowLoop()
 
 void k3winObj::ExitLoop()
 {
-    PostQuitMessage(0);
-    k3win32WinImpl::_winimpl_map[0]->gfx->WaitGpuIdle();
+    if (k3win32WinImpl::_win_count) {
+        PostQuitMessage(0);
+        if (k3win32WinImpl::_winimpl_map[0]->gfx != NULL) {
+            k3win32WinImpl::_winimpl_map[0]->gfx->WaitGpuIdle();
+        }
+    }
     uint32_t w;
     for (w = 0; w < k3win32WinImpl::_win_count; w++) {
         k3win32WinImpl::_win_map[w] = NULL;
