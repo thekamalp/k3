@@ -352,7 +352,7 @@ K3API k3font k3gfxObj::CreateFont(k3fontDesc* desc)
     return font;
 }
 
-K3API void k3cmdBufObj::DrawText(const char* text, k3font font, const float fg_color[4], const float bg_color[4], uint32_t x, uint32_t y, k3fontAlignment alignment)
+K3API void k3cmdBufObj::DrawText(const char* text, k3font font, const float fg_color[4], const float bg_color[4], int32_t x, int32_t y, k3fontAlignment alignment)
 {
     k3fontImpl* font_impl = font->getImpl();
     k3fontCBufferDynamic* cbuf_data = static_cast<k3fontCBufferDynamic*>(font_impl->_upload_cbuf[font_impl->_version]->MapForWrite(sizeof(k3fontCBufferDynamic)));

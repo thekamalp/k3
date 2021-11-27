@@ -290,7 +290,7 @@ void App::Display()
     cmd_buf->SetViewToSurface(back_buffer_resource);
     cmd_buf->SetRenderTargets(&rt);
     cmd_buf->Draw(3);
-    cmd_buf->DrawText("Hi", font, text_fg_color, text_bg_color, 0, 0, k3fontAlignment::TOP_LEFT);
+    cmd_buf->DrawText("Hi", font, text_fg_color, text_bg_color, -5, -10, k3fontAlignment::TOP_LEFT);
     cmd_buf->DrawText("Everyone", font, text_fg_color, text_bg_color, 0, 0, k3fontAlignment::TOP_CENTER);
     cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::COMMON);
     cmd_buf->Close();
