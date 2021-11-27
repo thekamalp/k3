@@ -317,7 +317,7 @@ K3API k3font k3gfxObj::CreateFont(k3fontDesc* desc)
     bind_params[1].view_set_desc.reg = 0;
     bind_params[1].view_set_desc.space = 0;
     k3samplerDesc sdesc = { 0 };
-    sdesc.filter = k3texFilter::MIN_MAG_MIP_LINEAR;
+    sdesc.filter = k3texFilter::MIN_MAG_MIP_POINT;
     sdesc.addr_u = k3texAddr::CLAMP;
     sdesc.addr_v = k3texAddr::CLAMP;
     sdesc.addr_w = k3texAddr::CLAMP;
