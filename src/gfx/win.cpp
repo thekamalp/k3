@@ -212,7 +212,7 @@ K3API k3font k3gfxObj::CreateFont(k3fontDesc* desc)
         char_scale_pix[4 * c + 2] = cur_xpos;
         char_scale_pix[4 * c + 3] = tex_height;
 
-        cur_xpos += cur_char_height;
+        cur_xpos += cur_char_width;
         if (next_ydelta < cur_char_height) next_ydelta = cur_char_height;
     }
 
