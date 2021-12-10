@@ -36,6 +36,7 @@ public:
 	static float NormalizeJoystickPos(ULONG pos, k3win32JoyAxisRange range);
 	static k3joyAxis UsageToAxisType(USAGE page, USAGE usage);
 protected:
+	void InitData();
 	k3joyInfo _joy_info;
 	k3joyState _joy_state;
 	uint32_t _dev_id;

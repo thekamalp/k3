@@ -22,12 +22,12 @@ k3win32Joy k3win32JoyObj::Create(HANDLE hDevice, uint32_t dev_id)
 
 k3win32JoyObj::k3win32JoyObj()
 {
-	memset(this, 0, sizeof(k3win32JoyObj));
+	InitData();
 }
 
 k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 {
-	memset(this, 0, sizeof(k3win32JoyObj));
+	InitData();
 
 	HANDLE hHeap = GetProcessHeap();
 	uint32_t buf_size = 0;
@@ -82,13 +82,14 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	char dev_name[256] = { 0 };
 	buf_size = 256;
 	GetRawInputDeviceInfo(hDevice, RIDI_DEVICENAME, dev_name, &buf_size);
-	_hid_handle = CreateFile(dev_name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, NULL, NULL);
+	_hid_handle = CreateFile(dev_name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
 	// Get product name
 	char buf[256];
 	buf_size = 256;
-	ntstatus = HidD_GetProductString(_hid_handle, buf, buf_size);
-	if (ntstatus != HIDP_STATUS_SUCCESS) {
+	bool success = false;
+	success = HidD_GetProductString(_hid_handle, buf, buf_size);
+	if (!success) {
 		k3error::Handler("Could not get HID Product string Caps", "k3win32JoyObj");
 		return;
 	}
@@ -113,6 +114,24 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 
 	// Get latest joystick state
 	Poll();
+}
+
+void k3win32JoyObj::InitData()
+{
+	memset(&_joy_info, 0, sizeof(k3joyInfo));
+	memset(&_joy_state, 0, sizeof(k3joyState));
+	_dev_id = 0;
+	memset(_axis_range, 0, K3JOY_MAX_AXES * sizeof(k3win32JoyAxisRange));
+	_pPreParsedData = NULL;
+	_pButtonCaps = NULL;
+	_pValueCaps = NULL;
+	_hid_handle = NULL;
+	_input_buffer_size = 0;
+	_output_buffer_size = 0;
+	_input_buffer = NULL;
+	_output_buffer = NULL;
+	_buttons_changed = 0;
+	_axes_changed = 0;
 }
 
 k3win32JoyObj::~k3win32JoyObj()

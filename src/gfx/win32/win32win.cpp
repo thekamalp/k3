@@ -219,7 +219,7 @@ void k3win32WinImpl::Uninitialize()
     // For joysticks
     rid[0].usUsagePage = 0x01;
     rid[0].usUsage = 0x05;
-    rid[0].dwFlags = RIDEV_REMOVE;
+    rid[0].dwFlags = 0;
     rid[0].hwndTarget = NULL; // follow keyboard focus
     RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
 
@@ -314,7 +314,10 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
     k3win32WinImpl* winimpl = NULL;
     uint32_t w;
     for (w = 0; w < _win_count; w++) {
-        if (_winimpl_map[w]->_hwnd == hwnd) winimpl = _winimpl_map[w];
+        if (_winimpl_map[w]->_hwnd == hwnd) {
+            winimpl = _winimpl_map[w];
+            break;
+        }
     }
 
     uint32_t x = static_cast<unsigned short>(lparam & 0xffff);
@@ -336,7 +339,7 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                     _joy_map[_num_joy] = k3win32JoyObj::Create(hDevice, dev_id);
                     uint32_t w2;
                     for (w2 = 0; w2 < _win_count; w2++) {
-                        if (_winimpl_map[w]->JoystickAdded) _winimpl_map[w]->JoystickAdded(_winimpl_map[w]->_data, dev_id, _joy_map[_num_joy]->getJoyInfo(), _joy_map[_num_joy]->getJoyState());
+                        if (_winimpl_map[w2]->JoystickAdded) _winimpl_map[w2]->JoystickAdded(_winimpl_map[w2]->_data, dev_id, _joy_map[_num_joy]->getJoyInfo(), _joy_map[_num_joy]->getJoyState());
                     }
                     _num_joy++;
                 }
@@ -348,10 +351,11 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                     if (j < _num_joy) {
                         uint32_t w2;
                         for (w2 = 0; w2 < _win_count; w2++) {
-                            if (_winimpl_map[w]->JoystickRemoved) _winimpl_map[w]->JoystickRemoved(_winimpl_map[w]->_data, dev_id);
+                            if (_winimpl_map[w2]->JoystickRemoved) _winimpl_map[w2]->JoystickRemoved(_winimpl_map[w2]->_data, dev_id);
                         }
                         _num_joy--;
                         _joy_map[j] = _joy_map[_num_joy];
+                        _joy_map[_num_joy] = NULL;
                     }
                 }
             }
@@ -623,14 +627,18 @@ K3API k3win k3winObj::Create(const char* title,
     }
 
     // Register input devices
-    RAWINPUTDEVICE rid[1];
+    RAWINPUTDEVICE rid[2];
 
     // For joysticks
     rid[0].usUsagePage = 0x01;
     rid[0].usUsage = 0x05;
-    rid[0].dwFlags = RIDEV_DEVNOTIFY;
+    rid[0].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
     rid[0].hwndTarget = d->_hwnd;
-    RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
+    rid[1].usUsagePage = 0x01;
+    rid[1].usUsage = 0x04;
+    rid[1].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
+    rid[1].hwndTarget = d->_hwnd;
+    RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
     //ShowWindow( _hwnd, ((_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
     ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
