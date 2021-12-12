@@ -51,6 +51,7 @@ protected:
 	int8_t* _output_buffer;
 	uint32_t _buttons_changed;
 	uint32_t _axes_changed;
+	OVERLAPPED _ov;
 };
 #ifdef _MSC_VER
 #pragma pack(1)

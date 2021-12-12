@@ -37,6 +37,7 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	GetRawInputDeviceInfo(hDevice, RIDI_PREPARSEDDATA, _pPreParsedData, &buf_size);
 
 	// Allocate and get device caps
+	uint32_t i;
 	HIDP_CAPS Caps;
 	NTSTATUS ntstatus;
 	ntstatus = HidP_GetCaps(_pPreParsedData, &Caps);
@@ -68,7 +69,6 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	if (_joy_info.num_axes > K3JOY_MAX_AXES) _joy_info.num_axes = K3JOY_MAX_AXES;
 
 	// Set axis types, and range
-	uint32_t i;
 	uint32_t axis_ordinal[K3JOY_MAX_AXES] = { 0 };
 	for (i = 0; i < _joy_info.num_axes; i++) {
 		_joy_info.axis[i] = UsageToAxisType(_pValueCaps[i].UsagePage, _pValueCaps[i].Range.UsageMin);
@@ -113,6 +113,8 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	}
 
 	// Get latest joystick state
+	DWORD bytes_written;
+	ReadFile(_hid_handle, _input_buffer, _input_buffer_size, &bytes_written, &_ov);
 	Poll();
 }
 
@@ -132,6 +134,7 @@ void k3win32JoyObj::InitData()
 	_output_buffer = NULL;
 	_buttons_changed = 0;
 	_axes_changed = 0;
+	memset(&_ov, 0, sizeof(OVERLAPPED));
 }
 
 k3win32JoyObj::~k3win32JoyObj()
@@ -148,7 +151,13 @@ k3win32JoyObj::~k3win32JoyObj()
 void k3win32JoyObj::Poll()
 {
 	DWORD bytes_written = 0;
-	if (ReadFile(_hid_handle, _input_buffer, _input_buffer_size, &bytes_written, NULL)) {
+
+	bool success = GetOverlappedResult(_hid_handle, &_ov, &bytes_written, false);
+	if(!success || bytes_written == 0) {
+		return;
+	}
+
+	if (success) {
 		uint32_t i;
 		// Get button state
 		USAGE usage[K3JOY_MAX_BUTTONS];
@@ -178,6 +187,7 @@ void k3win32JoyObj::Poll()
 			_joy_state.axis[i] = fvalue;
 		}
 	}
+	ReadFile(_hid_handle, _input_buffer, _input_buffer_size, &bytes_written, &_ov);
 }
 
 void k3win32JoyObj::SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values)

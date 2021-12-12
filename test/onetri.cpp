@@ -38,6 +38,8 @@ public:
     static void K3CALLBACK KeyboardCallback(void* data, k3key k, char c, k3keyState state);
     static void K3CALLBACK JoystickAdded(void* data, uint32_t joystick, const k3joyInfo* joy_info, const k3joyState* joy_state);
     static void K3CALLBACK JoystickRemoved(void* data, uint32_t joystick);
+    static void K3CALLBACK JoystickMove(void* data, uint32_t joystick, uint32_t axis_num, k3joyAxis axis, uint32_t ordinal, float position);
+    static void K3CALLBACK JoystickButton(void* data, uint32_t joystick, uint32_t button, k3keyState state);
     static void K3CALLBACK DisplayCallback(void* data);
 };
 
@@ -53,7 +55,7 @@ void App::Setup()
 {
     win = k3winObj::CreateWindowed("onetri", 100, 100, 640, 480, 128, 32);
     win->SetKeyboardFunc(KeyboardCallback);
-    win->SetJoystickFunc(JoystickAdded, JoystickRemoved, NULL, NULL);
+    win->SetJoystickFunc(JoystickAdded, JoystickRemoved, JoystickMove, JoystickButton);
     win->SetDisplayFunc(DisplayCallback);
     win->SetIdleFunc(DisplayCallback);
     win->SetVisible(true);
@@ -321,6 +323,15 @@ void K3CALLBACK App::JoystickAdded(void* data, uint32_t joystick, const k3joyInf
 void K3CALLBACK App::JoystickRemoved(void* data, uint32_t joystick)
 {
     printf("Joystick %d removed\n", joystick);
+}
+
+void K3CALLBACK App::JoystickMove(void* data, uint32_t joystick, uint32_t axis_num, k3joyAxis axis, uint32_t ordinal, float position)
+{
+    printf("joy 0x%x: a: %d o: %d pos: %f\n", joystick, axis_num, ordinal, position);
+}
+void K3CALLBACK App::JoystickButton(void* data, uint32_t joystick, uint32_t button, k3keyState state)
+{
+    printf("joy 0x%x: b: %d state: %d\n", joystick, button, state);
 }
 
 int main()
