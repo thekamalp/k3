@@ -76,6 +76,8 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 		axis_ordinal[static_cast<uint32_t>(_joy_info.axis[i])]++;
 		_axis_range[i].min = _pValueCaps[i].LogicalMin;
 		_axis_range[i].max = _pValueCaps[i].LogicalMax;
+		// Add +1 to max range to account for POV hat being released
+		if (_joy_info.axis[i] == k3joyAxis::POV) _axis_range[i].max++;
 	}
 
 	// Create handle to device collection
@@ -153,11 +155,9 @@ void k3win32JoyObj::Poll()
 	DWORD bytes_written = 0;
 
 	bool success = GetOverlappedResult(_hid_handle, &_ov, &bytes_written, false);
-	if(!success || bytes_written == 0) {
-		return;
-	}
+	success = success && (bytes_written != 0);
 
-	if (success) {
+	while (success) {
 		uint32_t i;
 		// Get button state
 		USAGE usage[K3JOY_MAX_BUTTONS];
@@ -186,8 +186,11 @@ void k3win32JoyObj::Poll()
 			if (fvalue != _joy_state.axis[i]) _axes_changed |= (1 << i);
 			_joy_state.axis[i] = fvalue;
 		}
+		ReadFile(_hid_handle, _input_buffer, _input_buffer_size, &bytes_written, &_ov);
+		bytes_written = 0;
+		success = GetOverlappedResult(_hid_handle, &_ov, &bytes_written, false);
+		success = success && (bytes_written != 0);
 	}
-	ReadFile(_hid_handle, _input_buffer, _input_buffer_size, &bytes_written, &_ov);
 }
 
 void k3win32JoyObj::SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values)
