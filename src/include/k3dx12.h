@@ -66,7 +66,6 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE _uav_gpu_view;
     // can be used for rtv or dsv, depending on format
     D3D12_CPU_DESCRIPTOR_HANDLE _rtv_cpu_view;
-    D3D12_GPU_DESCRIPTOR_HANDLE _rtv_gpu_view;
     ID3D12DescriptorHeap* _rtv_heap;
 };
 

@@ -141,7 +141,6 @@ k3surfImpl::k3surfImpl()
     _uav_cpu_view.ptr = NULL;
     _uav_gpu_view.ptr = NULL;
     _rtv_cpu_view.ptr = NULL;
-    _rtv_gpu_view.ptr = NULL;
     _rtv_heap = NULL;
 }
 
@@ -1614,7 +1613,6 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
     
     UINT rtv_desc_size = gfxImpl->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle;// (_rtv_heap->GetCPUDescriptorHandleForHeapStart());
-    D3D12_GPU_DESCRIPTOR_HANDLE rtv_gpu_handle(_rtv_heap->GetGPUDescriptorHandleForHeapStart());
     rtv_handle = _rtv_heap->GetCPUDescriptorHandleForHeapStart();
     for (n = 0; n < BACK_BUFFERS; n++) {
         if (_surf[n] == NULL) _surf[n] = new k3surfObj;
@@ -1635,9 +1633,7 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
         resourceImpl->_format = _color_fmt;
         resourceImpl->_resource_state = k3resourceState::COMMON;
         surfImpl->_rtv_cpu_view = rtv_handle;
-        surfImpl->_rtv_gpu_view = rtv_gpu_handle;
         rtv_handle.ptr += (1 * rtv_desc_size);
-        rtv_gpu_handle.ptr += (1 * rtv_desc_size);
     }
 }
 
@@ -2305,7 +2301,6 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
             return NULL;
         }
         D3D12_CPU_DESCRIPTOR_HANDLE dx12_desc_handle(surf_impl->_rtv_heap->GetCPUDescriptorHandleForHeapStart());
-        D3D12_GPU_DESCRIPTOR_HANDLE dx12_gpu_desc_handle(surf_impl->_rtv_heap->GetGPUDescriptorHandleForHeapStart());
         uint32_t max_array_size = resource_impl->_depth - rtv_desc->array_start;
         uint32_t array_size = (rtv_desc->array_size > max_array_size) ? max_array_size : rtv_desc->array_size;
         if (is_depth) {
@@ -2341,7 +2336,6 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
             }
             _data->_dev->CreateDepthStencilView(resource_impl->_dx12_resource, &dx12_dsv_desc, dx12_desc_handle);
             surf_impl->_rtv_cpu_view = dx12_desc_handle;
-            surf_impl->_rtv_gpu_view = dx12_gpu_desc_handle;
         } else {
             D3D12_RENDER_TARGET_VIEW_DESC dx12_rtv_desc = { };
             dx12_rtv_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::TYPELESS);
@@ -2371,7 +2365,6 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
             }
             _data->_dev->CreateRenderTargetView(resource_impl->_dx12_resource, &dx12_rtv_desc, dx12_desc_handle);
             surf_impl->_rtv_cpu_view = dx12_desc_handle;
-            surf_impl->_rtv_gpu_view = dx12_gpu_desc_handle;
         }
     }
     UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
