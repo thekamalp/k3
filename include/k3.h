@@ -914,6 +914,7 @@ public:
     const k3timerImpl* getImpl() const;
     K3API uint32_t GetTime();
     K3API uint32_t GetDeltaTime();
+    K3API void Sleep(uint32_t time);
     K3API void Pause(bool pause);
     K3API bool IsPaused();
     K3API void Reset();
