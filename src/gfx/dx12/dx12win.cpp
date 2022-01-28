@@ -892,8 +892,8 @@ K3API void* k3uploadImageObj::MapForWrite()
         heap_prop.Type = D3D12_HEAP_TYPE_UPLOAD;
         heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
         heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        heap_prop.CreationNodeMask = 1;
-        heap_prop.VisibleNodeMask = 1;
+        heap_prop.CreationNodeMask = 0;
+        heap_prop.VisibleNodeMask = 0;
         D3D12_RESOURCE_DESC desc;
         desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
@@ -998,8 +998,8 @@ K3API void* k3uploadBufferObj::MapForWrite(uint64_t size)
         heap_prop.Type = D3D12_HEAP_TYPE_UPLOAD;
         heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
         heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        heap_prop.CreationNodeMask = 1;
-        heap_prop.VisibleNodeMask = 1;
+        heap_prop.CreationNodeMask = 0;
+        heap_prop.VisibleNodeMask = 0;
         D3D12_RESOURCE_DESC desc;
         desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
@@ -1571,19 +1571,24 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
         }
         _swap_chain->ResizeBuffers(BACK_BUFFERS, _width, _height, dxgi_fmt, swap_chain_flags);
     } else {
-        DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+        DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
+        ZeroMemory(&swap_chain_desc, sizeof(DXGI_SWAP_CHAIN_DESC1));
         swap_chain_desc.BufferCount = BACK_BUFFERS;
-        swap_chain_desc.BufferDesc.Width = _width;
-        swap_chain_desc.BufferDesc.Height = _height;
-        swap_chain_desc.BufferDesc.Format = dxgi_fmt;
+        swap_chain_desc.Width = _width;
+        swap_chain_desc.Height = _height;
+        swap_chain_desc.Format = dxgi_fmt;
         swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         swap_chain_desc.SampleDesc.Count = 1;
-        swap_chain_desc.Windowed = !_is_fullscreen;
-        swap_chain_desc.OutputWindow = _hwnd;
-    
-        IDXGISwapChain* new_swap_chain;
-        hr = k3gfxImpl::_factory->CreateSwapChain(gfxImpl->_cmd_q, &swap_chain_desc, &new_swap_chain);
+        swap_chain_desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        swap_chain_desc.Scaling = DXGI_SCALING_NONE;
+        swap_chain_desc.Stereo = false;
+        DXGI_SWAP_CHAIN_FULLSCREEN_DESC swap_chain_fullscreen_desc;
+        ZeroMemory(&swap_chain_fullscreen_desc, sizeof(DXGI_SWAP_CHAIN_FULLSCREEN_DESC));
+        swap_chain_fullscreen_desc.Windowed = !_is_fullscreen;
+
+        IDXGISwapChain1* new_swap_chain;
+        hr = k3gfxImpl::_factory->CreateSwapChainForHwnd(gfxImpl->_cmd_q, _hwnd, &swap_chain_desc, &swap_chain_fullscreen_desc, NULL, &new_swap_chain);
         if (hr != S_OK) {
             k3error::Handler("Could not create swap chain", "k3win32Dx12WinImpl::ResizeBackBuffer");
             return;
@@ -1599,11 +1604,12 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
 
     // create RTV heap
     if (_rtv_heap == NULL) {
-        D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc = {};
+        D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc;
+        ZeroMemory(&rtv_heap_desc, sizeof(D3D12_DESCRIPTOR_HEAP_DESC));
         rtv_heap_desc.NumDescriptors = BACK_BUFFERS;
         rtv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         rtv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        rtv_heap_desc.NodeMask = 0x1;
+        rtv_heap_desc.NodeMask = 0;
         hr = gfxImpl->_dev->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap));
         if (hr != S_OK) {
             k3error::Handler("Could not create RTV heap", "k3win32Dx12WinImpl::ResizeBackBuffer");
@@ -1633,7 +1639,7 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
         resourceImpl->_format = _color_fmt;
         resourceImpl->_resource_state = k3resourceState::COMMON;
         surfImpl->_rtv_cpu_view = rtv_handle;
-        rtv_handle.ptr += (1 * rtv_desc_size);
+        rtv_handle.ptr +=  rtv_desc_size;
     }
 }
 
@@ -2014,7 +2020,7 @@ K3API k3shader k3gfxObj::CreateShaderFromCompiledFile(const char* file_name)
 
 K3API k3shader k3gfxObj::CompileShaderFromString(const char* code, k3shaderType shader_type)
 {
-    uint32_t code_len = strlen(code);
+    size_t code_len = strlen(code);
     const char* target = "";
     HRESULT hr;
     ID3DBlob* byte_code;
@@ -2163,8 +2169,8 @@ K3API k3memPool k3gfxObj::CreateMemPool(uint64_t size, k3memType mem_type, uint3
     heap_desc.Properties.Type = k3gfxImpl::ConvertToDx12MemType(mem_type);
     heap_desc.Properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
     heap_desc.Properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-    heap_desc.Properties.CreationNodeMask = 1;
-    heap_desc.Properties.VisibleNodeMask = 1;
+    heap_desc.Properties.CreationNodeMask = 0;
+    heap_desc.Properties.VisibleNodeMask = 0;
     heap_desc.SizeInBytes = size;
     heap_desc.Alignment = (flag & K3_MEM_FLAG_MSAA) ? D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
     heap_desc.Flags = D3D12_HEAP_FLAG_NONE;
@@ -2251,8 +2257,8 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
         dx12_heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
         dx12_heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
         dx12_heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        dx12_heap_prop.CreationNodeMask = 1;
-        dx12_heap_prop.VisibleNodeMask = 1;
+        dx12_heap_prop.CreationNodeMask = 0;
+        dx12_heap_prop.VisibleNodeMask = 0;
         D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
         hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, dx12_clear_ptr, IID_PPV_ARGS(&resource_impl->_dx12_resource));
         if (hr != S_OK) {
@@ -2541,8 +2547,8 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
         dx12_heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
         dx12_heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
         dx12_heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        dx12_heap_prop.CreationNodeMask = 1;
-        dx12_heap_prop.VisibleNodeMask = 1;
+        dx12_heap_prop.CreationNodeMask = 0;
+        dx12_heap_prop.VisibleNodeMask = 0;
         D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
         hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&resource_impl->_dx12_resource));
         if (hr != S_OK) {
