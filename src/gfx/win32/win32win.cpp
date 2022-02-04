@@ -637,6 +637,8 @@ K3API k3win k3winObj::Create(const char* title,
         k3win32WinImpl::_win_count++;
     }
 
+    d->ResizeBackBuffer();
+
     // Register input devices
     RAWINPUTDEVICE rid[2];
 
@@ -656,8 +658,6 @@ K3API k3win k3winObj::Create(const char* title,
     d->SetWin32CursorState(d->_is_cursor_visible);
 
     d->_mouse_in_nc = false;
-
-    d->ResizeBackBuffer();
 
     return win;
 }
