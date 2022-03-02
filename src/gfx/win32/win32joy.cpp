@@ -111,7 +111,7 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	_axes_changed = (1 << _joy_info.num_axes) - 1;
 	_joy_state.buttons_pressed = 0;
 	for (i = 0; i < K3JOY_MAX_AXES; i++) {
-		_joy_state.axis[i] = 0.0f;
+		_joy_state.axis[i] = (_joy_info.axis[i] == k3joyAxis::POV) ? 1.0f : 0.0f;
 	}
 
 	// Get latest joystick state
@@ -310,7 +310,7 @@ k3win32PS4JoyObj::k3win32PS4JoyObj(HANDLE hDevice)
 	_axes_changed = (1 << _joy_info.num_axes) - 1;
 	_joy_state.buttons_pressed = 0;
 	for (i = 0; i < K3JOY_MAX_AXES; i++) {
-		_joy_state.axis[i] = 0.0f;
+		_joy_state.axis[i] = (_joy_info.axis[i] == k3joyAxis::POV) ? 1.0f : 0.0f;
 	}
 
 	// Get latest joystick state
