@@ -20,6 +20,13 @@ uint32_t k3soundBufImpl::_num_sbuf = 0;
 LPDIRECTSOUND8 k3soundBufImpl::_dsound = NULL;
 
 // ------------------------------------------------------------
+// Message Box
+void K3CALLBACK k3error_MsgBoxHandler(const char* error_msg, const char* title)
+{
+    MessageBox(NULL, error_msg, title, MB_OK);
+}
+
+// ------------------------------------------------------------
 // sound buffer
 k3soundBufImpl::k3soundBufImpl()
 {
@@ -620,6 +627,9 @@ K3API k3win k3winObj::Create(const char* title,
     } else {
         d->gfx = k3gfxObj::Create(num_views, num_samplers);
     }
+
+    // Failed to ceate the gfx device
+    if (d->gfx == NULL) return NULL;
 
     win->SetSize(d->_width, d->_height);
 

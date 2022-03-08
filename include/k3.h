@@ -175,6 +175,9 @@ private:
 // k3 error handling
 typedef void (K3CALLBACK* k3error_handler_ptr) (const char* error_msg, const char* title);
 
+void K3CALLBACK k3error_StdOutHandler(const char* error_msg, const char* title);
+void K3CALLBACK k3error_MsgBoxHandler(const char* error_msg, const char* title);
+
 class k3error
 {
 public:

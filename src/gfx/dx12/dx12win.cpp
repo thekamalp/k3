@@ -352,7 +352,9 @@ K3API void k3cmdBufObj::Reset()
     if (hr != S_OK) {
         k3error::Handler("Could not reset command list", "k3cmdBufObj::Reset");
     }
-    _data->_cmd_list->SetDescriptorHeaps(2, _data->_gfx->getImpl()->_shader_heap);
+    ID3D12DescriptorHeap** shader_heap = _data->_gfx->getImpl()->_shader_heap;
+    uint32_t num_heaps = (shader_heap[1]) ? 2 : 1;
+    _data->_cmd_list->SetDescriptorHeaps(num_heaps, shader_heap);
 }
 
 K3API void k3cmdBufObj::Close()
@@ -1651,6 +1653,8 @@ k3gfxImpl::k3gfxImpl()
 #endif
     _cmd_q = NULL;
     _cpu_fence = NULL;
+    _shader_heap[0] = NULL;
+    _shader_heap[1] = NULL;
     _font_vs = NULL;
     _font_ps = NULL;
 }
@@ -1810,7 +1814,7 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
             if (!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
 
                 // if it support D2D12, then we got what we need
-                hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_12_0, _uuidof(ID3D12Device), NULL);
+                hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), NULL);
                 if (hr == S_FALSE) break;
             }
 
@@ -1820,7 +1824,7 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     }
 
     // Create the device, and debug device if needed
-    hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&(gfx->_data->_dev)));
+    hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&(gfx->_data->_dev)));
     if (hr != S_OK) {
         k3error::Handler("Could not create d3d12 device", "k3gfxObj::Create");
         return NULL;
@@ -1845,21 +1849,25 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     gfx->_data->_cpu_fence = gfx->CreateFence();
 
     D3D12_DESCRIPTOR_HEAP_DESC desc_heap_desc;
-    desc_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    desc_heap_desc.NumDescriptors = num_views;
-    desc_heap_desc.NodeMask = 0;
-    desc_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    hr = gfx->_data->_dev->CreateDescriptorHeap(&desc_heap_desc, IID_PPV_ARGS(&gfx->_data->_shader_heap[0]));
-    if (hr != S_OK) {
-        k3error::Handler("Could not create descriptor heap", "k3gfxObj::Create");
-        return NULL;
+    if (num_views > 0) {
+        desc_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc_heap_desc.NumDescriptors = num_views;
+        desc_heap_desc.NodeMask = 0;
+        desc_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        hr = gfx->_data->_dev->CreateDescriptorHeap(&desc_heap_desc, IID_PPV_ARGS(&gfx->_data->_shader_heap[0]));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create descriptor heap", "k3gfxObj::Create");
+            return NULL;
+        }
     }
-    desc_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-    desc_heap_desc.NumDescriptors = num_samplers;
-    hr = gfx->_data->_dev->CreateDescriptorHeap(&desc_heap_desc, IID_PPV_ARGS(&gfx->_data->_shader_heap[1]));
-    if (hr != S_OK) {
-        k3error::Handler("Could not create sampler heap", "k3gfxObj::Create");
-        return NULL;
+    if (num_samplers > 0) {
+        desc_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+        desc_heap_desc.NumDescriptors = num_samplers;
+        hr = gfx->_data->_dev->CreateDescriptorHeap(&desc_heap_desc, IID_PPV_ARGS(&gfx->_data->_shader_heap[1]));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create sampler heap", "k3gfxObj::Create");
+            return NULL;
+        }
     }
 
     return gfx;
@@ -2242,8 +2250,10 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     dx12_clear.Color[1] = 0.0f;
     dx12_clear.Color[2] = 0.0f;
     dx12_clear.Color[3] = 1.0f;
-    dx12_clear.DepthStencil.Depth = 1.0f;
-    dx12_clear.DepthStencil.Stencil = 0;
+    if (is_depth) {
+        dx12_clear.DepthStencil.Depth = 1.0f;
+        dx12_clear.DepthStencil.Stencil = 0;
+    }
     D3D12_CLEAR_VALUE* dx12_clear_ptr = NULL;
     if (rtv_desc) {
         dx12_resource_desc.Flags |= ((is_depth) ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
@@ -2251,6 +2261,8 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     }
     if (srv_desc == NULL) dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
     if (uav_desc) dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    k3resourceState init_state = k3resourceState::COMMON;
+    D3D12_RESOURCE_STATES dx_init_state = k3gfxImpl::ConvertToDx12ResourceState(init_state, is_depth);
     if (rdesc->mem_pool == NULL) {
         // no mem pool defined, so create a committed resource
         D3D12_HEAP_PROPERTIES dx12_heap_prop;
@@ -2260,7 +2272,7 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
         dx12_heap_prop.CreationNodeMask = 0;
         dx12_heap_prop.VisibleNodeMask = 0;
         D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
-        hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, dx12_clear_ptr, IID_PPV_ARGS(&resource_impl->_dx12_resource));
+        hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, dx_init_state, dx12_clear_ptr, IID_PPV_ARGS(&resource_impl->_dx12_resource));
         if (hr != S_OK) {
             k3error::Handler("Could not create committed resource", "k3gfxObj::CreateSurface");
             return NULL;
@@ -2268,7 +2280,7 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     } else {
         // mem pool specified, so create placed resource
         const k3memPoolImpl* mem_pool_impl = rdesc->mem_pool->getImpl();
-        hr = _data->_dev->CreatePlacedResource(mem_pool_impl->_heap, rdesc->mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, dx12_clear_ptr, IID_PPV_ARGS(&resource_impl->_dx12_resource));
+        hr = _data->_dev->CreatePlacedResource(mem_pool_impl->_heap, rdesc->mem_offset, &dx12_resource_desc, dx_init_state, dx12_clear_ptr, IID_PPV_ARGS(&resource_impl->_dx12_resource));
         if (hr != S_OK) {
             k3error::Handler("Could not create placed resource", "k3gfxObj::CreateSurface");
             return NULL;
@@ -2280,7 +2292,7 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     resource_impl->_depth = rdesc->depth;
     resource_impl->_format = rdesc->format;
     resource_impl->_max_mip = rdesc->mip_levels;
-    resource_impl->_resource_state = k3resourceState::COMMON;
+    resource_impl->_resource_state = init_state;
     resource_impl->_samples = rdesc->num_samples;
 
     k3surf surf = CreateSurfaceAlias(resource, rtv_desc, srv_desc, uav_desc);
@@ -2495,6 +2507,10 @@ K3API k3sampler k3gfxObj::CreateSampler(const k3samplerDesc* sdesc)
     k3samplerImpl* sampler_impl = sampler->getImpl();
     D3D12_DESCRIPTOR_HEAP_TYPE dx12_heap_type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
     ID3D12DescriptorHeap* dx12_desc_heap = _data->_shader_heap[1];
+    if (dx12_desc_heap == NULL) {
+        k3error::Handler("Sampler heap not created", "k3gfxObj::CreateSampler");
+        return NULL;
+    }
     D3D12_CPU_DESCRIPTOR_HANDLE dx12_desc_handle(dx12_desc_heap->GetCPUDescriptorHandleForHeapStart());
     D3D12_GPU_DESCRIPTOR_HANDLE dx12_gpu_desc_handle(dx12_desc_heap->GetGPUDescriptorHandleForHeapStart());
     UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(dx12_heap_type);
