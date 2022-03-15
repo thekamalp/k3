@@ -822,7 +822,7 @@ void k3winObj::WindowLoop()
     bool got_joy = false;
 
     uint32_t w, j;
-    HHOOK KeyboardLowLevelHook = SetWindowsHookEx(WH_KEYBOARD_LL, k3win32WinImpl::KeyboardLowLevelProc, GetModuleHandle(NULL), 0);
+    //HHOOK KeyboardLowLevelHook = SetWindowsHookEx(WH_KEYBOARD_LL, k3win32WinImpl::KeyboardLowLevelProc, GetModuleHandle(NULL), 0);
     HWND hwnd;
     k3win32WinImpl* winimpl;
     k3win32Joy joy;
@@ -870,7 +870,7 @@ void k3winObj::WindowLoop()
         if (k3win32WinImpl::_win_count == 0) PostQuitMessage(0);
     }
 
-    UnhookWindowsHookEx(KeyboardLowLevelHook);
+    //UnhookWindowsHookEx(KeyboardLowLevelHook);
 
     // Delete all joysticks
     for (j = 0; j < k3win32WinImpl::_num_joy; j++) {
