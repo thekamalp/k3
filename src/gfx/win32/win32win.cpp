@@ -342,12 +342,15 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
             break;
         case WM_CLOSE:
             if (winimpl->Destroy) winimpl->Destroy(winimpl->_data);
-            _winimpl_map[w] = _winimpl_map[_win_count - 1];
-            _win_map[w] = _win_map[_win_count - 1];
-            _winimpl_map[_win_count - 1] = NULL;
-            _win_map[_win_count - 1] = NULL;
-            _win_count--;
-            if (_win_count == 0) k3winObj::ExitLoop();
+            if (_win_count == 1) {
+                k3winObj::ExitLoop();
+            } else {
+                _winimpl_map[w] = _winimpl_map[_win_count - 1];
+                _win_map[w] = _win_map[_win_count - 1];
+                _winimpl_map[_win_count - 1] = NULL;
+                _win_map[_win_count - 1] = NULL;
+                _win_count--;
+            }
             break;
         case WM_INPUT_DEVICE_CHANGE:
             if (w == 0) { // Ensures we only do this once, not for each window

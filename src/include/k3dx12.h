@@ -103,6 +103,7 @@ public:
     k3shaderBinding _cur_binding;
     k3rect _cur_viewport;
     k3gfx _gfx;
+    bool _index_draw;
 };
 
 class k3shaderBindingImpl

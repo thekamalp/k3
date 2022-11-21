@@ -274,6 +274,7 @@ k3cmdBufImpl::k3cmdBufImpl()
     _cur_viewport.y = 0;
     _cur_viewport.width = 0;
     _cur_viewport.height = 0;
+    _index_draw = false;
 }
 
 k3cmdBufImpl::~k3cmdBufImpl()
@@ -573,6 +574,11 @@ K3API void k3cmdBufObj::SetRenderTargets(k3renderTargets* rt)
 
 K3API void k3cmdBufObj::SetIndexBuffer(k3buffer index_buffer)
 {
+    if (index_buffer == NULL) {
+        _data->_cmd_list->IASetIndexBuffer(NULL);
+        _data->_index_draw = false;
+        return;
+    }
     k3bufferImpl* buffer_impl = index_buffer->getImpl();
     k3resourceImpl* resource_impl = buffer_impl->_resource->getImpl();
     if (resource_impl->_format != k3fmt::R16_UINT && resource_impl->_format != k3fmt::R32_UINT) {
@@ -584,10 +590,15 @@ K3API void k3cmdBufObj::SetIndexBuffer(k3buffer index_buffer)
     dx12_ibv.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::COLOR);
     dx12_ibv.SizeInBytes = resource_impl->_width;
     _data->_cmd_list->IASetIndexBuffer(&dx12_ibv);
+    _data->_index_draw = true;
 }
 
 K3API void k3cmdBufObj::SetVertexBuffer(uint32_t slot, k3buffer vertex_buffer)
 {
+    if (vertex_buffer == NULL) {
+        _data->_cmd_list->IASetVertexBuffers(slot, 1, NULL);
+        return;
+    }
     k3bufferImpl* buffer_impl = vertex_buffer->getImpl();
     k3resourceImpl* resource_impl = buffer_impl->_resource->getImpl();
     if (buffer_impl->_stride == 0) {
@@ -656,7 +667,11 @@ K3API void k3cmdBufObj::SetStencilRef(uint8_t stencil_ref)
 
 K3API void k3cmdBufObj::Draw(uint32_t vertex_count, uint32_t vertex_start, uint32_t instance_count, uint32_t instance_start)
 {
-    _data->_cmd_list->DrawInstanced(vertex_count, instance_count, vertex_start, instance_start);
+    if (_data->_index_draw) {
+        _data->_cmd_list->DrawIndexedInstanced(vertex_count, instance_count, vertex_start, 0, instance_start);
+    } else {
+        _data->_cmd_list->DrawInstanced(vertex_count, instance_count, vertex_start, instance_start);
+    }
 }
 
 // ------------------------------------------------------------
