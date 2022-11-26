@@ -1062,6 +1062,7 @@ IDXGIFactory4* k3gfxImpl::_factory = NULL;
 ID3D12Debug1* k3gfxImpl::_debug_controller = NULL;
 #endif
 IDXGIAdapter1* k3gfxImpl::_adapter = NULL;
+char k3gfxImpl::_adapter_name[128] = { 0 };
 
 void k3gfxImpl::ConvertToDx12Rect(D3D12_RECT* dst, const k3rect* src)
 {
@@ -1830,7 +1831,11 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
 
                 // if it support D2D12, then we got what we need
                 hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), NULL);
-                if (hr == S_FALSE) break;
+                if (hr == S_FALSE) {
+                    size_t bytes_converted;
+                    wcstombs_s(&bytes_converted, k3gfxImpl::_adapter_name, desc.Description, 128);
+                    break;
+                }
             }
 
             // if this adpater didn't work, release it
@@ -1886,6 +1891,11 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     }
 
     return gfx;
+}
+
+K3API const char* k3gfxObj::AdapterName()
+{
+    return k3gfxImpl::_adapter_name;
 }
 
 K3API k3fence k3gfxObj::CreateFence()

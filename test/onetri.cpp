@@ -64,6 +64,7 @@ void App::Setup()
 
     gfx = win->GetGfx();
     sbuf = win->CreateSoundBuffer(1, 44100, 16, 11025);
+    printf("Adapter: %s\n", gfx->AdapterName());
 
     cmd_buf = gfx->CreateCmdBuf();
 

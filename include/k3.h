@@ -1677,6 +1677,8 @@ public:
     k3gfxImpl* getImpl();
     const k3gfxImpl* getImpl() const;
 
+    K3API const char* AdapterName();
+
     K3API k3fence CreateFence();
     K3API void WaitGpuIdle();
 

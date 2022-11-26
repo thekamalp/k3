@@ -192,6 +192,7 @@ public:
     static ID3D12Debug1* _debug_controller;
 #endif
     static IDXGIAdapter1* _adapter;
+    static char _adapter_name[128];
     ID3D12Device* _dev;
 #ifdef _DEBUG
     ID3D12DebugDevice* _dbg_dev;
