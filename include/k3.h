@@ -1348,7 +1348,7 @@ public:
     K3API void SetBlendFactor(const float* blend_factor);
     K3API void SetStencilRef(uint8_t stencil_ref);
 
-    K3API void Draw(uint32_t vertex_count, uint32_t vertex_start = 0, uint32_t instance_count = 1, uint32_t instance_start = 0);
+    K3API void Draw(uint32_t vertex_count, uint32_t vertex_start = 0, uint32_t instance_count = 1, uint32_t instance_start = 0, uint32_t index_start = 0);
     K3API void DrawText(const char* text, k3font font, const float fg_color[4], const float bg_color[4], int32_t x, int32_t y, k3fontAlignment alignment = k3fontAlignment::TOP_LEFT);
 };
 

@@ -665,10 +665,10 @@ K3API void k3cmdBufObj::SetStencilRef(uint8_t stencil_ref)
 }
 
 
-K3API void k3cmdBufObj::Draw(uint32_t vertex_count, uint32_t vertex_start, uint32_t instance_count, uint32_t instance_start)
+K3API void k3cmdBufObj::Draw(uint32_t vertex_count, uint32_t vertex_start, uint32_t instance_count, uint32_t instance_start, uint32_t index_start)
 {
     if (_data->_index_draw) {
-        _data->_cmd_list->DrawIndexedInstanced(vertex_count, instance_count, vertex_start, 0, instance_start);
+        _data->_cmd_list->DrawIndexedInstanced(vertex_count, instance_count, index_start, vertex_start, instance_start);
     } else {
         _data->_cmd_list->DrawInstanced(vertex_count, instance_count, vertex_start, instance_start);
     }
