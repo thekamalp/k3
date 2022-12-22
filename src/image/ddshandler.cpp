@@ -452,13 +452,14 @@ void K3CALLBACK k3dds_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
     uint8_t* bitmap = static_cast<uint8_t*>(data);
     uint8_t* bitmap_row;
     uint32_t format_size = k3imageObj::GetFormatSize(dds_format);
-    uint32_t row_size = header.width * format_size;
+    uint32_t block_size = k3imageObj::GetFormatBlockSize(dds_format);
+    uint32_t row_size = ((header.width + block_size - 1) / block_size) * format_size;
     //uint32_t image_size = k3imageObj::GetImageSize(header.width, header.height, header.depth, dds_format);
 
     uint32_t slice, row;
     for (slice = 0; slice < header.depth; slice++) {
         bitmap_row = bitmap;
-        for (row = 0; row < header.height; row++) {
+        for (row = 0; row < header.height; row += block_size) {
             fread(bitmap_row, 1, row_size, file_handle);
             bitmap_row += pitch;
         }
