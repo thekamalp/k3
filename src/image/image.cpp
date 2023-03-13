@@ -86,10 +86,11 @@ K3API void k3imageObj::ReformatFromFile(k3image img, const char* file_name,
             if (dest_depth == 0) dest_depth = src_depth;
             if (dest_format == k3fmt::UNKNOWN) dest_format = src_format;
             uint32_t src_format_size = k3imageObj::GetFormatSize(src_format);
+            uint32_t dest_format_size = k3imageObj::GetFormatSize(dest_format);
             img->SetDimensions(dest_width, dest_height, dest_depth, dest_format);
             uint32_t dest_pitch = img->GetPitch();
             uint32_t dest_slice_pitch = img->GetSlicePitch();
-            uint32_t src_pitch = (src_width == dest_width) ? dest_pitch : src_width * src_format_size;
+            uint32_t src_pitch = (src_width == dest_width && src_format_size == dest_format_size) ? dest_pitch : src_width * src_format_size;
             uint32_t src_slice_pitch = (src_pitch == dest_pitch && src_height == dest_height) ? dest_slice_pitch : src_pitch * src_height;
             
             uint32_t src_image_size = src_depth * src_slice_pitch;
