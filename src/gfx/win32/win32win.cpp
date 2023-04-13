@@ -311,7 +311,7 @@ LRESULT CALLBACK k3win32WinImpl::KeyboardLowLevelProc(int ncode, WPARAM wparam, 
                     if (sysreq_pressed) new_lparam |= (1 << 30);
                     sysreq_pressed = true;
                 }
-                PostMessage(GetForegroundWindow(), wparam, p->vkCode, new_lparam);
+                PostMessage(GetForegroundWindow(), (UINT)wparam, p->vkCode, new_lparam);
                 keyprocessed = true;
             }
             break;
@@ -355,7 +355,7 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
         case WM_INPUT_DEVICE_CHANGE:
             if (w == 0) { // Ensures we only do this once, not for each window
                 HANDLE hDevice = reinterpret_cast<HANDLE>(lparam);
-                uint32_t dev_id = lparam;
+                uint32_t dev_id = (uint32_t)lparam;
                 if (wparam == GIDC_ARRIVAL && _num_joy < MAX_JOY) {
                     _joy_map[_num_joy] = k3win32JoyObj::Create(hDevice, dev_id);
                     uint32_t w2;
@@ -446,7 +446,7 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                 bool repeat = (lparam & 0x40000000) ? true : false;
                 uint32_t scan_code = (lparam >> 16) & 0xff;
                 bool extended = (lparam & 0x1000000) ? true : false;
-                k3key k = ConvertVKey(wparam, scan_code, extended);
+                k3key k = ConvertVKey((uint32_t)wparam, scan_code, extended);
 
                 if (pressed && repeat) keystate = k3keyState::REPEATED;
                 else                  keystate = (pressed) ? k3keyState::PRESSED : k3keyState::RELEASED;
@@ -456,7 +456,7 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                     k3error::Handler("Coudl not get keyboard state", "MsgProc");
                     return 0;
                 }
-                len = ToAscii(wparam, scan_code, keys, &c, 0);
+                len = ToAscii((UINT)wparam, scan_code, keys, &c, 0);
                 if (len != 1) c = '\0';
 
                 winimpl->Keyboard(winimpl->_data, k, static_cast<char>(c), keystate);

@@ -3,11 +3,7 @@
 
 Texture2D<float4> tex : register(t0);
 
-SamplerState sampleLinear : register(s0) {
-    Filter = MIN_MAG_MIP_LINEAR;
-    AddressU = Wrap;
-    AddressV = Wrap;
-};
+SamplerState sampleLinear : register(s0);
 
 struct VS2PS {
     float4 pos : SV_POSITION;

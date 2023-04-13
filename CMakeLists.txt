@@ -5,6 +5,14 @@ cmake_minimum_required (VERSION 3.8)
 
 project (k3)
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+	set(PROJ k3x64)
+	set(FT_LIB freetype64)
+else()
+	set(PROJ k3)
+	set(FT_LIB freetype32)
+endif()
+
 if(UNIX AND NOT APPLE)
 	set(LINUX TRUE)
 endif()
@@ -26,13 +34,13 @@ if(WIN32)
 	file (GLOB SOURCE_DX12  "src/gfx/dx12/*.cpp")
 	set (SOURCE_PLATFORM ${SOURCE_WIN32} ${SOURCE_DX12})
 	set (GFX_LINK_LIB d3d12 dxgi d3dcompiler)
-	set (LINK_LIB dsound hid dxguid winmm freetype ${GFX_LINK_LIB})
+	set (LINK_LIB dsound hid dxguid winmm ${FT_LIB} ${GFX_LINK_LIB})
 endif()
 
-add_library(k3 SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_PLATFORM})
+add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_PLATFORM})
 
-target_link_libraries(k3 ${LINK_LIB})
+target_link_libraries(${PROJ} ${LINK_LIB})
 
-install(FILES k3.lib DESTINATION lib)
+install(FILES ${PROJ}.lib DESTINATION lib)
 
 add_subdirectory (test)

@@ -131,6 +131,20 @@ const k3resourceImpl* k3resourceObj::getImpl() const
     return _data;
 }
 
+K3API void k3resourceObj::getDesc(k3resourceDesc* desc)
+{
+    if (desc) {
+        D3D12_RESOURCE_DESC dx12_desc = _data->_dx12_resource->GetDesc();
+        desc->width = dx12_desc.Width;
+        desc->height = dx12_desc.Height;
+        desc->depth = dx12_desc.DepthOrArraySize;
+        desc->mip_levels = dx12_desc.MipLevels;
+        desc->format = k3win32Dx12WinImpl::ConertFromDXGIFormat(dx12_desc.Format);
+        desc->num_samples = dx12_desc.SampleDesc.Count;
+    }
+}
+
+
 // ------------------------------------------------------------
 // surf
 k3surfImpl::k3surfImpl()
@@ -258,11 +272,101 @@ K3API k3resource k3bufferObj::GetResource()
 }
 
 // ------------------------------------------------------------
+// blas
+k3blasImpl::k3blasImpl()
+{
+    memset(&_geom, 0, sizeof(_geom));
+    memset(&_size, 0, sizeof(_size));
+    _ib = NULL;
+    _vb = NULL;
+    _blas = NULL;
+    _create_scratch = NULL;
+    _update_scratch = NULL;
+}
+
+k3blasImpl::~k3blasImpl()
+{ }
+
+k3blasObj::k3blasObj()
+{
+    _data = new k3blasImpl;
+}
+
+k3blasObj::~k3blasObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3blasImpl* k3blasObj::getImpl()
+{
+    return _data;
+}
+
+const k3blasImpl* k3blasObj::getImpl() const
+{
+    return _data;
+}
+
+K3API void k3blasObj::getSize(k3rtasSize* size)
+{
+    if (size) *size = _data->_size;
+}
+
+// ------------------------------------------------------------
+// tlas
+k3tlasImpl::k3tlasImpl()
+{
+    _num_instances = 0;
+    _instances = NULL;
+    _instance_upbuf = NULL;
+    memset(&_size, 0, sizeof(_size));
+    _tlas = NULL;
+    _create_scratch = NULL;
+    _update_scratch = NULL;
+}
+
+k3tlasImpl::~k3tlasImpl()
+{
+    if (_instances) {
+        delete[] _instances;
+        _instances = NULL;
+    }
+}
+
+k3tlasObj::k3tlasObj()
+{
+    _data = new k3tlasImpl;
+}
+
+k3tlasObj::~k3tlasObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3tlasImpl* k3tlasObj::getImpl()
+{
+    return _data;
+}
+
+const k3tlasImpl* k3tlasObj::getImpl() const
+{
+    return _data;
+}
+
+
+// ------------------------------------------------------------
 // cmdBuf
 k3cmdBufImpl::k3cmdBufImpl()
 {
     uint32_t i;
     _cmd_list = NULL;
+    _cmd_list4 = NULL;
     _fence = NULL;
     for (i = 0; i < MAX_ALLOC; i++) {
         _cmd_alloc[i] = NULL;
@@ -284,6 +388,7 @@ k3cmdBufImpl::~k3cmdBufImpl()
         _cmd_list->Release();
         _cmd_list = NULL;
     }
+    if (_cmd_list4) _cmd_list4 = NULL; // This is the same as _cmd_list if it exists
     for(i=0; i<MAX_ALLOC; i++) {
         if (_cmd_alloc[i]) {
             _cmd_alloc[i]->Release();
@@ -588,7 +693,7 @@ K3API void k3cmdBufObj::SetIndexBuffer(k3buffer index_buffer)
     D3D12_INDEX_BUFFER_VIEW dx12_ibv = { 0 };
     dx12_ibv.BufferLocation = resource_impl->_dx12_resource->GetGPUVirtualAddress();
     dx12_ibv.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::COLOR);
-    dx12_ibv.SizeInBytes = resource_impl->_width;
+    dx12_ibv.SizeInBytes = (uint32_t)resource_impl->_width;
     _data->_cmd_list->IASetIndexBuffer(&dx12_ibv);
     _data->_index_draw = true;
 }
@@ -605,14 +710,14 @@ K3API void k3cmdBufObj::SetVertexBuffer(uint32_t slot, k3buffer vertex_buffer)
         k3error::Handler("Illegal stride for vertex buffer", "k3cmdBufObj::SetVertexBuffer");
         return;
     }
-    if (resource_impl->_format != k3fmt::UNKNOWN) {
-        k3error::Handler("Vertex buffer must have unknown format", "k3cmdBufObj::SetVertexBuffer");
-        return;
-    }
+    //if (resource_impl->_format != k3fmt::UNKNOWN) {
+    //    k3error::Handler("Vertex buffer must have unknown format", "k3cmdBufObj::SetVertexBuffer");
+    //    return;
+    //}
     D3D12_VERTEX_BUFFER_VIEW dx12_vbv = { 0 };
     dx12_vbv.BufferLocation = resource_impl->_dx12_resource->GetGPUVirtualAddress();
     dx12_vbv.StrideInBytes = buffer_impl->_stride;
-    dx12_vbv.SizeInBytes = resource_impl->_width;
+    dx12_vbv.SizeInBytes = (uint32_t)resource_impl->_width;
     _data->_cmd_list->IASetVertexBuffers(slot, 1, &dx12_vbv);
 }
 
@@ -664,6 +769,173 @@ K3API void k3cmdBufObj::SetStencilRef(uint8_t stencil_ref)
     _data->_cmd_list->OMSetStencilRef(stencil_ref);
 }
 
+K3API void k3cmdBufObj::BuildBlas(k3blas blas)
+{
+    k3blasImpl* blasImpl = blas->getImpl();
+    if (blasImpl->_blas == NULL) {
+        k3error::Handler("BLAS not allocated", "k3cmdBufObj::BuildBlas");
+        return;
+    }
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC blas_desc = {};
+    blas_desc.Inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+    blas_desc.Inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+    blas_desc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    blas_desc.Inputs.NumDescs = 1;
+    blas_desc.Inputs.pGeometryDescs = &blasImpl->_geom;
+    blas_desc.ScratchAccelerationStructureData = blasImpl->_create_scratch->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    blas_desc.DestAccelerationStructureData = blasImpl->_blas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    _data->_cmd_list4->BuildRaytracingAccelerationStructure(&blas_desc, 0, NULL);
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    barrier.UAV.pResource = blasImpl->_blas->getImpl()->_dx12_resource;
+    _data->_cmd_list->ResourceBarrier(1, &barrier);
+}
+
+K3API void k3cmdBufObj::BuildTlas(k3tlas tlas)
+{
+    k3tlasImpl* tlasImpl = tlas->getImpl();
+    if (tlasImpl->_tlas == NULL) {
+        k3error::Handler("TLAS not allocated", "k3cmdBufObj::BuildTlas");
+        return;
+    }
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC tlas_desc = {};
+    tlas_desc.Inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+    tlas_desc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    tlas_desc.Inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+    tlas_desc.Inputs.NumDescs = tlasImpl->_num_instances;
+    tlas_desc.Inputs.InstanceDescs = tlasImpl->_instance_upbuf->getImpl()->_resource->GetGPUVirtualAddress();
+    tlas_desc.DestAccelerationStructureData = tlasImpl->_tlas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    tlas_desc.ScratchAccelerationStructureData = tlasImpl->_create_scratch->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    _data->_cmd_list4->BuildRaytracingAccelerationStructure(&tlas_desc, 0, NULL);
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    barrier.UAV.pResource = tlasImpl->_tlas->getImpl()->_dx12_resource;
+    _data->_cmd_list->ResourceBarrier(1, &barrier);
+}
+
+wchar_t* createWideString(const char* str)
+{
+    size_t str_len = strlen(str) + 1;
+    wchar_t* wide_str = new wchar_t[str_len];
+    size_t converted_chars;
+    mbstowcs_s(&converted_chars, wide_str, str_len, str, str_len);
+    return wide_str;
+}
+
+K3API void k3cmdBufObj::UpdateRTStateTable(k3rtStateTable table, k3rtStateTableUpdate* desc)
+{
+    k3rtStateTableImpl* table_impl = table->getImpl();
+    if (desc->start >= table_impl->_num_entries) {
+        k3error::Handler("Start entry above entries in table", "k3cmdBufObj::UpdateRTStateTable");
+        return;
+    }
+    if (desc->start + desc->num_entries > table_impl->_num_entries) {
+        k3error::Handler("Ending entry above entries in table", "k3cmdBufObj::UpdateRTStateTable");
+        return;
+    }
+    uint32_t entry_size = table_impl->getEntrySize();
+    uint32_t start_offset = desc->start * entry_size;
+    uint32_t copy_size = desc->num_entries * entry_size;
+    uint8_t* entry_data = (uint8_t*)desc->copy_buffer->MapForWrite(copy_size);
+    uint8_t* data;
+    k3rtStateImpl* state_impl = desc->state->getImpl();
+    ID3D12StateObjectProperties* rtso_props;
+    state_impl->_state->QueryInterface(IID_PPV_ARGS(&rtso_props));
+    uint32_t i, j;
+    wchar_t* wide_str;
+    k3tlasImpl* tlas_impl = NULL;
+    k3surfImpl* surf_impl = NULL;
+    D3D12_GPU_DESCRIPTOR_HANDLE gpu_view;
+    for (i = 0; i < desc->num_entries; i++, entry_data += entry_size) {
+        data = entry_data;
+        wide_str = createWideString(desc->entries[i].shader);
+        memcpy(data, rtso_props->GetShaderIdentifier(wide_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+        delete[] wide_str;
+        data += D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        for (j = 0; j < table_impl->_num_args; j++) {
+            if (j < desc->entries[i].num_args) {
+                if (desc->entries[i].args[j].type == k3rtStateTableArgType::HANDLE) {
+                    switch (desc->entries[i].args[j].obj->getObjType()) {
+                    case k3objType::SURF:
+                        surf_impl = ((k3surf)desc->entries[i].args[j].obj)->getImpl();
+                        switch (desc->entries[i].args[j].bind_type) {
+                        case k3shaderBindType::SRV:
+                            gpu_view = surf_impl->_srv_gpu_view;
+                            break;
+                        case k3shaderBindType::UAV:
+                            gpu_view = surf_impl->_uav_gpu_view;
+                            break;
+                        default:
+                            gpu_view.ptr = NULL;
+                            break;
+                        }
+                        break;
+                    case k3objType::TLAS:
+                        tlas_impl = ((k3tlas)desc->entries[i].args[j].obj)->getImpl();
+                        gpu_view = tlas_impl->_gpu_view;
+                        break;
+                    default:
+                        gpu_view.ptr = NULL;
+                        break;
+                    }
+                    if (gpu_view.ptr == NULL) {
+                        k3error::Handler("Resource does not have appropriate view", "k3cmdBufObj::UpdateRTStateTable");
+                        return;
+                    }
+                    memcpy(data, &(gpu_view.ptr), 8);
+                } else {
+                    memcpy(data, desc->entries[i].args[j].c, 8);
+                }
+            } else {
+                memset(data, 0, 8);
+            }
+            data += 8;
+        }
+    }
+    desc->copy_buffer->Unmap();
+    rtso_props->Release();
+    
+    _data->_cmd_list->CopyBufferRegion(table_impl->_resource->getImpl()->_dx12_resource, start_offset, desc->copy_buffer->getImpl()->_resource, 0, copy_size);
+}
+
+K3API void k3cmdBufObj::SetRTState(k3rtState state)
+{
+    k3rtStateImpl* state_impl = state->getImpl();
+    k3shaderBinding binding = state_impl->_shader_bindings[0];
+    if (binding->getType() == k3shaderBindingType::GLOBAL) {
+        // if the first binding is a global binding (should be), then set it as the global root signature
+        k3shaderBindingImpl* binding_impl = binding->getImpl();
+        _data->_cmd_list->SetComputeRootSignature(binding_impl->_binding);
+    }
+    _data->_cmd_list4->SetPipelineState1(state_impl->_state);
+}
+
+K3API void k3cmdBufObj::RTDispatch(const k3rtDispatch* desc)
+{
+    const k3rtStateTableImpl* table_impl = desc->state_table->getImpl();
+    D3D12_DISPATCH_RAYS_DESC dx12_desc = {};
+    dx12_desc.Width = (desc->width) ? desc->width : 1;
+    dx12_desc.Height = (desc->height) ? desc->height : 1;
+    dx12_desc.Depth = (desc->depth) ? desc->depth : 1;
+    D3D12_GPU_VIRTUAL_ADDRESS table_start = table_impl->_resource->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    uint32_t entry_size = table_impl->getEntrySize();
+    dx12_desc.RayGenerationShaderRecord.StartAddress = table_start + (desc->raygen_index * entry_size);
+    dx12_desc.RayGenerationShaderRecord.SizeInBytes = desc->raygen_entries * entry_size;
+    dx12_desc.MissShaderTable.StartAddress = table_start + (desc->miss_index * entry_size);
+    dx12_desc.MissShaderTable.StrideInBytes = entry_size;
+    dx12_desc.MissShaderTable.SizeInBytes = (desc->miss_entries * entry_size);
+    dx12_desc.HitGroupTable.StartAddress = table_start + (desc->hit_group_index * entry_size);
+    dx12_desc.HitGroupTable.StrideInBytes = entry_size;
+    dx12_desc.HitGroupTable.SizeInBytes = (desc->hit_group_entries * entry_size);
+    _data->_cmd_list4->DispatchRays(&dx12_desc);
+}
+
+K3API void k3cmdBufObj::Copy(k3resource dest, k3resource source)
+{
+    k3resourceImpl* dest_impl = dest->getImpl();
+    k3resourceImpl* source_impl = source->getImpl();
+    _data->_cmd_list->CopyResource(dest_impl->_dx12_resource, source_impl->_dx12_resource);
+}
 
 K3API void k3cmdBufObj::Draw(uint32_t vertex_count, uint32_t vertex_start, uint32_t instance_count, uint32_t instance_start, uint32_t index_start)
 {
@@ -679,6 +951,7 @@ K3API void k3cmdBufObj::Draw(uint32_t vertex_count, uint32_t vertex_start, uint3
 k3shaderBindingImpl::k3shaderBindingImpl()
 {
     _binding = NULL;
+    _type = k3shaderBindingType::GLOBAL;
 }
 
 k3shaderBindingImpl::~k3shaderBindingImpl()
@@ -711,6 +984,12 @@ const k3shaderBindingImpl* k3shaderBindingObj::getImpl() const
 {
     return _data;
 }
+
+K3API k3shaderBindingType k3shaderBindingObj::getType() const
+{
+    return _data->_type;
+}
+
 
 // ------------------------------------------------------------
 // shader
@@ -750,6 +1029,98 @@ const k3shaderImpl* k3shaderObj::getImpl() const
 {
     return _data;
 }
+
+// ------------------------------------------------------------
+// rt state
+k3rtStateImpl::k3rtStateImpl()
+{
+    _state = NULL;
+    _shaders = NULL;
+    _shader_bindings = NULL;
+}
+
+k3rtStateImpl::~k3rtStateImpl()
+{
+    if (_state) {
+        _state->Release();
+        _state = NULL;
+    }
+    if (_shaders) {
+        delete[] _shaders;
+        _shaders = NULL;
+    }
+    if (_shader_bindings) {
+        delete[] _shader_bindings;
+        _shader_bindings = NULL;
+    }
+}
+
+k3rtStateObj::k3rtStateObj()
+{
+    _data = new k3rtStateImpl;
+}
+
+k3rtStateObj::~k3rtStateObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3rtStateImpl* k3rtStateObj::getImpl()
+{
+    return _data;
+}
+
+const k3rtStateImpl* k3rtStateObj::getImpl() const
+{
+    return _data;
+}
+
+// ------------------------------------------------------------
+// rt state table
+k3rtStateTableImpl::k3rtStateTableImpl()
+{
+    _resource = NULL;
+    _num_entries = 0;
+    _num_args = 0;
+}
+
+k3rtStateTableImpl::~k3rtStateTableImpl()
+{ }
+
+k3rtStateTableObj::k3rtStateTableObj()
+{
+    _data = new k3rtStateTableImpl;
+}
+
+k3rtStateTableObj::~k3rtStateTableObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3rtStateTableImpl* k3rtStateTableObj::getImpl()
+{
+    return _data;
+}
+
+const k3rtStateTableImpl* k3rtStateTableObj::getImpl() const
+{
+    return _data;
+}
+
+uint32_t k3rtStateTableImpl::getEntrySize() const
+{
+    uint32_t entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + (8 * _num_args);;
+    entry_size += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT - 1;
+    entry_size &= ~(D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT - 1);
+    return entry_size;
+}
+
 
 // ------------------------------------------------------------
 // state
@@ -1103,6 +1474,7 @@ D3D12_RESOURCE_STATES k3gfxImpl::ConvertToDx12ResourceState(k3resourceState stat
     case k3resourceState::COPY_SOURCE: dx12_state = D3D12_RESOURCE_STATE_COPY_SOURCE; break;
     case k3resourceState::RESOLVE_DEST: dx12_state = D3D12_RESOURCE_STATE_RESOLVE_DEST; break;
     case k3resourceState::RESOLVE_SOURCE: dx12_state = D3D12_RESOURCE_STATE_RESOLVE_SOURCE; break;
+    case k3resourceState::RT_ACCEL_STRUCT: dx12_state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE; break;
     default:
         k3error::Handler("Unknown resource state", "k3gfxImpl::ConvertToDx12ResourceState");
         break;
@@ -1115,11 +1487,12 @@ D3D12_ROOT_PARAMETER_TYPE k3gfxImpl::ConvertToDx12RootParameterType(k3bindingTyp
     D3D12_ROOT_PARAMETER_TYPE dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 
     switch (bind_type) {
-    case k3bindingType::CONSTANT:  dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS; break;
-    case k3bindingType::CBV:       dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_CBV; break;
-    case k3bindingType::SRV:       dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_SRV; break;
-    case k3bindingType::UAV:       dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_UAV; break;
-    case k3bindingType::VIEW_SET:  dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; break;
+    case k3bindingType::CONSTANT:       dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS; break;
+    case k3bindingType::CBV:            dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_CBV; break;
+    case k3bindingType::SRV:            dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_SRV; break;
+    case k3bindingType::UAV:            dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_UAV; break;
+    case k3bindingType::VIEW_SET:       dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; break;
+    case k3bindingType::VIEW_SET_TABLE: dx12_bind_type = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; break;
     }
 
     return dx12_bind_type;
@@ -1414,6 +1787,16 @@ D3D12_TEXTURE_ADDRESS_MODE k3gfxImpl::ConvertToDx12AddrMode(k3texAddr addr_mode)
     return dx12_addr_mode;
 }
 
+D3D12_HIT_GROUP_TYPE k3gfxImpl::ConvertToDx12HitGroupType(k3rtHitGroupType hit_group_type)
+{
+    D3D12_HIT_GROUP_TYPE dx12_hit_group_type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
+    switch (hit_group_type) {
+    case k3rtHitGroupType::TRIANGLES: dx12_hit_group_type = D3D12_HIT_GROUP_TYPE_TRIANGLES; break;
+    case k3rtHitGroupType::PROCEDURAL: dx12_hit_group_type = D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE; break;
+    }
+    return dx12_hit_group_type;
+}
+
 
 k3winObj::k3winObj()
 {
@@ -1569,6 +1952,53 @@ DXGI_FORMAT k3win32Dx12WinImpl::ConvertToDXGIFormat(k3fmt fmt, k3DxgiSurfaceType
     return dxgi_format;
 }
 
+k3fmt k3win32Dx12WinImpl::ConertFromDXGIFormat(DXGI_FORMAT fmt)
+{
+    k3fmt out_fmt = k3fmt::UNKNOWN;
+    switch (fmt) {
+    case DXGI_FORMAT_R8G8B8A8_UNORM: out_fmt = k3fmt::RGBA8_UNORM; break;
+    case DXGI_FORMAT_B8G8R8A8_UNORM: out_fmt = k3fmt::BGRA8_UNORM; break;
+    case DXGI_FORMAT_B8G8R8X8_UNORM: out_fmt = k3fmt::BGRX8_UNORM; break;
+    case DXGI_FORMAT_R16G16B16A16_UNORM: out_fmt = k3fmt::RGBA16_UNORM; break;
+    case DXGI_FORMAT_R16G16B16A16_UINT: out_fmt = k3fmt::RGBA16_UINT; break;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT: out_fmt = k3fmt::RGBA16_FLOAT; break;
+    case DXGI_FORMAT_R32G32B32A32_UINT: out_fmt = k3fmt::RGBA32_UINT; break;
+    case DXGI_FORMAT_R32G32B32A32_FLOAT: out_fmt = k3fmt::RGBA32_FLOAT; break;
+    case DXGI_FORMAT_R10G10B10A2_UNORM: out_fmt = k3fmt::RGB10A2_UNORM; break;
+    case DXGI_FORMAT_B5G5R5A1_UNORM: out_fmt = k3fmt::BGR5A1_UNORM; break;
+    case DXGI_FORMAT_R32G32B32_UINT: out_fmt = k3fmt::RGB32_UINT; break;
+    case DXGI_FORMAT_R32G32B32_FLOAT: out_fmt = k3fmt::RGB32_FLOAT; break;
+    case DXGI_FORMAT_B5G6R5_UNORM: out_fmt = k3fmt::B5G6R5_UNORM; break;
+    case DXGI_FORMAT_R8G8_UNORM: out_fmt = k3fmt::RG8_UNORM; break;
+    case DXGI_FORMAT_R16G16_UNORM: out_fmt = k3fmt::RG16_UNORM; break;
+    case DXGI_FORMAT_R16G16_UINT: out_fmt = k3fmt::RG16_UINT; break;
+    case DXGI_FORMAT_R16G16_FLOAT: out_fmt = k3fmt::RG16_FLOAT; break;
+    case DXGI_FORMAT_R32G32_UINT: out_fmt = k3fmt::RG32_UINT; break;
+    case DXGI_FORMAT_R32G32_FLOAT: out_fmt = k3fmt::RG32_FLOAT; break;
+    case DXGI_FORMAT_R8_UNORM: out_fmt = k3fmt::R8_UNORM; break;
+    case DXGI_FORMAT_A8_UNORM: out_fmt = k3fmt::A8_UNORM; break;
+    case DXGI_FORMAT_R16_UNORM: out_fmt = k3fmt::R16_UNORM; break;
+    case DXGI_FORMAT_R16_UINT: out_fmt = k3fmt::R16_UINT; break;
+    case DXGI_FORMAT_R16_FLOAT: out_fmt = k3fmt::R16_FLOAT; break;
+    case DXGI_FORMAT_R32_UINT: out_fmt = k3fmt::R32_UINT; break;
+    case DXGI_FORMAT_R32_FLOAT: out_fmt = k3fmt::R32_FLOAT; break;
+    case DXGI_FORMAT_BC1_UNORM: out_fmt = k3fmt::BC1_UNORM; break;
+    case DXGI_FORMAT_BC2_UNORM: out_fmt = k3fmt::BC2_UNORM; break;
+    case DXGI_FORMAT_BC3_UNORM: out_fmt = k3fmt::BC3_UNORM; break;
+    case DXGI_FORMAT_BC4_UNORM: out_fmt = k3fmt::BC4_UNORM; break;
+    case DXGI_FORMAT_BC5_UNORM: out_fmt = k3fmt::BC5_UNORM; break;
+    case DXGI_FORMAT_BC7_UNORM: out_fmt = k3fmt::BC7_UNORM; break;
+    case DXGI_FORMAT_D16_UNORM: out_fmt = k3fmt::D16_UNORM; break;
+    case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: out_fmt = k3fmt::D24X8_UNORM; break;
+    case DXGI_FORMAT_D24_UNORM_S8_UINT: out_fmt = k3fmt::D24_UNORM_S8_UINT; break;
+    case DXGI_FORMAT_D32_FLOAT: out_fmt = k3fmt::D32_FLOAT; break;
+    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: out_fmt = k3fmt::D32_FLOAT_S8X24_UINT; break;
+    }
+
+    return out_fmt;
+}
+
+
 void k3win32Dx12WinImpl::ResizeBackBuffer()
 {
     DXGI_FORMAT dxgi_fmt = ConvertToDXGIFormat(_color_fmt, k3DxgiSurfaceType::COLOR);
@@ -1664,6 +2094,8 @@ void k3win32Dx12WinImpl::ResizeBackBuffer()
 k3gfxImpl::k3gfxImpl()
 {
     _dev = NULL;
+    _dev5 = NULL;
+    _dxr_tier = 0;
 #ifdef _DEBUG
     _dbg_dev = NULL;
 #endif
@@ -1691,6 +2123,7 @@ k3gfxObj::~k3gfxObj()
         if (_data->_dbg_dev) _data->_dbg_dev->Release();
 #endif
         if (_data->_dev) _data->_dev->Release();
+        if (_data->_dev5) _data->_dev5->Release();
         delete _data;
         _data = NULL;
     }
@@ -1822,6 +2255,7 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     // find the right adapter
     DXGI_ADAPTER_DESC1 desc;
     UINT adapter_index;
+    bool adapter_found = false;
     if (k3gfxImpl::_adapter == NULL) {
         for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapters1(adapter_index, &k3gfxImpl::_adapter) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
             k3gfxImpl::_adapter->GetDesc1(&desc);
@@ -1829,11 +2263,11 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
             // Dont select software renderer
             if (!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
 
-                // if it support D2D12, then we got what we need
                 hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), NULL);
                 if (hr == S_FALSE) {
                     size_t bytes_converted;
                     wcstombs_s(&bytes_converted, k3gfxImpl::_adapter_name, desc.Description, 128);
+                    adapter_found = true;
                     break;
                 }
             }
@@ -1843,12 +2277,35 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
         }
     }
 
-    // Create the device, and debug device if needed
+    // if nothing found, error out
+    if (!adapter_found) {
+        k3error::Handler("Could not find dx12 device", "k3gfxObj::Create");
+        return NULL;
+    }
+
+    // Create a dxr device, and copy the handle to the standard device
     hr = D3D12CreateDevice(k3gfxImpl::_adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&(gfx->_data->_dev)));
+    gfx->_data->_dev->QueryInterface(IID_PPV_ARGS(&(gfx->_data->_dev5)));
+
+    // Create the device, and debug device if needed
     if (hr != S_OK) {
         k3error::Handler("Could not create d3d12 device", "k3gfxObj::Create");
         return NULL;
     }
+
+    // Check DXR tier
+    D3D12_FEATURE_DATA_D3D12_OPTIONS5 opt5 = { 0 };
+    hr = gfx->_data->_dev5->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &opt5, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5));
+    if (hr != S_OK) {
+        k3error::Handler("Could not get feature support", "k3gfxObj::Create");
+        return NULL;
+    }
+    switch (opt5.RaytracingTier) {
+    case D3D12_RAYTRACING_TIER_NOT_SUPPORTED: gfx->_data->_dxr_tier = 0; break;
+    case D3D12_RAYTRACING_TIER_1_0: gfx->_data->_dxr_tier = 10; break;
+    case D3D12_RAYTRACING_TIER_1_1: gfx->_data->_dxr_tier = 11; break;
+    }
+
 #ifdef _DEBUG
     hr = gfx->_data->_dev->QueryInterface(&(gfx->_data->_dbg_dev));
     if (hr != S_OK) {
@@ -1898,6 +2355,11 @@ K3API const char* k3gfxObj::AdapterName()
     return k3gfxImpl::_adapter_name;
 }
 
+K3API uint32_t k3gfxObj::GetRayTracingSupport()
+{
+    return _data->_dxr_tier;
+}
+
 K3API k3fence k3gfxObj::CreateFence()
 {
     k3fence fence = new k3fenceObj;
@@ -1932,7 +2394,13 @@ K3API k3cmdBuf k3gfxObj::CreateCmdBuf()
             return NULL;
         }
     }
-    hr = _data->_dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_impl->_cmd_alloc[0], NULL, IID_PPV_ARGS(&cmd_impl->_cmd_list));
+    if (_data->_dev5) {
+        // if we have a dx12.1 device, we cann create command lst 4, which is needed for DXR
+        hr = _data->_dev5->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_impl->_cmd_alloc[0], NULL, IID_PPV_ARGS(&cmd_impl->_cmd_list4));
+        cmd_impl->_cmd_list = cmd_impl->_cmd_list4;
+    } else {
+        hr = _data->_dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_impl->_cmd_alloc[0], NULL, IID_PPV_ARGS(&cmd_impl->_cmd_list));
+    }
     if (hr != S_OK) {
         k3error::Handler("Could not create command list", "k3gfxObj::CreateCmdBuf");
         return NULL;
@@ -1954,18 +2422,27 @@ K3API void k3gfxObj::SubmitCmdBuf(k3cmdBuf cmd)
 
 K3API k3shaderBinding k3gfxObj::CreateShaderBinding(uint32_t num_params, k3bindingParam* params, uint32_t num_samplers, k3samplerDesc* samplers)
 {
+    return CreateTypedShaderBinding(num_params, params, num_samplers, samplers, k3shaderBindingType::GLOBAL);
+}
+
+K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3bindingParam* params, uint32_t num_samplers, k3samplerDesc* samplers, k3shaderBindingType sh_bind_type)
+{
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc;
-    D3D12_ROOT_PARAMETER1* dx12_params = new D3D12_ROOT_PARAMETER1[num_params];
+    D3D12_ROOT_PARAMETER1* dx12_params = (num_params) ? new D3D12_ROOT_PARAMETER1[num_params] : NULL;
     D3D12_STATIC_SAMPLER_DESC* dx12_samplers = (num_samplers) ? new D3D12_STATIC_SAMPLER_DESC[num_samplers] : NULL;
     desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
     desc.Desc_1_1.NumParameters = num_params;
     desc.Desc_1_1.pParameters = dx12_params;
     desc.Desc_1_1.NumStaticSamplers = num_samplers;
     desc.Desc_1_1.pStaticSamplers = dx12_samplers;
-    desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    if (sh_bind_type == k3shaderBindingType::GLOBAL) {
+        desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    } else {
+        desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+    }
     D3D12_DESCRIPTOR_RANGE1 dx12_desc_range[128];
     uint32_t r = 0;
-    uint32_t i;
+    uint32_t i, j;
     for (i = 0; i < num_params; i++) {
         dx12_params[i].ParameterType = k3gfxImpl::ConvertToDx12RootParameterType(params[i].type);
         dx12_params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
@@ -1984,14 +2461,27 @@ K3API k3shaderBinding k3gfxObj::CreateShaderBinding(uint32_t num_params, k3bindi
             break;
         case k3bindingType::VIEW_SET:
             dx12_params[i].DescriptorTable.NumDescriptorRanges = 1;
+            dx12_params[i].DescriptorTable.pDescriptorRanges = &dx12_desc_range[r];
             dx12_desc_range[r].NumDescriptors = params[i].view_set_desc.num_views;
             dx12_desc_range[r].RangeType = k3gfxImpl::ConvertToDx12ShaderBindType(params[i].view_set_desc.type);
             dx12_desc_range[r].BaseShaderRegister = params[i].view_set_desc.reg;
             dx12_desc_range[r].RegisterSpace = params[i].view_set_desc.space;
             dx12_desc_range[r].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;// params[i].view_set_desc.offset;
             dx12_desc_range[r].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
-            dx12_params[i].DescriptorTable.pDescriptorRanges = &dx12_desc_range[r];
             r++;
+            break;
+        case k3bindingType::VIEW_SET_TABLE:
+            dx12_params[i].DescriptorTable.NumDescriptorRanges = params[i].view_set_table_desc.num_view_sets;
+            dx12_params[i].DescriptorTable.pDescriptorRanges = &dx12_desc_range[r];
+            for (j = 0; j < params[i].view_set_table_desc.num_view_sets; j++) {
+                dx12_desc_range[r].NumDescriptors = params[i].view_set_table_desc.view_sets[j].num_views;
+                dx12_desc_range[r].RangeType = k3gfxImpl::ConvertToDx12ShaderBindType(params[i].view_set_table_desc.view_sets[j].type);
+                dx12_desc_range[r].BaseShaderRegister = params[i].view_set_table_desc.view_sets[j].reg;
+                dx12_desc_range[r].RegisterSpace = params[i].view_set_table_desc.view_sets[j].space;
+                dx12_desc_range[r].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;// params[i].view_set_table_desc.view_sets[j].offset;
+                dx12_desc_range[r].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
+                r++;
+            }
             break;
         }
     }
@@ -2014,7 +2504,7 @@ K3API k3shaderBinding k3gfxObj::CreateShaderBinding(uint32_t num_params, k3bindi
     ID3DBlob* error;
     HRESULT hr;
     hr = D3D12SerializeVersionedRootSignature(&desc, &serial_sig, &error);
-    delete[] dx12_params;
+    if(dx12_params) delete[] dx12_params;
     if (dx12_samplers) delete[] dx12_samplers;
     if (hr != S_OK) {
         k3error::Handler("Could not serialize root signature", "k3gfxObj::CreateShaderBinding");
@@ -2027,6 +2517,7 @@ K3API k3shaderBinding k3gfxObj::CreateShaderBinding(uint32_t num_params, k3bindi
         k3error::Handler("Could not create root signature", "k3gfxObj::CreateShaderBinding");
         return NULL;
     }
+    binding_impl->_type = sh_bind_type;
     return binding;
 }
 
@@ -2064,6 +2555,7 @@ K3API k3shader k3gfxObj::CompileShaderFromString(const char* code, k3shaderType 
     case k3shaderType::GEOMETRY_SHADER: target = "gs_5_0"; break;
     case k3shaderType::HULL_SHADER:     target = "hs_5_0"; break;
     case k3shaderType::DOMAIN_SHADER:   target = "ds_5_0"; break;
+    case k3shaderType::LIBRARY:         target = "lib_6_3"; break;
     }
     hr = D3DCompile(code, code_len, NULL, NULL, NULL, "main", target, 0, 0, &byte_code, &error_code);
     if (hr != S_OK) {
@@ -2101,6 +2593,164 @@ K3API k3shader k3gfxObj::CompileShaderFromFile(const char* file_name, k3shaderTy
     k3shader shader = CompileShaderFromString(code, shader_type);
     delete[] code;
     return shader;
+}
+
+K3API k3rtState k3gfxObj::CreateRTState(uint32_t num_elements, const k3rtStateDesc* desc)
+{
+    if (num_elements == 0) {
+        k3error::Handler("No elements for RT state", "k3gfxObj::CreateRTState");
+        return NULL;
+    }
+
+    uint32_t i, j;
+    uint32_t num_shaders = 0;
+    uint32_t num_shader_bindings = 0;
+    D3D12_STATE_SUBOBJECT* subobj = new D3D12_STATE_SUBOBJECT[num_elements];
+
+    D3D12_DXIL_LIBRARY_DESC* dx12_shader_desc;
+    D3D12_HIT_GROUP_DESC* dx12_hit_group_desc;
+    D3D12_LOCAL_ROOT_SIGNATURE* dx12_local_root_sig;
+    D3D12_GLOBAL_ROOT_SIGNATURE* dx12_global_root_sig;
+    D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION* dx12_export_assoc;
+    D3D12_RAYTRACING_SHADER_CONFIG* dx12_shader_config;
+    D3D12_RAYTRACING_PIPELINE_CONFIG* dx12_pipe_config;
+    for (i = 0; i < num_elements; i++) {
+        switch (desc[i].type) {
+        case k3rtStateType::SHADER:
+            num_shaders++;
+            dx12_shader_desc = new D3D12_DXIL_LIBRARY_DESC;
+            dx12_shader_desc->DXILLibrary = desc[i].shader.obj->getImpl()->_byte_code;
+            dx12_shader_desc->NumExports = desc[i].shader.num_entries;
+            dx12_shader_desc->pExports = (dx12_shader_desc->NumExports) ? new D3D12_EXPORT_DESC[dx12_shader_desc->NumExports] : NULL;
+            for (j = 0; j < dx12_shader_desc->NumExports; j++) {
+                dx12_shader_desc->pExports[j].Name = createWideString(desc[i].shader.entries[j]);
+                dx12_shader_desc->pExports[j].ExportToRename = NULL;
+                dx12_shader_desc->pExports[j].Flags = D3D12_EXPORT_FLAG_NONE;
+            }
+            subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
+            subobj[i].pDesc = dx12_shader_desc;
+            break;
+        case k3rtStateType::HIT_GROUP:
+            dx12_hit_group_desc = new D3D12_HIT_GROUP_DESC;
+            dx12_hit_group_desc->Type = k3gfxImpl::ConvertToDx12HitGroupType(desc[i].elem.hit_group.type);
+            dx12_hit_group_desc->HitGroupExport = (desc[i].elem.hit_group.name) ? createWideString(desc[i].elem.hit_group.name) : NULL;
+            dx12_hit_group_desc->AnyHitShaderImport = (desc[i].elem.hit_group.any_hit_shader) ? createWideString(desc[i].elem.hit_group.any_hit_shader) : NULL;
+            dx12_hit_group_desc->ClosestHitShaderImport = (desc[i].elem.hit_group.closest_hit_shader) ? createWideString(desc[i].elem.hit_group.closest_hit_shader) : NULL;
+            dx12_hit_group_desc->IntersectionShaderImport = (desc[i].elem.hit_group.intersection_shader) ? createWideString(desc[i].elem.hit_group.intersection_shader) : NULL;
+            subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+            subobj[i].pDesc = dx12_hit_group_desc;
+            break;
+        case k3rtStateType::SHADER_BINDING:
+            num_shader_bindings++;
+            if (desc[i].shader_binding->getType() == k3shaderBindingType::LOCAL) {
+                dx12_local_root_sig = new D3D12_LOCAL_ROOT_SIGNATURE;
+                dx12_local_root_sig->pLocalRootSignature = desc[i].shader_binding->getImpl()->_binding;
+                subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+                subobj[i].pDesc = dx12_local_root_sig;
+            } else {
+                dx12_global_root_sig = new D3D12_GLOBAL_ROOT_SIGNATURE;
+                dx12_global_root_sig->pGlobalRootSignature = desc[i].shader_binding->getImpl()->_binding;
+                subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+                subobj[i].pDesc = dx12_global_root_sig;
+            }
+            break;
+        case k3rtStateType::EXPORT_ASSOCIATION:
+            dx12_export_assoc = new D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+            dx12_export_assoc->NumExports = desc[i].elem.export_association.num_exports;
+            if (dx12_export_assoc->NumExports) {
+                dx12_export_assoc->pExports = new const wchar_t* [dx12_export_assoc->NumExports];
+                for (j = 0; j < dx12_export_assoc->NumExports; j++) {
+                    dx12_export_assoc->pExports[j] = createWideString(desc[i].elem.export_association.export_names[j]);
+                }
+                dx12_export_assoc->pSubobjectToAssociate = &(subobj[desc[i].elem.export_association.association_index]);
+            } else {
+                dx12_export_assoc->pExports = NULL;
+                dx12_export_assoc->pSubobjectToAssociate = NULL;
+            }
+            subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+            subobj[i].pDesc = dx12_export_assoc;
+            break;
+        case k3rtStateType::SHADER_CONFIG:
+            dx12_shader_config = new D3D12_RAYTRACING_SHADER_CONFIG;
+            dx12_shader_config->MaxAttributeSizeInBytes = desc[i].elem.shader_config.attrib_size;
+            dx12_shader_config->MaxPayloadSizeInBytes = desc[i].elem.shader_config.payload_size;
+            subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
+            subobj[i].pDesc = dx12_shader_config;
+            break;
+        case k3rtStateType::PIPELINE_CONFIG:
+            dx12_pipe_config = new D3D12_RAYTRACING_PIPELINE_CONFIG;
+            dx12_pipe_config->MaxTraceRecursionDepth = desc[i].elem.pipeline_config.max_recursion;
+            subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
+            subobj[i].pDesc = dx12_pipe_config;
+            break;
+        }
+    }
+
+    k3rtState rt_state = new k3rtStateObj;
+    k3rtStateImpl* rt_state_impl = rt_state->getImpl();
+    D3D12_STATE_OBJECT_DESC dx12_state_obj_desc = {};
+    dx12_state_obj_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+    dx12_state_obj_desc.NumSubobjects = num_elements;
+    dx12_state_obj_desc.pSubobjects = subobj;
+    HRESULT hr = _data->_dev5->CreateStateObject(&dx12_state_obj_desc, IID_PPV_ARGS(&(rt_state_impl->_state)));
+    // Do error checking after we free up all temporary memory
+
+    uint32_t sh = 0, shb = 0;
+    rt_state_impl->_shaders = (num_shaders) ? new k3shader[num_shaders] : NULL;
+    rt_state_impl->_shader_bindings = (num_shader_bindings) ? new k3shaderBinding[num_shader_bindings] : NULL;
+    for (i = 0; i < num_elements; i++) {
+        switch (desc[i].type) {
+        case k3rtStateType::SHADER:
+            // Keep a reference to the shader
+            rt_state_impl->_shaders[sh] = desc[i].shader.obj;
+            sh++;
+            dx12_shader_desc = (D3D12_DXIL_LIBRARY_DESC*)subobj[i].pDesc;
+            if (dx12_shader_desc->pExports) {
+                for (j = 0; j < dx12_shader_desc->NumExports; j++) {
+                    delete[] dx12_shader_desc->pExports[j].Name;
+                }
+                delete[] dx12_shader_desc->pExports;
+            }
+            break;
+        case k3rtStateType::HIT_GROUP:
+            dx12_hit_group_desc = (D3D12_HIT_GROUP_DESC*)subobj[i].pDesc;
+            if (dx12_hit_group_desc->HitGroupExport) delete[] dx12_hit_group_desc->HitGroupExport;
+            if (dx12_hit_group_desc->AnyHitShaderImport) delete[] dx12_hit_group_desc->AnyHitShaderImport;
+            if (dx12_hit_group_desc->ClosestHitShaderImport) delete[] dx12_hit_group_desc->ClosestHitShaderImport;
+            if (dx12_hit_group_desc->IntersectionShaderImport) delete[] dx12_hit_group_desc->IntersectionShaderImport;
+            break;
+        case k3rtStateType::SHADER_BINDING:
+            // Keep a reference to the shader bindings
+            if (desc[i].shader_binding->getType() == k3shaderBindingType::GLOBAL) {
+                // Put the global shader binding in the first slot
+                rt_state_impl->_shader_bindings[shb] = rt_state_impl->_shader_bindings[0];
+                rt_state_impl->_shader_bindings[0] = desc[i].shader_binding;
+            } else {
+                rt_state_impl->_shader_bindings[shb] = desc[i].shader_binding;
+            }
+            shb++;
+            break;
+        case k3rtStateType::EXPORT_ASSOCIATION:
+            dx12_export_assoc = (D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION*)subobj[i].pDesc;
+            if (dx12_export_assoc->NumExports) {
+                for (j = 0; j < dx12_export_assoc->NumExports; j++) {
+                    delete[] dx12_export_assoc->pExports[j];
+                }
+                delete[] dx12_export_assoc->pExports;
+            }
+            break;
+        }
+        delete subobj[i].pDesc;
+    }
+
+    delete[] subobj;
+
+    if (hr != S_OK) {
+        k3error::Handler("Could not create RT State object", "k3gfxObj::CreateRTState");
+        return NULL;
+    }
+
+    return rt_state;
 }
 
 
@@ -2196,6 +2846,60 @@ K3API k3gfxState k3gfxObj::CreateGfxState(const k3gfxStateDesc* desc)
     return state;
 }
 
+K3API k3rtStateTable k3gfxObj::CreateRTStateTable(const k3rtStateTableDesc* desc)
+{
+    HRESULT hr;
+    k3rtStateTable state_table = new k3rtStateTableObj;
+    k3rtStateTableImpl* state_table_impl = state_table->getImpl();
+    state_table_impl->_resource = new k3resourceObj;
+    k3resourceImpl* resource_impl = state_table_impl->_resource->getImpl();
+    state_table_impl->_num_args = desc->num_args;
+    state_table_impl->_num_entries = desc->num_entries;
+    uint32_t entry_size = state_table_impl->getEntrySize();
+    uint32_t table_size = state_table_impl->_num_entries * entry_size;
+    table_size = (table_size + 0xFF) & ~0xFF;  // pad it out to 256B
+
+    D3D12_RESOURCE_DESC dx12_resource_desc = {};
+    dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    dx12_resource_desc.Width = table_size;
+    dx12_resource_desc.Height = 1;
+    dx12_resource_desc.DepthOrArraySize = 1;
+    dx12_resource_desc.MipLevels = 1;
+    dx12_resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+    dx12_resource_desc.SampleDesc.Count = 1;
+    dx12_resource_desc.SampleDesc.Quality = 0;
+    dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    if (desc->mem_pool == NULL) {
+        // no mem pool defined, so create a committed resource
+        D3D12_HEAP_PROPERTIES dx12_heap_prop;
+        dx12_heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
+        dx12_heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        dx12_heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        dx12_heap_prop.CreationNodeMask = 0;
+        dx12_heap_prop.VisibleNodeMask = 0;
+        D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
+        hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&resource_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create committed resource", "k3gfxObj::CreateRTStateTable");
+            return NULL;
+        }
+    } else {
+        // mem pool specified, so create placed resource
+        const k3memPoolImpl* mem_pool_impl = desc->mem_pool->getImpl();
+        hr = _data->_dev->CreatePlacedResource(mem_pool_impl->_heap, desc->mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&resource_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create placed resource", "k3gfxObj::CreateRTStateTable");
+            return NULL;
+        }
+        resource_impl->_pool = desc->mem_pool;
+    }
+    return state_table;
+}
+
+
 K3API k3memPool k3gfxObj::CreateMemPool(uint64_t size, k3memType mem_type, uint32_t flag)
 {
     D3D12_HEAP_DESC heap_desc;
@@ -2284,8 +2988,8 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
         dx12_resource_desc.Flags |= ((is_depth) ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
         dx12_clear_ptr = &dx12_clear;
     }
-    if (srv_desc == NULL) dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
     if (uav_desc) dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    else if (srv_desc == NULL) dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
     k3resourceState init_state = k3resourceState::COMMON;
     D3D12_RESOURCE_STATES dx_init_state = k3gfxImpl::ConvertToDx12ResourceState(init_state, is_depth);
     if (rdesc->mem_pool == NULL) {
@@ -2561,6 +3265,18 @@ K3API k3sampler k3gfxObj::CreateSampler(const k3samplerDesc* sdesc)
     return sampler;
 }
 
+uint32_t pad256(uint32_t size)
+{
+    uint32_t mask = ~((uint32_t)0xFF);
+    return (size + 0xFF) & mask;
+}
+
+uint64_t pad256(uint64_t size)
+{
+    uint64_t mask = ~((uint64_t)0xFF);
+    return (size + 0xFF) & mask;
+}
+
 K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
 {
     HRESULT hr;
@@ -2569,7 +3285,7 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     buffer_impl->_resource = new k3resourceObj;
     k3resourceImpl* resource_impl = buffer_impl->_resource->getImpl();
     uint32_t padded_size = bdesc->size;
-    if (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0) padded_size = (padded_size + 0xFF) & ~0xFF;
+    if (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0) padded_size = pad256(padded_size);
     D3D12_RESOURCE_DESC dx12_resource_desc = {};
     dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
@@ -2630,3 +3346,466 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     buffer_impl->_stride = bdesc->stride;
     return buffer;
 }
+
+K3API k3blas k3gfxObj::CreateBlas(const k3blasCreateDesc* bldesc)
+{
+    if (bldesc->vb == NULL) {
+        k3error::Handler("No vertex buffer for BLAS creation", "k3gfxObj::CreateBlas");
+        return NULL;
+    }
+    const k3bufferImpl* vb_impl = bldesc->vb->getImpl();
+    const k3resourceImpl* vb_res_impl = vb_impl->_resource->getImpl();
+    switch (vb_res_impl->_format) {
+    // legal formats
+    case k3fmt::RG32_FLOAT:
+    case k3fmt::RGB32_FLOAT:
+    case k3fmt::RG16_FLOAT:
+    case k3fmt::RGBA16_FLOAT:
+    // TODO: add format support for SNORM
+    //case k3fmt::RG16_SNORM:
+    //case k3fmt::RGBA16_SNORM:
+        break;
+    case k3fmt::RG16_UNORM:
+    case k3fmt::RGBA16_UNORM:
+    case k3fmt::RGB10A2_UNORM:
+    case k3fmt::RG8_UNORM:
+    case k3fmt::RGBA8_UNORM:
+    // TODO: add format support for SNORM
+    //case k3fmt::RG8_SNORM:
+    //case k3fmt::RGBA8_SNORM:
+        if (_data->_dxr_tier >= 11) break;
+    default:
+        k3error::Handler("Illegal vertex format", "k3gfxObj::CreateBlas");
+        return NULL;
+    }
+
+    HRESULT hr;
+    k3blas blas = new k3blasObj;
+    k3blasImpl* blas_impl = blas->getImpl();
+
+    D3D12_RAYTRACING_GEOMETRY_DESC* geom = &blas_impl->_geom;
+    geom->Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    geom->Triangles.VertexBuffer.StartAddress = vb_res_impl->_dx12_resource->GetGPUVirtualAddress();
+    geom->Triangles.VertexBuffer.StrideInBytes = vb_impl->_stride;
+    geom->Triangles.VertexCount = (uint32_t)(vb_res_impl->_width / vb_impl->_stride);
+    geom->Triangles.VertexFormat = k3win32Dx12WinImpl::ConvertToDXGIFormat(vb_res_impl->_format, k3DxgiSurfaceType::COLOR);
+    if (bldesc->ib != NULL) {
+        const k3bufferImpl* ib_impl = bldesc->ib->getImpl();
+        const k3resourceImpl* ib_res_impl = ib_impl->_resource->getImpl();
+        geom->Triangles.IndexBuffer = ib_res_impl->_dx12_resource->GetGPUVirtualAddress();
+        geom->Triangles.IndexFormat = k3win32Dx12WinImpl::ConvertToDXGIFormat(ib_res_impl->_format, k3DxgiSurfaceType::COLOR);
+        geom->Triangles.IndexCount = (uint32_t)(ib_res_impl->_width / ((ib_res_impl->_format == k3fmt::R16_UINT) ? 2 : 4));
+    } else {
+        geom->Triangles.IndexBuffer = NULL;
+        geom->Triangles.IndexFormat = DXGI_FORMAT_UNKNOWN;
+        geom->Triangles.IndexCount = 0;
+    }
+    // TODO: add support for transform
+    geom->Triangles.Transform3x4 = 0;
+    // TODO: add support for other kinds of geometry (transparent, etc)
+    geom->Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+
+    blas_impl->_ib = bldesc->ib;
+    blas_impl->_vb = bldesc->vb;
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = {};
+    as_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+    as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    as_inputs.pGeometryDescs = geom;
+    as_inputs.NumDescs = 1;
+    as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO as_build_info = {};
+    _data->_dev5->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &as_build_info);
+    blas_impl->_size.rtas_size = pad256(as_build_info.ResultDataMaxSizeInBytes);
+    blas_impl->_size.create_size = pad256(as_build_info.ScratchDataSizeInBytes);
+    blas_impl->_size.update_size = pad256(as_build_info.UpdateScratchDataSizeInBytes);
+
+    // These need to be allocated in a separate call AllocBlas
+    // if alloc falg is false
+    // this is needed to create as a placed resource instead of a committed one
+    blas_impl->_blas = NULL;
+    blas_impl->_create_scratch = NULL;
+    blas_impl->_update_scratch = NULL;
+
+    if (bldesc->alloc) {
+        // Allocates data structures in committed memory
+        blas_impl->_blas = new k3resourceObj;
+        k3resourceImpl* res_impl = blas_impl->_blas->getImpl();
+
+        D3D12_RESOURCE_DESC dx12_resource_desc = {};
+        dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        dx12_resource_desc.Width = blas_impl->_size.rtas_size;
+        dx12_resource_desc.Height = 1;
+        dx12_resource_desc.DepthOrArraySize = 1;
+        dx12_resource_desc.MipLevels = 1;
+        dx12_resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+        dx12_resource_desc.SampleDesc.Count = 1;
+        dx12_resource_desc.SampleDesc.Quality = 0;
+        dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+        D3D12_HEAP_PROPERTIES dx12_heap_prop;
+        dx12_heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
+        dx12_heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        dx12_heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        dx12_heap_prop.CreationNodeMask = 0;
+        dx12_heap_prop.VisibleNodeMask = 0;
+        D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
+        hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create BLAS resource", "k3gfxObj::CreateBlas");
+            return NULL;
+        }
+        res_impl->_width = blas_impl->_size.rtas_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = vb_res_impl->_format;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::RT_ACCEL_STRUCT;
+        res_impl->_samples = 1;
+
+        if (blas_impl->_size.create_size) {
+            blas_impl->_create_scratch = new k3resourceObj;
+            res_impl = blas_impl->_create_scratch->getImpl();
+            dx12_resource_desc.Width = blas_impl->_size.create_size;
+            hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+            if (hr != S_OK) {
+                k3error::Handler("Could not create create_scatch resource", "k3gfxObj::CreateBlas");
+                return NULL;
+            }
+            res_impl->_width = blas_impl->_size.create_size;
+            res_impl->_height = 1;
+            res_impl->_depth = 1;
+            res_impl->_format = k3fmt::UNKNOWN;
+            res_impl->_max_mip = 1;
+            res_impl->_resource_state = k3resourceState::COMMON;
+            res_impl->_samples = 1;
+        }
+
+        if (blas_impl->_size.update_size) {
+            blas_impl->_update_scratch = new k3resourceObj;
+            res_impl = blas_impl->_update_scratch->getImpl();
+            dx12_resource_desc.Width = blas_impl->_size.update_size;
+            hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+            if (hr != S_OK) {
+                k3error::Handler("Could not create update_scratch resource", "k3gfxObj::CreateBlas");
+                return NULL;
+            }
+            res_impl->_width = blas_impl->_size.update_size;
+            res_impl->_height = 1;
+            res_impl->_depth = 1;
+            res_impl->_format = k3fmt::UNKNOWN;
+            res_impl->_max_mip = 1;
+            res_impl->_resource_state = k3resourceState::COMMON;
+            res_impl->_samples = 1;
+        }
+    }
+
+    return blas;
+}
+
+K3API void k3gfxObj::AllocBlas(k3blas bl, const k3rtasAllocDesc* rtadesc)
+{
+    HRESULT hr;
+    k3blasImpl* blas_impl = bl->getImpl();
+    const k3bufferImpl* vb_impl = blas_impl->_vb->getImpl();
+    const k3resourceImpl* vb_res_impl = vb_impl->_resource->getImpl();
+
+    // Allocates data structures in placed memory
+    blas_impl->_blas = new k3resourceObj;
+    k3resourceImpl* res_impl = blas_impl->_blas->getImpl();
+
+    D3D12_RESOURCE_DESC dx12_resource_desc = {};
+    dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    dx12_resource_desc.Width = blas_impl->_size.rtas_size;
+    dx12_resource_desc.Height = 1;
+    dx12_resource_desc.DepthOrArraySize = 1;
+    dx12_resource_desc.MipLevels = 1;
+    dx12_resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+    dx12_resource_desc.SampleDesc.Count = 1;
+    dx12_resource_desc.SampleDesc.Quality = 0;
+    dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    hr = _data->_dev->CreatePlacedResource(rtadesc->rtas_mem_pool->getImpl()->_heap, rtadesc->rtas_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+    if (hr != S_OK) {
+        k3error::Handler("Could not allocate BLAS resource", "k3gfxObj::AllocBlas");
+        return;
+    }
+    res_impl->_width = blas_impl->_size.rtas_size;
+    res_impl->_height = 1;
+    res_impl->_depth = 1;
+    res_impl->_format = vb_res_impl->_format;
+    res_impl->_max_mip = 1;
+    res_impl->_resource_state = k3resourceState::RT_ACCEL_STRUCT;
+    res_impl->_samples = 1;
+
+    if (blas_impl->_size.create_size) {
+        blas_impl->_create_scratch = new k3resourceObj;
+        res_impl = blas_impl->_create_scratch->getImpl();
+        dx12_resource_desc.Width = blas_impl->_size.create_size;
+        hr = _data->_dev->CreatePlacedResource(rtadesc->create_mem_pool->getImpl()->_heap, rtadesc->create_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not allocate create_scatch resource", "k3gfxObj::AllocBlas");
+            return;
+        }
+        res_impl->_width = blas_impl->_size.create_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = k3fmt::UNKNOWN;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::COMMON;
+        res_impl->_samples = 1;
+    }
+
+    if (blas_impl->_size.update_size) {
+        blas_impl->_update_scratch = new k3resourceObj;
+        res_impl = blas_impl->_update_scratch->getImpl();
+        dx12_resource_desc.Width = blas_impl->_size.update_size;
+        hr = _data->_dev->CreatePlacedResource(rtadesc->update_mem_pool->getImpl()->_heap, rtadesc->update_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not allocate update_scratch resource", "k3gfxObj::AllocBlas");
+            return;
+        }
+        res_impl->_width = blas_impl->_size.update_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = k3fmt::UNKNOWN;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::COMMON;
+        res_impl->_samples = 1;
+    }
+}
+
+K3API k3tlas k3gfxObj::CreateTlas(const k3tlasCreateDesc* tldesc)
+{
+    HRESULT hr;
+    k3tlas tlas = new k3tlasObj;
+    k3tlasImpl* tlas_impl = tlas->getImpl();
+
+    // Create a copy of the instance information
+    tlas_impl->_num_instances = tldesc->num_instances;
+    tlas_impl->_instances = new k3tlasInstance[tlas_impl->_num_instances];
+    uint32_t i;
+    for (i = 0; i < tlas_impl->_num_instances; i++) {
+        memcpy(tlas_impl->_instances[i].transform, tldesc->instances[i].transform, 12 * sizeof(float));
+        tlas_impl->_instances[i].id = tldesc->instances[i].id;
+        tlas_impl->_instances[i].hit_group = tldesc->instances[i].hit_group;
+        tlas_impl->_instances[i].mask = tldesc->instances[i].mask;
+        tlas_impl->_instances[i].flags = tldesc->instances[i].flags;
+        tlas_impl->_instances[i].blas = tldesc->instances[i].blas;
+    }
+
+    // Create upload buffer for TLAS instances, and copy instance information
+    tlas_impl->_instance_upbuf = CreateUploadBuffer();
+    D3D12_RAYTRACING_INSTANCE_DESC* inst = (D3D12_RAYTRACING_INSTANCE_DESC*)tlas_impl->_instance_upbuf->MapForWrite(tlas_impl->_num_instances * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+    for (i = 0; i < tlas_impl->_num_instances; i++) {
+        memcpy(inst[i].Transform, tlas_impl->_instances[i].transform, 12 * sizeof(float));
+        inst[i].InstanceID = tlas_impl->_instances[i].id;
+        inst[i].InstanceContributionToHitGroupIndex = tlas_impl->_instances[i].hit_group;
+        inst[i].InstanceMask = tlas_impl->_instances[i].mask;
+        inst[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;  // TODO: implement flags
+        inst[i].AccelerationStructure = tlas_impl->_instances[i].blas->getImpl()->_blas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    }
+    tlas_impl->_instance_upbuf->Unmap();
+
+    // Get size of acceleration structure
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = {};
+    as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+    as_inputs.NumDescs = tlas_impl->_num_instances;
+    as_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO as_build_info = {};
+    _data->_dev5->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &as_build_info);
+    tlas_impl->_size.rtas_size = pad256(as_build_info.ResultDataMaxSizeInBytes);
+    tlas_impl->_size.create_size = pad256(as_build_info.ScratchDataSizeInBytes);
+    tlas_impl->_size.update_size = pad256(as_build_info.UpdateScratchDataSizeInBytes);
+
+    // These need to be allocated in a separate call AllocTlas
+    // if alloc flag is false
+    // this is needed to create as a placed resource instead of a committed one
+    tlas_impl->_tlas = NULL;
+    tlas_impl->_create_scratch = NULL;
+    tlas_impl->_update_scratch = NULL;
+
+    if (tldesc->alloc) {
+        // Allocate data structures in committed memory
+        tlas_impl->_tlas = new k3resourceObj;
+        k3resourceImpl* res_impl = tlas_impl->_tlas->getImpl();
+
+        D3D12_RESOURCE_DESC dx12_resource_desc = {};
+        dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        dx12_resource_desc.Width = tlas_impl->_size.rtas_size;
+        dx12_resource_desc.Height = 1;
+        dx12_resource_desc.DepthOrArraySize = 1;
+        dx12_resource_desc.MipLevels = 1;
+        dx12_resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+        dx12_resource_desc.SampleDesc.Count = 1;
+        dx12_resource_desc.SampleDesc.Quality = 0;
+        dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+        D3D12_HEAP_PROPERTIES dx12_heap_prop;
+        dx12_heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
+        dx12_heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        dx12_heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        dx12_heap_prop.CreationNodeMask = 0;
+        dx12_heap_prop.VisibleNodeMask = 0;
+        D3D12_HEAP_FLAGS dx12_heap_flags = D3D12_HEAP_FLAG_NONE;
+        hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create TLAS resource", "k3gfxObj::CreateTlas");
+            return NULL;
+        }
+        res_impl->_width = tlas_impl->_size.rtas_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = k3fmt::UNKNOWN;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::RT_ACCEL_STRUCT;
+        res_impl->_samples = 1;
+
+        if (tlas_impl->_size.create_size) {
+            tlas_impl->_create_scratch = new k3resourceObj;
+            res_impl = tlas_impl->_create_scratch->getImpl();
+            dx12_resource_desc.Width = tlas_impl->_size.create_size;
+            hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+            if (hr != S_OK) {
+                k3error::Handler("Could not create create_scatch resource", "k3gfxObj::CreateTlas");
+                return NULL;
+            }
+            res_impl->_width = tlas_impl->_size.create_size;
+            res_impl->_height = 1;
+            res_impl->_depth = 1;
+            res_impl->_format = k3fmt::UNKNOWN;
+            res_impl->_max_mip = 1;
+            res_impl->_resource_state = k3resourceState::COMMON;
+            res_impl->_samples = 1;
+        }
+
+        if (tlas_impl->_size.update_size) {
+            tlas_impl->_update_scratch = new k3resourceObj;
+            res_impl = tlas_impl->_update_scratch->getImpl();
+            dx12_resource_desc.Width = tlas_impl->_size.update_size;
+            hr = _data->_dev->CreateCommittedResource(&dx12_heap_prop, dx12_heap_flags, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+            if (hr != S_OK) {
+                k3error::Handler("Could not create update_scratch resource", "k3gfxObj::CreateTlas");
+                return NULL;
+            }
+            res_impl->_width = tlas_impl->_size.update_size;
+            res_impl->_height = 1;
+            res_impl->_depth = 1;
+            res_impl->_format = k3fmt::UNKNOWN;
+            res_impl->_max_mip = 1;
+            res_impl->_resource_state = k3resourceState::COMMON;
+            res_impl->_samples = 1;
+        }
+
+        UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        D3D12_CPU_DESCRIPTOR_HANDLE dx12_desc_handle(_data->_shader_heap[0]->GetCPUDescriptorHandleForHeapStart());
+        D3D12_GPU_DESCRIPTOR_HANDLE dx12_gpu_desc_handle(_data->_shader_heap[0]->GetGPUDescriptorHandleForHeapStart());
+        dx12_desc_handle.ptr += (tldesc->view_index * desc_size);
+        dx12_gpu_desc_handle.ptr += (tldesc->view_index * desc_size);
+        D3D12_SHADER_RESOURCE_VIEW_DESC dx12_srv_desc = {};
+        dx12_srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+        dx12_srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        dx12_srv_desc.RaytracingAccelerationStructure.Location = tlas_impl->_tlas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+        _data->_dev->CreateShaderResourceView(NULL, &dx12_srv_desc, dx12_desc_handle);
+        tlas_impl->_cpu_view = dx12_desc_handle;
+        tlas_impl->_gpu_view = dx12_gpu_desc_handle;
+    }
+    tlas_impl->_view_index = tldesc->view_index;
+
+    return tlas;
+}
+
+K3API void k3gfxObj::AllocTlas(k3tlas tl, const k3rtasAllocDesc* rtadesc)
+{
+    HRESULT hr;
+    k3tlasImpl* tlas_impl = tl->getImpl();
+
+    // Allocates data structures in placed memory
+    tlas_impl->_tlas = new k3resourceObj;
+    k3resourceImpl* res_impl = tlas_impl->_tlas->getImpl();
+
+    D3D12_RESOURCE_DESC dx12_resource_desc = {};
+    dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    dx12_resource_desc.Width = tlas_impl->_size.rtas_size;
+    dx12_resource_desc.Height = 1;
+    dx12_resource_desc.DepthOrArraySize = 1;
+    dx12_resource_desc.MipLevels = 1;
+    dx12_resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+    dx12_resource_desc.SampleDesc.Count = 1;
+    dx12_resource_desc.SampleDesc.Quality = 0;
+    dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    hr = _data->_dev->CreatePlacedResource(rtadesc->rtas_mem_pool->getImpl()->_heap, rtadesc->rtas_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+    if (hr != S_OK) {
+        k3error::Handler("Could not allocate BLAS resource", "k3gfxObj::AllocBlas");
+        return;
+    }
+    res_impl->_width = tlas_impl->_size.rtas_size;
+    res_impl->_height = 1;
+    res_impl->_depth = 1;
+    res_impl->_format = k3fmt::UNKNOWN;
+    res_impl->_max_mip = 1;
+    res_impl->_resource_state = k3resourceState::RT_ACCEL_STRUCT;
+    res_impl->_samples = 1;
+
+    if (tlas_impl->_size.create_size) {
+        tlas_impl->_create_scratch = new k3resourceObj;
+        res_impl = tlas_impl->_create_scratch->getImpl();
+        dx12_resource_desc.Width = tlas_impl->_size.create_size;
+        hr = _data->_dev->CreatePlacedResource(rtadesc->create_mem_pool->getImpl()->_heap, rtadesc->create_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not allocate create_scatch resource", "k3gfxObj::AllocBlas");
+            return;
+        }
+        res_impl->_width = tlas_impl->_size.create_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = k3fmt::UNKNOWN;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::COMMON;
+        res_impl->_samples = 1;
+    }
+
+    if (tlas_impl->_size.update_size) {
+        tlas_impl->_update_scratch = new k3resourceObj;
+        res_impl = tlas_impl->_update_scratch->getImpl();
+        dx12_resource_desc.Width = tlas_impl->_size.update_size;
+        hr = _data->_dev->CreatePlacedResource(rtadesc->update_mem_pool->getImpl()->_heap, rtadesc->update_mem_offset, &dx12_resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&res_impl->_dx12_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not allocate update_scratch resource", "k3gfxObj::AllocBlas");
+            return;
+        }
+        res_impl->_width = tlas_impl->_size.update_size;
+        res_impl->_height = 1;
+        res_impl->_depth = 1;
+        res_impl->_format = k3fmt::UNKNOWN;
+        res_impl->_max_mip = 1;
+        res_impl->_resource_state = k3resourceState::COMMON;
+        res_impl->_samples = 1;
+    }
+
+    UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_CPU_DESCRIPTOR_HANDLE dx12_desc_handle(_data->_shader_heap[0]->GetCPUDescriptorHandleForHeapStart());
+    D3D12_GPU_DESCRIPTOR_HANDLE dx12_gpu_desc_handle(_data->_shader_heap[0]->GetGPUDescriptorHandleForHeapStart());
+    dx12_desc_handle.ptr += (tlas_impl->_view_index * desc_size);
+    dx12_gpu_desc_handle.ptr += (tlas_impl->_view_index * desc_size);
+    D3D12_SHADER_RESOURCE_VIEW_DESC dx12_srv_desc = {};
+    dx12_srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    dx12_srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    dx12_srv_desc.RaytracingAccelerationStructure.Location = tlas_impl->_tlas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+    _data->_dev->CreateShaderResourceView(NULL, &dx12_srv_desc, dx12_desc_handle);
+    tlas_impl->_cpu_view = dx12_desc_handle;
+    tlas_impl->_gpu_view = dx12_gpu_desc_handle;
+}
+

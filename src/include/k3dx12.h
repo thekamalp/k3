@@ -22,6 +22,7 @@ public:
     virtual ~k3win32Dx12WinImpl();
     virtual void ResizeBackBuffer();
     static DXGI_FORMAT ConvertToDXGIFormat(k3fmt fmt, k3DxgiSurfaceType surf_type);
+    static k3fmt ConertFromDXGIFormat(DXGI_FORMAT fmt);
 
     IDXGISwapChain3* _swap_chain;
     ID3D12DescriptorHeap* _rtv_heap;
@@ -46,7 +47,7 @@ public:
     k3resourceState _resource_state;
     ID3D12Resource* _dx12_resource;
     k3memPool _pool;
-    uint32_t _width;
+    uint64_t _width;
     uint32_t _height;
     uint32_t _depth;
     uint32_t _max_mip;
@@ -89,6 +90,37 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE _gpu_view;
 };
 
+class k3blasImpl
+{
+public:
+    k3blasImpl();
+    virtual ~k3blasImpl();
+    D3D12_RAYTRACING_GEOMETRY_DESC _geom;
+    k3buffer _ib;
+    k3buffer _vb;
+    k3rtasSize _size;
+    k3resource _blas;
+    k3resource _create_scratch;
+    k3resource _update_scratch;
+};
+
+class k3tlasImpl
+{
+public:
+    k3tlasImpl();
+    virtual ~k3tlasImpl();
+    uint32_t _num_instances;
+    k3tlasInstance* _instances;
+    k3uploadBuffer _instance_upbuf;
+    k3rtasSize _size;
+    k3resource _tlas;
+    k3resource _create_scratch;
+    k3resource _update_scratch;
+    uint32_t _view_index;
+    D3D12_CPU_DESCRIPTOR_HANDLE _cpu_view;
+    D3D12_GPU_DESCRIPTOR_HANDLE _gpu_view;
+};
+
 class k3cmdBufImpl
 {
 public:
@@ -96,6 +128,7 @@ public:
     k3cmdBufImpl();
     virtual ~k3cmdBufImpl();
     ID3D12GraphicsCommandList* _cmd_list;
+    ID3D12GraphicsCommandList4* _cmd_list4;
     k3fence _fence;
     ID3D12CommandAllocator* _cmd_alloc[MAX_ALLOC];
     uint64_t _cmd_alloc_fence[MAX_ALLOC];
@@ -112,6 +145,7 @@ public:
     k3shaderBindingImpl();
     virtual ~k3shaderBindingImpl();
     ID3D12RootSignature* _binding;
+    k3shaderBindingType _type;
 };
 
 class k3shaderImpl
@@ -120,6 +154,27 @@ public:
     k3shaderImpl();
     virtual ~k3shaderImpl();
     D3D12_SHADER_BYTECODE _byte_code;
+};
+
+class k3rtStateImpl
+{
+public:
+    k3rtStateImpl();
+    virtual ~k3rtStateImpl();
+    ID3D12StateObject* _state;
+    k3shader* _shaders;
+    k3shaderBinding* _shader_bindings;
+};
+
+class k3rtStateTableImpl
+{
+public:
+    k3rtStateTableImpl();
+    virtual ~k3rtStateTableImpl();
+    uint32_t getEntrySize() const;
+    k3resource _resource;
+    uint32_t _num_entries;
+    uint32_t _num_args;   // number of 8 byte arguments per entry
 };
 
 class k3gfxStateImpl
@@ -186,6 +241,7 @@ public:
     static D3D12_DESCRIPTOR_RANGE_TYPE ConvertToDx12ShaderBindType(k3shaderBindType type);
     static D3D12_FILTER ConvertToDx12Fitler(k3texFilter filter);
     static D3D12_TEXTURE_ADDRESS_MODE ConvertToDx12AddrMode(k3texAddr addr_mode);
+    static D3D12_HIT_GROUP_TYPE ConvertToDx12HitGroupType(k3rtHitGroupType hit_group_type);
     static uint32_t _num_gfx;
     static IDXGIFactory4* _factory;
 #ifdef _DEBUG
@@ -194,6 +250,8 @@ public:
     static IDXGIAdapter1* _adapter;
     static char _adapter_name[128];
     ID3D12Device* _dev;
+    ID3D12Device5* _dev5;
+    uint32_t _dxr_tier;
 #ifdef _DEBUG
     ID3D12DebugDevice* _dbg_dev;
 #endif

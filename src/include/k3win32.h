@@ -25,6 +25,11 @@ public:
 	k3win32JoyObj(HANDLE hDevice);
 	virtual ~k3win32JoyObj();
 
+	virtual K3API k3objType getObjType() const
+	{
+		return k3objType::UNKNOWN;  // not publically visible object
+	}
+
 	virtual void Poll();
 	virtual void SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values);
 	uint32_t getDevId();

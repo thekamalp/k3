@@ -143,6 +143,32 @@ public:
     }
 };
 
+enum class k3objType {
+    UNKNOWN,
+    IMAGE,
+    TIMER,
+    SOUND_BUF,
+    FENCE,
+    RESOURCE,
+    SURF,
+    SAMPLER,
+    BUFFER,
+    BLAS,
+    TLAS,
+    FONT,
+    CMD_BUF,
+    SHADER_BINDING,
+    SHADER,
+    RT_STATE,
+    RT_STATE_TABLE,
+    GFX_STATE,
+    MEM_POOL,
+    UPLOAD_IMAGE,
+    UPLOAD_BUFFER,
+    GFX,
+    WIN
+};
+
 class k3obj
 {
     template <class T>
@@ -152,6 +178,7 @@ public:
     { }
     virtual ~k3obj()
     { }
+    virtual K3API k3objType getObjType() const = 0;
 
 private:
     uint32_t _ref;
@@ -170,6 +197,8 @@ private:
         return _ref;
     }
 };
+
+typedef k3ptr<k3obj> k3objPtr;
 
 // ------------------------------------------------------------
 // k3 error handling
@@ -557,6 +586,11 @@ protected:
 public:
     static const uint32_t FILE_HANDLER_DDS = 0;
 
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::IMAGE;
+    }
+
     static K3API uint32_t AddImageFileHandler(k3image_file_handler_t* fh);
     static K3API void RemoveImageFileHandler(k3image_file_handler_t* fh);
     static K3API k3image Create();
@@ -915,6 +949,12 @@ public:
     virtual ~k3timerObj();
     k3timerImpl* getImpl();
     const k3timerImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::TIMER;
+    }
+
     K3API uint32_t GetTime();
     K3API uint32_t GetDeltaTime();
     K3API void Sleep(uint32_t time);
@@ -941,6 +981,12 @@ public:
     virtual ~k3soundBufObj();
     k3soundBufImpl* getImpl();
     const k3soundBufImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SOUND_BUF;
+    }
+
     K3API void UpdateSBuffer(uint32_t offset, const void* data, uint32_t size);
     K3API void* MapForWrite(uint32_t offset, uint32_t size, void** aux, uint32_t* aux_size);
     K3API void Unmap(void* p, uint32_t offset, uint32_t size);
@@ -990,6 +1036,14 @@ class k3cmdBufImpl;
 class k3cmdBufObj;
 typedef k3ptr<k3cmdBufObj> k3cmdBuf;
 
+class k3blasImpl;
+class k3blasObj;
+typedef k3ptr<k3blasObj> k3blas;
+
+class k3tlasImpl;
+class k3tlasObj;
+typedef k3ptr<k3tlasObj> k3tlas;
+
 class k3shaderBindingImpl;
 class k3shaderBindingObj;
 typedef k3ptr<k3shaderBindingObj> k3shaderBinding;
@@ -1001,6 +1055,14 @@ typedef k3ptr<k3shaderObj> k3shader;
 class k3gfxStateImpl;
 class k3gfxStateObj;
 typedef k3ptr<k3gfxStateObj> k3gfxState;
+
+class k3rtStateImpl;
+class k3rtStateObj;
+typedef k3ptr<k3rtStateObj> k3rtState;
+
+class k3rtStateTableImpl;
+class k3rtStateTableObj;
+typedef k3ptr<k3rtStateTableObj> k3rtStateTable;
 
 class k3memPoolImpl;
 class k3memPoolObj;
@@ -1081,6 +1143,11 @@ public:
     k3fenceImpl* getImpl();
     const k3fenceImpl* getImpl() const;
 
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::FENCE;
+    }
+
     K3API uint64_t SetCpuFence();
     K3API uint64_t SetGpuFence(k3gpuQueue queue);
     K3API bool CheckFence(uint64_t value);
@@ -1105,7 +1172,19 @@ enum class k3resourceState
     COPY_SOURCE,
     RESOLVE_DEST,
     RESOLVE_SOURCE,
-    SHADING_RATE_SOURCE
+    SHADING_RATE_SOURCE,
+    RT_ACCEL_STRUCT
+};
+
+struct k3resourceDesc {
+    k3memPool mem_pool;
+    uint64_t mem_offset;
+    uint64_t width;
+    uint32_t height;
+    uint32_t depth;
+    uint32_t mip_levels;
+    k3fmt format;
+    uint32_t num_samples;
 };
 
 class k3resourceObj : public k3obj
@@ -1118,6 +1197,13 @@ public:
     virtual ~k3resourceObj();
     k3resourceImpl* getImpl();
     const k3resourceImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::RESOURCE;
+    }
+
+    K3API void getDesc(k3resourceDesc* desc);
 };
 
 enum class k3depthSelect
@@ -1203,17 +1289,6 @@ struct k3samplerDesc {
     float max_lod;
 };
 
-struct k3resourceDesc {
-    k3memPool mem_pool;
-    uint64_t mem_offset;
-    uint32_t width;
-    uint32_t height;
-    uint32_t depth;
-    uint32_t mip_levels;
-    k3fmt format;
-    uint32_t num_samples;
-};
-
 struct k3bufferDesc {
     k3memPool mem_pool;
     uint64_t mem_offset;
@@ -1221,6 +1296,45 @@ struct k3bufferDesc {
     uint32_t stride;
     uint32_t view_index;  // for CBV
     k3fmt format;         // for index buffer
+};
+
+// Raytracing acceleration structure size
+struct k3rtasSize {
+    uint64_t rtas_size;
+    uint64_t create_size;
+    uint64_t update_size;
+};
+
+struct k3rtasAllocDesc {
+    k3memPool rtas_mem_pool;
+    k3memPool create_mem_pool;
+    k3memPool update_mem_pool;
+    uint64_t rtas_mem_offset;
+    uint64_t create_mem_offset;
+    uint64_t update_mem_offset;
+};
+
+struct k3blasCreateDesc {
+    float* xform_3x4;
+    k3buffer ib;
+    k3buffer vb;
+    bool alloc;
+};
+
+struct k3tlasInstance {
+    float transform[12];  // 3x4 transform matrix
+    uint32_t id;
+    uint32_t hit_group;
+    uint8_t mask;
+    uint8_t flags;
+    k3blas blas;
+};
+
+struct k3tlasCreateDesc {
+    uint32_t num_instances;
+    k3tlasInstance* instances;
+    uint32_t view_index;
+    bool alloc;
 };
 
 class k3surfObj : public k3obj
@@ -1233,6 +1347,12 @@ public:
     virtual ~k3surfObj();
     k3surfImpl* getImpl();
     const k3surfImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SURF;
+    }
+
     K3API k3resource GetResource();
 };
 
@@ -1246,6 +1366,11 @@ public:
     virtual ~k3samplerObj();
     k3samplerImpl* getImpl();
     const k3samplerImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SAMPLER;
+    }
 };
 
 class k3bufferObj : public k3obj
@@ -1258,7 +1383,119 @@ public:
     virtual ~k3bufferObj();
     k3bufferImpl* getImpl();
     const k3bufferImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::BUFFER;
+    }
+
     K3API k3resource GetResource();
+};
+
+class k3blasObj : public k3obj
+{
+private:
+    k3blasImpl* _data;
+
+public:
+    k3blasObj();
+    virtual ~k3blasObj();
+    k3blasImpl* getImpl();
+    const k3blasImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::BLAS;
+    }
+
+    K3API void getSize(k3rtasSize* size);
+};
+
+class k3tlasObj : public k3obj
+{
+private:
+    k3tlasImpl* _data;
+
+public:
+    k3tlasObj();
+    virtual ~k3tlasObj();
+    k3tlasImpl* getImpl();
+    const k3tlasImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::TLAS;
+    }
+};
+
+struct k3rtStateTableDesc {
+    uint32_t num_entries;
+    uint32_t num_args;
+    k3memPool mem_pool;
+    uint64_t mem_offset;
+};
+
+enum class k3rtStateTableArgType {
+    HANDLE,
+    CONSTANT
+};
+
+enum class k3shaderBindType {
+    CBV,
+    SRV,
+    UAV,
+    SAMPLER
+};
+
+struct k3rtStateTableArg {
+    k3rtStateTableArgType type;
+    k3shaderBindType bind_type;
+    k3objPtr obj;
+    uint32_t c[2];
+};
+
+struct k3rtStateTableEntryDesc {
+    const char* shader;
+    uint32_t num_args;
+    k3rtStateTableArg* args;
+};
+
+struct k3rtStateTableUpdate {
+    k3rtState state;
+    k3uploadBuffer copy_buffer;
+    uint32_t start;
+    uint32_t num_entries;
+    const k3rtStateTableEntryDesc* entries;
+};
+
+struct k3rtDispatch {
+    k3rtStateTable state_table;
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth;
+    uint32_t raygen_index;
+    uint32_t raygen_entries;
+    uint32_t miss_index;
+    uint32_t miss_entries;
+    uint32_t hit_group_index;
+    uint32_t hit_group_entries;
+};
+
+class k3rtStateTableObj : public k3obj
+{
+private:
+    k3rtStateTableImpl* _data;
+
+public:
+    k3rtStateTableObj();
+    virtual ~k3rtStateTableObj();
+    k3rtStateTableImpl* getImpl();
+    const k3rtStateTableImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::RT_STATE_TABLE;
+    }
 };
 
 struct k3renderTargets {
@@ -1310,6 +1547,10 @@ public:
     k3fontImpl* getImpl();
     const k3fontImpl* getImpl() const;
 
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::FONT;
+    }
 };
 
 class k3cmdBufObj : public k3obj
@@ -1322,6 +1563,11 @@ public:
     virtual ~k3cmdBufObj();
     k3cmdBufImpl* getImpl();
     const k3cmdBufImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::CMD_BUF;
+    }
 
     K3API void Reset();
     K3API void Close();
@@ -1348,6 +1594,13 @@ public:
     K3API void SetBlendFactor(const float* blend_factor);
     K3API void SetStencilRef(uint8_t stencil_ref);
 
+    K3API void BuildBlas(k3blas blas);
+    K3API void BuildTlas(k3tlas tlas);
+    K3API void UpdateRTStateTable(k3rtStateTable table, k3rtStateTableUpdate* desc);
+    K3API void SetRTState(k3rtState state);
+    K3API void RTDispatch(const k3rtDispatch* desc);
+
+    K3API void Copy(k3resource dest, k3resource source);
     K3API void Draw(uint32_t vertex_count, uint32_t vertex_start = 0, uint32_t instance_count = 1, uint32_t instance_start = 0, uint32_t index_start = 0);
     K3API void DrawText(const char* text, k3font font, const float fg_color[4], const float bg_color[4], int32_t x, int32_t y, k3fontAlignment alignment = k3fontAlignment::TOP_LEFT);
 };
@@ -1357,7 +1610,8 @@ enum class k3bindingType {
     CBV,
     SRV,
     UAV,
-    VIEW_SET
+    VIEW_SET,
+    VIEW_SET_TABLE
 };
 
 struct k3bindingConst {
@@ -1371,13 +1625,6 @@ struct k3bindingView {
     uint32_t space;
 };
 
-enum class k3shaderBindType {
-    CBV,
-    SRV,
-    UAV,
-    SAMPLER
-};
-
 struct k3bindingViewSet {
     k3shaderBindType type;
     uint32_t num_views;
@@ -1386,13 +1633,24 @@ struct k3bindingViewSet {
     uint32_t offset;
 };
 
+struct k3bindingViewSetTable {
+    uint32_t num_view_sets;
+    k3bindingViewSet* view_sets;
+};
+
 struct k3bindingParam {
     k3bindingType type;
     union {
         k3bindingConst constant;
         k3bindingView view_desc;
         k3bindingViewSet view_set_desc;
+        k3bindingViewSetTable view_set_table_desc;
     };
+};
+
+enum class k3shaderBindingType {
+    GLOBAL,
+    LOCAL
 };
 
 class k3shaderBindingObj : public k3obj
@@ -1405,6 +1663,13 @@ public:
     virtual ~k3shaderBindingObj();
     k3shaderBindingImpl* getImpl();
     const k3shaderBindingImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SHADER_BINDING;
+    }
+
+    K3API k3shaderBindingType getType() const;
 };
 
 enum class k3shaderType
@@ -1413,7 +1678,8 @@ enum class k3shaderType
     PIXEL_SHADER,
     GEOMETRY_SHADER,
     HULL_SHADER,
-    DOMAIN_SHADER
+    DOMAIN_SHADER,
+    LIBRARY
 };
 
 class k3shaderObj : public k3obj
@@ -1426,6 +1692,85 @@ public:
     virtual ~k3shaderObj();
     k3shaderImpl* getImpl();
     const k3shaderImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SHADER;
+    }
+};
+
+struct k3rtShaderStateDesc {
+    k3shader obj;
+    uint32_t num_entries;
+    const char** entries;
+};
+
+enum class k3rtHitGroupType {
+    TRIANGLES,
+    PROCEDURAL
+};
+
+struct k3rtHitGroupStateDesc {
+    const char* name;
+    const char* any_hit_shader;
+    const char* closest_hit_shader;
+    const char* intersection_shader;
+    k3rtHitGroupType type;
+};
+
+struct k3rtExportAssociationStateDesc {
+    uint32_t num_exports;
+    const char** export_names;
+    uint32_t association_index;
+};
+
+struct k3rtShaderConfigStateDesc {
+    uint32_t attrib_size;
+    uint32_t payload_size;
+};
+
+struct k3rtPipelineConfigStateDesc {
+    uint32_t max_recursion;
+};
+
+union k3rtStateElementDesc {
+    k3rtHitGroupStateDesc hit_group;
+    k3rtExportAssociationStateDesc export_association;
+    k3rtShaderConfigStateDesc shader_config;
+    k3rtPipelineConfigStateDesc pipeline_config;
+};
+
+enum class k3rtStateType {
+    SHADER,
+    HIT_GROUP,
+    SHADER_BINDING,
+    EXPORT_ASSOCIATION,
+    SHADER_CONFIG,
+    PIPELINE_CONFIG
+};
+
+struct k3rtStateDesc {
+    k3rtStateType type;
+    k3rtShaderStateDesc shader;
+    k3shaderBinding shader_binding;
+    k3rtStateElementDesc elem;
+};
+
+class k3rtStateObj : public k3obj
+{
+private:
+    k3rtStateImpl* _data;
+
+public:
+    k3rtStateObj();
+    virtual ~k3rtStateObj();
+    k3rtStateImpl* getImpl();
+    const k3rtStateImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::RT_STATE;
+    }
 };
 
 enum class k3blend {
@@ -1608,6 +1953,11 @@ public:
     virtual ~k3gfxStateObj();
     k3gfxStateImpl* getImpl();
     const k3gfxStateImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::GFX_STATE;
+    }
 };
 
 enum class k3memType {
@@ -1626,6 +1976,12 @@ public:
     virtual ~k3memPoolObj();
     k3memPoolImpl* getImpl();
     const k3memPoolImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::MEM_POOL;
+    }
+
     K3API k3memType getMemType();
     K3API uint64_t getSize();
 };
@@ -1640,6 +1996,11 @@ public:
     virtual ~k3uploadImageObj();
     k3uploadImageImpl* getUploadImageImpl();
     const k3uploadImageImpl* getUploadImageImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::UPLOAD_IMAGE;
+    }
 
     virtual K3API const void* MapForRead();
     virtual K3API void* MapForWrite();
@@ -1657,6 +2018,11 @@ public:
     virtual ~k3uploadBufferObj();
     k3uploadBufferImpl* getImpl();
     const k3uploadBufferImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::UPLOAD_BUFFER;
+    }
 
     K3API void* MapForWrite(uint64_t size);
     K3API void Unmap();
@@ -1677,7 +2043,13 @@ public:
     k3gfxImpl* getImpl();
     const k3gfxImpl* getImpl() const;
 
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::GFX;
+    }
+
     K3API const char* AdapterName();
+    K3API uint32_t GetRayTracingSupport();
 
     K3API k3fence CreateFence();
     K3API void WaitGpuIdle();
@@ -1686,10 +2058,13 @@ public:
     K3API void SubmitCmdBuf(k3cmdBuf cmd);
 
     K3API k3shaderBinding CreateShaderBinding(uint32_t num_params, k3bindingParam* params, uint32_t num_samplers, k3samplerDesc* samplers);
+    K3API k3shaderBinding CreateTypedShaderBinding(uint32_t num_params, k3bindingParam* params, uint32_t num_samplers, k3samplerDesc* samplers, k3shaderBindingType sh_bind_type);
     K3API k3shader CreateShaderFromCompiledFile(const char* file_name);
     K3API k3shader CompileShaderFromString(const char* code, k3shaderType shader_type);
     K3API k3shader CompileShaderFromFile(const char* file_name, k3shaderType shader_type);
     K3API k3gfxState CreateGfxState(const k3gfxStateDesc* desc);
+    K3API k3rtState CreateRTState(uint32_t num_elements, const k3rtStateDesc* desc);
+    K3API k3rtStateTable CreateRTStateTable(const k3rtStateTableDesc* desc);
 
     K3API k3memPool CreateMemPool(uint64_t size, k3memType mem_type, uint32_t flag);
     K3API k3uploadImage CreateUploadImage();
@@ -1698,6 +2073,10 @@ public:
     K3API k3surf CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_desc, k3viewDesc* srv_desc, k3viewDesc* uav_desc);
     K3API k3sampler CreateSampler(const k3samplerDesc* sdesc);
     K3API k3buffer CreateBuffer(const k3bufferDesc* bdesc);
+    K3API k3blas CreateBlas(const k3blasCreateDesc* bldesc);
+    K3API void AllocBlas(k3blas bl, const k3rtasAllocDesc* rtadesc);
+    K3API k3tlas CreateTlas(const k3tlasCreateDesc* tldesc);
+    K3API void AllocTlas(k3tlas tl, const k3rtasAllocDesc* rtadesc);
 
     K3API k3font CreateFont(k3fontDesc* desc);
 };
@@ -1744,6 +2123,11 @@ public:
     static K3API void Destroy(k3win win);
 
     virtual ~k3winObj();
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::WIN;
+    }
 
     K3API void SetTitle(const char* title);
     K3API void SetSize(uint32_t width, uint32_t height);

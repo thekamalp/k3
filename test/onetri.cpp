@@ -65,6 +65,7 @@ void App::Setup()
     gfx = win->GetGfx();
     sbuf = win->CreateSoundBuffer(1, 44100, 16, 11025);
     printf("Adapter: %s\n", gfx->AdapterName());
+    printf("Raytracing Tier supported: %d\n", gfx->GetRayTracingSupport());
 
     cmd_buf = gfx->CreateCmdBuf();
 
