@@ -61,8 +61,10 @@ public:
     k3surfImpl();
     virtual ~k3surfImpl();
     k3resource _resource;
+    uint32_t _srv_view_index;
     D3D12_CPU_DESCRIPTOR_HANDLE _srv_cpu_view;
     D3D12_GPU_DESCRIPTOR_HANDLE _srv_gpu_view;
+    uint32_t _uav_view_index;
     D3D12_CPU_DESCRIPTOR_HANDLE _uav_cpu_view;
     D3D12_GPU_DESCRIPTOR_HANDLE _uav_gpu_view;
     // can be used for rtv or dsv, depending on format
@@ -75,6 +77,7 @@ class k3samplerImpl
 public:
     k3samplerImpl();
     virtual ~k3samplerImpl();
+    uint32_t _view_index;
     D3D12_CPU_DESCRIPTOR_HANDLE _cpu_view;
     D3D12_GPU_DESCRIPTOR_HANDLE _gpu_view;
 };
@@ -86,6 +89,7 @@ public:
     virtual ~k3bufferImpl();
     k3resource _resource;
     uint32_t _stride;
+    uint32_t _view_index;
     D3D12_CPU_DESCRIPTOR_HANDLE _cpu_view;
     D3D12_GPU_DESCRIPTOR_HANDLE _gpu_view;
 };

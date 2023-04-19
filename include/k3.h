@@ -1294,8 +1294,9 @@ struct k3bufferDesc {
     uint64_t mem_offset;
     uint32_t size;
     uint32_t stride;
-    uint32_t view_index;  // for CBV
+    uint32_t view_index;  // for CBV, SRV
     k3fmt format;         // for index buffer
+    bool shader_resource; // SRV buffer
 };
 
 // Raytracing acceleration structure size
@@ -1354,6 +1355,8 @@ public:
     }
 
     K3API k3resource GetResource();
+    K3API uint32_t GetSRVViewIndex() const;
+    K3API uint32_t GetUAVViewIndex() const;
 };
 
 class k3samplerObj : public k3obj
@@ -1371,6 +1374,8 @@ public:
     {
         return k3objType::SAMPLER;
     }
+
+    K3API uint32_t GetViewIndex() const;
 };
 
 class k3bufferObj : public k3obj
@@ -1390,6 +1395,7 @@ public:
     }
 
     K3API k3resource GetResource();
+    K3API uint32_t GetViewIndex() const;
 };
 
 class k3blasObj : public k3obj
@@ -1426,6 +1432,8 @@ public:
     {
         return k3objType::TLAS;
     }
+
+    K3API uint32_t GetViewIndex() const;
 };
 
 struct k3rtStateTableDesc {

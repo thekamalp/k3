@@ -1,5 +1,11 @@
 // Simple ray racing set of shaders
 
+struct attrib_t {
+    float4 color;
+};
+
+StructuredBuffer<attrib_t> vert_attribs : register(t1);
+
 RaytracingAccelerationStructure main_scene : register(t0);
 RWTexture2D<float4> render_target : register(u0);
 
@@ -42,9 +48,9 @@ void closestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 {
     float3 baryc = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y,
         attribs.barycentrics.xy);
-    const float3 A = float3(1.0, 0.0, 0.0);
-    const float3 B = float3(0.0, 1.0, 0.0);
-    const float3 C = float3(0.0, 0.0, 1.0);
+    uint vert_index = 3 * PrimitiveIndex();
 
-    payload.color = A* baryc.x + B * baryc.y + C * baryc.z;
+    payload.color = vert_attribs[vert_index + 0].color * baryc.x +
+        vert_attribs[vert_index + 1].color * baryc.y +
+        vert_attribs[vert_index + 2].color * baryc.z;
 }

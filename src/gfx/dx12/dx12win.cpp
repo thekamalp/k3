@@ -150,8 +150,10 @@ K3API void k3resourceObj::getDesc(k3resourceDesc* desc)
 k3surfImpl::k3surfImpl()
 {
     _resource = NULL;
+    _srv_view_index = ~0;
     _srv_cpu_view.ptr = NULL;
     _srv_gpu_view.ptr = NULL;
+    _uav_view_index = ~0;
     _uav_cpu_view.ptr = NULL;
     _uav_gpu_view.ptr = NULL;
     _rtv_cpu_view.ptr = NULL;
@@ -194,12 +196,23 @@ K3API k3resource k3surfObj::GetResource()
     return _data->_resource;
 }
 
+K3API uint32_t k3surfObj::GetSRVViewIndex() const
+{
+    return _data->_srv_view_index;
+}
+
+K3API uint32_t k3surfObj::GetUAVViewIndex() const
+{
+    return _data->_uav_view_index;
+}
+
 
 // ------------------------------------------------------------
 // sampler
 
 k3samplerImpl::k3samplerImpl()
 {
+    _view_index = ~0;
     _cpu_view.ptr = NULL;
     _gpu_view.ptr = NULL;
 }
@@ -230,12 +243,18 @@ const k3samplerImpl* k3samplerObj::getImpl() const
     return _data;
 }
 
+K3API uint32_t k3samplerObj::GetViewIndex() const
+{
+    return _data->_view_index;
+}
+
 // ------------------------------------------------------------
 // buffer
 k3bufferImpl::k3bufferImpl()
 {
     _resource = NULL;
     _stride = 0;
+    _view_index = ~0;
     _cpu_view.ptr = NULL;
     _gpu_view.ptr = NULL;
 }
@@ -269,6 +288,11 @@ const k3bufferImpl* k3bufferObj::getImpl() const
 K3API k3resource k3bufferObj::GetResource()
 {
     return _data->_resource;
+}
+
+K3API uint32_t k3bufferObj::GetViewIndex() const
+{
+    return _data->_view_index;
 }
 
 // ------------------------------------------------------------
@@ -324,6 +348,7 @@ k3tlasImpl::k3tlasImpl()
     _instance_upbuf = NULL;
     memset(&_size, 0, sizeof(_size));
     _tlas = NULL;
+    _view_index = ~0;
     _create_scratch = NULL;
     _update_scratch = NULL;
 }
@@ -359,6 +384,10 @@ const k3tlasImpl* k3tlasObj::getImpl() const
     return _data;
 }
 
+K3API uint32_t k3tlasObj::GetViewIndex() const
+{
+    return _data->_view_index;
+}
 
 // ------------------------------------------------------------
 // cmdBuf
@@ -845,6 +874,7 @@ K3API void k3cmdBufObj::UpdateRTStateTable(k3rtStateTable table, k3rtStateTableU
     wchar_t* wide_str;
     k3tlasImpl* tlas_impl = NULL;
     k3surfImpl* surf_impl = NULL;
+    k3bufferImpl* buffer_impl = NULL;
     D3D12_GPU_DESCRIPTOR_HANDLE gpu_view;
     for (i = 0; i < desc->num_entries; i++, entry_data += entry_size) {
         data = entry_data;
@@ -873,6 +903,10 @@ K3API void k3cmdBufObj::UpdateRTStateTable(k3rtStateTable table, k3rtStateTableU
                     case k3objType::TLAS:
                         tlas_impl = ((k3tlas)desc->entries[i].args[j].obj)->getImpl();
                         gpu_view = tlas_impl->_gpu_view;
+                        break;
+                    case k3objType::BUFFER:
+                        buffer_impl = ((k3buffer)desc->entries[i].args[j].obj)->getImpl();
+                        gpu_view = buffer_impl->_gpu_view;
                         break;
                     default:
                         gpu_view.ptr = NULL;
@@ -3188,6 +3222,7 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
             }
         }
         _data->_dev->CreateShaderResourceView(resource_impl->_dx12_resource, &dx12_srv_desc, dx12_desc_handle);
+        surf_impl->_srv_view_index = srv_desc->view_index;
         surf_impl->_srv_cpu_view = dx12_desc_handle;
         surf_impl->_srv_gpu_view = dx12_gpu_desc_handle;
     }
@@ -3224,6 +3259,7 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
             }
         }
         _data->_dev->CreateUnorderedAccessView(resource_impl->_dx12_resource, NULL, &dx12_uav_desc, dx12_desc_handle);
+        surf_impl->_uav_view_index = uav_desc->view_index;
         surf_impl->_uav_cpu_view = dx12_desc_handle;
         surf_impl->_uav_gpu_view = dx12_gpu_desc_handle;
     }
@@ -3260,6 +3296,7 @@ K3API k3sampler k3gfxObj::CreateSampler(const k3samplerDesc* sdesc)
     dx12_sdesc.MinLOD = sdesc->min_lod;
     dx12_sdesc.MaxLOD = sdesc->max_lod;
     _data->_dev->CreateSampler(&dx12_sdesc, dx12_desc_handle);
+    sampler_impl->_view_index = sdesc->sampler_index;
     sampler_impl->_cpu_view = dx12_desc_handle;
     sampler_impl->_gpu_view = dx12_gpu_desc_handle;
     return sampler;
@@ -3285,7 +3322,9 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     buffer_impl->_resource = new k3resourceObj;
     k3resourceImpl* resource_impl = buffer_impl->_resource->getImpl();
     uint32_t padded_size = bdesc->size;
-    if (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0) padded_size = pad256(padded_size);
+    bool constant_buffer = (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0);
+    bool shader_visible = constant_buffer || bdesc->shader_resource;
+    if (shader_visible) padded_size = pad256(padded_size);
     D3D12_RESOURCE_DESC dx12_resource_desc = {};
     dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     dx12_resource_desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
@@ -3329,19 +3368,36 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     resource_impl->_max_mip = 1;
     resource_impl->_resource_state = k3resourceState::COMMON;
     resource_impl->_samples = 1;
-    if (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0) {
+    if (shader_visible) {
         // create constant buffer view
         UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         D3D12_CPU_DESCRIPTOR_HANDLE cbv_handle(_data->_shader_heap[0]->GetCPUDescriptorHandleForHeapStart());
         D3D12_GPU_DESCRIPTOR_HANDLE cbv_gpu_handle(_data->_shader_heap[0]->GetGPUDescriptorHandleForHeapStart());
         cbv_handle.ptr += bdesc->view_index * desc_size;
         cbv_gpu_handle.ptr += bdesc->view_index * desc_size;
-        D3D12_CONSTANT_BUFFER_VIEW_DESC dx12_cbv_desc = {};
-        dx12_cbv_desc.BufferLocation = resource_impl->_dx12_resource->GetGPUVirtualAddress();
-        dx12_cbv_desc.SizeInBytes = padded_size;
-        _data->_dev->CreateConstantBufferView(&dx12_cbv_desc, cbv_handle);
-        buffer_impl->_cpu_view = cbv_handle;
-        buffer_impl->_gpu_view = cbv_gpu_handle;
+        if (constant_buffer) {
+            D3D12_CONSTANT_BUFFER_VIEW_DESC dx12_cbv_desc = {};
+            dx12_cbv_desc.BufferLocation = resource_impl->_dx12_resource->GetGPUVirtualAddress();
+            dx12_cbv_desc.SizeInBytes = padded_size;
+            _data->_dev->CreateConstantBufferView(&dx12_cbv_desc, cbv_handle);
+            buffer_impl->_view_index = bdesc->view_index;
+            buffer_impl->_cpu_view = cbv_handle;
+            buffer_impl->_gpu_view = cbv_gpu_handle;
+        } else {
+            uint32_t stride = (bdesc->stride) ? bdesc->stride : 1; // todo: make this a fuction of format size
+            D3D12_SHADER_RESOURCE_VIEW_DESC dx12_srv_desc = {};
+            dx12_srv_desc.Format = DXGI_FORMAT_UNKNOWN;
+            dx12_srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            dx12_srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            dx12_srv_desc.Buffer.NumElements = bdesc->size / stride;
+            dx12_srv_desc.Buffer.StructureByteStride = stride;
+            dx12_srv_desc.Buffer.FirstElement = 0;
+            dx12_srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            _data->_dev->CreateShaderResourceView(resource_impl->_dx12_resource, &dx12_srv_desc, cbv_handle);
+            buffer_impl->_view_index = bdesc->view_index;
+            buffer_impl->_cpu_view = cbv_handle;
+            buffer_impl->_gpu_view = cbv_gpu_handle;
+        }
     }
     buffer_impl->_stride = bdesc->stride;
     return buffer;

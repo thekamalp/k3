@@ -7,6 +7,10 @@ struct vertex_t {
     float position[3];
 };
 
+struct attrib_t {
+    float color[4];
+};
+
 class App
 {
 private:
@@ -16,6 +20,7 @@ private:
     k3cmdBuf cmd_buf;
     k3surf rt_out;
     k3tlas tlas_main_scene;
+    k3buffer attrib_buf;
     k3rtState rt_state;
     k3rtStateTable rt_state_table;
 
@@ -26,8 +31,10 @@ public:
     void Setup();
     void Keyboard(k3key k, char c, k3keyState state);
     void Display();
+    void Resize(uint32_t width, uint32_t height);
     static void K3CALLBACK KeyboardCallback(void* data, k3key k, char c, k3keyState state);
     static void K3CALLBACK DisplayCallback(void* data);
+    static void K3CALLBACK ResizeCallback(void* data, uint32_t width, uint32_t height);
 };
 
 App::App()
@@ -44,6 +51,7 @@ void App::Setup()
     win->SetKeyboardFunc(KeyboardCallback);
     win->SetDisplayFunc(DisplayCallback);
     win->SetIdleFunc(DisplayCallback);
+    win->SetResizeFunc(ResizeCallback);
     win->SetVisible(true);
     win->SetCursorVisible(true);
     win->SetDataPtr(this);
@@ -61,8 +69,9 @@ void App::Setup()
     vdesc.view_index = view_index++;
     rt_out = gfx->CreateSurface(&rdesc, NULL, NULL, &vdesc);
 
-    k3uploadBuffer buf = gfx->CreateUploadBuffer();
-    vertex_t* verts = (vertex_t*)buf->MapForWrite(3 * sizeof(vertex_t));
+    const uint32_t num_verts = 6;
+    k3uploadBuffer vetex_upbuf = gfx->CreateUploadBuffer();
+    vertex_t* verts = (vertex_t*)vetex_upbuf->MapForWrite(num_verts * sizeof(vertex_t));
     verts[0].position[0] = 0.25f;
     verts[0].position[1] = 0.25f;
     verts[0].position[2] = 1.0f;
@@ -72,23 +81,22 @@ void App::Setup()
     verts[2].position[0] = 0.25f;
     verts[2].position[1] = 0.75f;
     verts[2].position[2] = 1.0f;
+    verts[3].position[0] = 0.75f;
+    verts[3].position[1] = 0.25f;
+    verts[3].position[2] = 1.0f;
+    verts[4].position[0] = 0.25f;
+    verts[4].position[1] = 0.75f;
+    verts[4].position[2] = 1.0f;
+    verts[5].position[0] = 0.75f;
+    verts[5].position[1] = 0.75f;
+    verts[5].position[2] = 1.0f;
 
-    //verts[0].position[0] = 0.0f;
-    //verts[0].position[1] = 1.0f;
-    //verts[0].position[2] = 0.0f;
-    //verts[1].position[0] = 0.86f;
-    //verts[1].position[1] =-0.50f;
-    //verts[1].position[2] = 0.0f;
-    //verts[2].position[0] = 0.86f;
-    //verts[2].position[1] = 0.50f;
-    //verts[2].position[2] = 0.0f;
-    buf->Unmap();
+    vetex_upbuf->Unmap();
     k3bufferDesc bdesc = { 0 };
-    bdesc.size = 3 * sizeof(vertex_t);
+    bdesc.size = num_verts * sizeof(vertex_t);
     bdesc.stride = sizeof(vertex_t);
     bdesc.format = k3fmt::RGB32_FLOAT;
     k3buffer vertex_buffer = gfx->CreateBuffer(&bdesc);
-    k3resource buffer_resource = vertex_buffer->GetResource();
 
     k3blasCreateDesc bl_desc;
     bl_desc.xform_3x4 = NULL;
@@ -123,6 +131,40 @@ void App::Setup()
     tl_desc.alloc = true;
     tlas_main_scene = gfx->CreateTlas(&tl_desc);
 
+    k3uploadBuffer attrib_upbuf = gfx->CreateUploadBuffer();
+    attrib_t* attribs = (attrib_t*)attrib_upbuf->MapForWrite(num_verts * sizeof(attrib_t));
+    attribs[0].color[0] = 1.0f;
+    attribs[0].color[1] = 0.0f;
+    attribs[0].color[2] = 0.0f;
+    attribs[0].color[3] = 0.0f;
+    attribs[1].color[0] = 0.0f;
+    attribs[1].color[1] = 1.0f;
+    attribs[1].color[2] = 0.0f;
+    attribs[1].color[3] = 0.0f;
+    attribs[2].color[0] = 0.0f;
+    attribs[2].color[1] = 0.0f;
+    attribs[2].color[2] = 1.0f;
+    attribs[2].color[3] = 0.0f;
+    attribs[3].color[0] = 0.0f;
+    attribs[3].color[1] = 1.0f;
+    attribs[3].color[2] = 0.0f;
+    attribs[3].color[3] = 0.0f;
+    attribs[4].color[0] = 0.0f;
+    attribs[4].color[1] = 0.0f;
+    attribs[4].color[2] = 1.0f;
+    attribs[4].color[3] = 0.0f;
+    attribs[5].color[0] = 1.0f;
+    attribs[5].color[1] = 1.0f;
+    attribs[5].color[2] = 0.0f;
+    attribs[5].color[3] = 0.0f;
+    attrib_upbuf->Unmap();
+    bdesc.size = num_verts * sizeof(attrib_t);
+    bdesc.stride = sizeof(attrib_t);
+    bdesc.format = k3fmt::UNKNOWN;
+    bdesc.view_index = view_index++;
+    bdesc.shader_resource = true;
+    attrib_buf = gfx->CreateBuffer(&bdesc);
+
     static const char* ray_gen_entry = "rayGen";
     static const char* miss_entry = "miss";
     static const char* closest_hit_entry = "closestHit";
@@ -132,7 +174,7 @@ void App::Setup()
     const char* shader_entries[3] = { ray_gen_entry, miss_entry, closest_hit_entry };
     const char* hit_miss_shader_entries[2] = { miss_entry, closest_hit_entry };
 
-    k3bindingViewSet rt_view_sets[2];
+    k3bindingViewSet rt_view_sets[3];
     rt_view_sets[0].num_views = 1;
     rt_view_sets[0].reg = 0;
     rt_view_sets[0].space = 0;
@@ -143,13 +185,18 @@ void App::Setup()
     rt_view_sets[1].space = 0;
     rt_view_sets[1].type = k3shaderBindType::SRV;
     rt_view_sets[1].offset = 1;
+    rt_view_sets[2].num_views = 1;
+    rt_view_sets[2].reg = 1;
+    rt_view_sets[2].space = 0;
+    rt_view_sets[2].type = k3shaderBindType::SRV;
+    rt_view_sets[2].offset = 2;
 
     //k3bindingParam rt_bindings[1];
     //rt_bindings[0].type = k3bindingType::VIEW_SET_TABLE;
     //rt_bindings[0].view_set_table_desc.num_view_sets = 2;
     //rt_bindings[0].view_set_table_desc.view_sets = rt_view_sets;
 
-    k3bindingParam rt_bindings[2];
+    k3bindingParam rt_bindings[3];
     rt_bindings[0].type = k3bindingType::VIEW_SET;
     rt_bindings[0].view_set_desc.type = k3shaderBindType::UAV;
     rt_bindings[0].view_set_desc.num_views = 1;
@@ -162,9 +209,15 @@ void App::Setup()
     rt_bindings[1].view_set_desc.reg = 0;
     rt_bindings[1].view_set_desc.space = 0;
     rt_bindings[1].view_set_desc.offset = 1;
+    rt_bindings[2].type = k3bindingType::VIEW_SET;
+    rt_bindings[2].view_set_desc.type = k3shaderBindType::SRV;
+    rt_bindings[2].view_set_desc.num_views = 1;
+    rt_bindings[2].view_set_desc.reg = 1;
+    rt_bindings[2].view_set_desc.space = 0;
+    rt_bindings[2].view_set_desc.offset = 2;
 
     k3shaderBinding ray_gen_bindings = gfx->CreateTypedShaderBinding(2, rt_bindings, 0, NULL, k3shaderBindingType::LOCAL);
-    k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(0, NULL, 0, NULL, k3shaderBindingType::LOCAL);
+    k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(1, &(rt_bindings[2]), 0, NULL, k3shaderBindingType::LOCAL);
     k3shaderBinding global_bindings = gfx->CreateShaderBinding(0, NULL, 0, NULL);
 
     k3rtStateDesc rt_state_desc[10] = {};
@@ -221,24 +274,27 @@ void App::Setup()
     rt_state_table_desc.mem_offset = 0;
     rt_state_table = gfx->CreateRTStateTable(&rt_state_table_desc);
     
-    k3rtStateTableArg rt_state_table_arg[2];
+    k3rtStateTableArg rt_state_table_arg[3];
     rt_state_table_arg[0].type = k3rtStateTableArgType::HANDLE;
     rt_state_table_arg[0].bind_type = k3shaderBindType::UAV;
     rt_state_table_arg[0].obj = rt_out;
     rt_state_table_arg[1].type = k3rtStateTableArgType::HANDLE;
     rt_state_table_arg[1].bind_type = k3shaderBindType::SRV;
     rt_state_table_arg[1].obj = tlas_main_scene;
+    rt_state_table_arg[2].type = k3rtStateTableArgType::HANDLE;
+    rt_state_table_arg[2].bind_type = k3shaderBindType::SRV;
+    rt_state_table_arg[2].obj = attrib_buf;
 
     k3rtStateTableEntryDesc rt_state_table_entries[3];
     rt_state_table_entries[0].shader = ray_gen_entry;
     rt_state_table_entries[0].num_args = 2;
     rt_state_table_entries[0].args = rt_state_table_arg;
     rt_state_table_entries[1].shader = miss_entry;
-    rt_state_table_entries[1].num_args = 0;
-    rt_state_table_entries[1].args = NULL;
+    rt_state_table_entries[1].num_args = 1;
+    rt_state_table_entries[1].args = &(rt_state_table_arg[2]);
     rt_state_table_entries[2].shader = hit_group;
-    rt_state_table_entries[2].num_args = 0;
-    rt_state_table_entries[2].args = NULL;
+    rt_state_table_entries[2].num_args = 1;
+    rt_state_table_entries[2].args = &(rt_state_table_arg[2]);
     
     k3rtStateTableUpdate rt_state_table_update = {};
     rt_state_table_update.copy_buffer = gfx->CreateUploadBuffer();
@@ -247,10 +303,16 @@ void App::Setup()
     rt_state_table_update.num_entries = 3;
     rt_state_table_update.entries = rt_state_table_entries;
 
+    k3resource buffer_resource;
     cmd_buf->Reset();
+    buffer_resource = vertex_buffer->GetResource();
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
-    cmd_buf->UploadBuffer(buf, buffer_resource);
+    cmd_buf->UploadBuffer(vetex_upbuf, buffer_resource);
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
+    buffer_resource = attrib_buf->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadBuffer(attrib_upbuf, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_BUFFER);
     cmd_buf->BuildBlas(blas_tri);
     cmd_buf->BuildTlas(tlas_main_scene);
     cmd_buf->UpdateRTStateTable(rt_state_table, &rt_state_table_update);
@@ -308,6 +370,19 @@ void App::Display()
     win->SwapBuffer();
 }
 
+void App::Resize(uint32_t width, uint32_t height)
+{
+    gfx->WaitGpuIdle();
+
+    k3resourceDesc rdesc;
+    win->GetBackBuffer()->GetResource()->getDesc(&rdesc);
+
+    k3viewDesc vdesc = {};
+    vdesc.view_index = rt_out->GetUAVViewIndex();
+    rt_out = gfx->CreateSurface(&rdesc, NULL, NULL, &vdesc);
+
+}
+
 void K3CALLBACK App::KeyboardCallback(void* data, k3key k, char c, k3keyState state)
 {
     App* a = (App*)data;
@@ -318,6 +393,12 @@ void K3CALLBACK App::DisplayCallback(void* data)
 {
     App* a = (App*)data;
     a->Display();
+}
+
+void K3CALLBACK App::ResizeCallback(void* data, uint32_t width, uint32_t height)
+{
+    App* a = (App*)data;
+    a->Resize(width, height);
 }
 
 int main()
