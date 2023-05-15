@@ -131,6 +131,95 @@ K3API float* k3v_Max(uint32_t vec_length, float* d, const float* s1, const float
     return d;
 }
 
+K3API void k3v3_SetTangentBitangent(float* t, float* b, const float* p0, const float* p1, const float* p2, const float* u0, const float* u1, const float* u2)
+{
+    //float x1 = p1[0] - p0[0];
+    //float x2 = p2[0] - p0[0];
+    //float y1 = p1[1] - p0[0];
+    //float y2 = p2[1] - p0[1];
+    //float z1 = p1[2] - p0[2];
+    //float z2 = p2[2] - p0[2];
+    //
+    //float s1 = u1[0] - u0[0];
+    //float s2 = u2[0] - u0[0];
+    //float t1 = u1[1] - u0[1];
+    //float t2 = u2[1] - u0[0];
+    //
+    //float r = (s1 * y2 - s2 * t1);
+    //if (r != 0.0f) r = 1.0f / r;
+    //
+    //if (t) {
+    //    t[0] = (s2 * x1 - s1 * x2) * r;
+    //    t[1] = (s2 * y1 - s1 * y2) * r;
+    //    t[2] = (s2 * z1 - s2 * z2) * r;
+    //}
+    //if (b) {
+    //    b[0] = (t2 * x1 - t1 * x2) * r;
+    //    b[1] = (t2 * y1 - t1 * y2) * r;
+    //    b[2] = (t2 * z1 - t2 * z2) * r;
+    //}
+
+
+    //float v[3][3];
+    //float e1[3];
+    //float e2[3];
+    //uint32_t i;
+    //k3v2_Sub(e1 + 1, u1, u0);
+    //k3v2_Sub(e2 + 1, u2, u0);
+    //if (e1[1] == 0.0f && e1[2] == 0.0f) {
+    //    e1[1] = 1.0f;
+    //}
+    //if (e2[1] == 0.0f && e2[2] == 0.0f) {
+    //    e2[2] = 1.0f;
+    //}
+    //if (e1[1] == e2[1] && e1[2] == e2[2]) {
+    //    e2[1] = -e1[2];
+    //    e2[2] = e1[1];
+    //}
+    ////e2[1] = 0.0f; e2[2] = 1.0f;
+    ////e1[1] = 1.0f; e1[2] = 0.0f;
+    //
+    //for (i = 0; i < 3; i++) {
+    //    e1[0] = p1[i] - p0[i];
+    //    e2[0] = p2[i] - p0[i];
+    //    k3v3_Cross(v[i], e1, e2);
+    //}
+    //for (i = 0; i < 3; i++) {
+    //    if (v[0][i] == 0.0f)
+    //        v[0][i] = 1.0f;
+    //}
+    //if (t) {
+    //    if (v[1][0] == 0.0f && v[1][1] == 0.0f && v[1][2] == 0.0f) {
+    //        v[1][0] = 1.0f;
+    //    } else {
+    //        k3v3_Div(t, v[1], v[0]);
+    //        k3v3_Normalize(t);
+    //    }
+    //}
+    //if (b) {
+    //    if (v[2][0] == 0.0f && v[2][1] == 0.0f && v[2][2] == 0.0f) {
+    //        v[2][1] = 1.0f;
+    //    } else {
+    //        k3v3_Div(b, v[2], v[0]);
+    //        k3v2_Normalize(b);
+    //    }
+    //}
+
+    float e[6];
+    float udelta[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
+    k3v3_Sub(e + 0, p1, p0);
+    k3v3_Sub(e + 3, p2, p0);
+    k3v2_Sub(udelta + 0, u1, u0);
+    k3v2_Sub(udelta + 2, u2, u0);
+    k3m2_Inverse(udelta);
+    if (t) {
+        k3m_Mul(1, 2, 3, t, udelta + 0, e);
+    }
+    if (b) {
+        k3m_Mul(1, 2, 3, b, udelta + 2, e);
+    }
+}
+
 /* operations where s1 is scalar and s2 is a vector */
 K3API float* k3sv_Add(uint32_t vec_length, float* d, const float s1, const float* s2)
 {
@@ -474,7 +563,7 @@ K3API float* k3m_SetRotation(uint32_t rows, float* d, float angle, const float* 
 }
 
 /* operations on a single 4x4 matrix */
-K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style)
+K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z)
 {
     d[0] = 2.0f * znear / (right - left);
     d[1] = 0.0f;
@@ -489,11 +578,41 @@ K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, flo
     d[8] = 0.0f;
     d[9] = 0.0f;
     if (dx_style) {
-        d[10] = zfar / (znear - zfar);
-        d[11] = znear * zfar / (znear - zfar);
+        if (zfar == INFINITY) {
+            if (reverse_z) {
+                d[10] = 0.0f;
+                d[11] = znear;
+            } else {
+                d[10] = -1.0f;
+                d[11] = -znear;
+            }
+        } else {
+            if (reverse_z) {
+                d[10] = znear / (zfar - znear);
+                d[11] = znear * zfar / (zfar - znear);
+            } else {
+                d[10] = zfar / (znear - zfar);
+                d[11] = znear * zfar / (znear - zfar);
+            }
+        }
     } else {
-        d[10] = (zfar + znear) / (znear - zfar);
-        d[11] = (2.0f * znear * zfar) / (znear - zfar);
+        if (zfar == INFINITY) {
+            if (reverse_z) {
+                d[10] = 0.0f;
+                d[11] = znear;
+            } else {
+                d[10] = -1.0;
+                d[11] = -2.0f * znear;
+            }
+        } else {
+            if (reverse_z) {
+                d[10] = znear / (zfar - znear);
+                d[11] = znear * zfar / (zfar - znear);
+            } else {
+                d[10] = (zfar + znear) / (znear - zfar);
+                d[11] = (2.0f * znear * zfar) / (znear - zfar);
+            }
+        }
     }
 
     d[12] = 0.0f;
@@ -510,7 +629,7 @@ K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, flo
     return d;
 }
 
-K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float znear, float zfar, bool left_handed, bool dx_style)
+K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z)
 {
     float tan_f = tanf(fovy / 2.0f);
 
@@ -527,11 +646,41 @@ K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float zn
     d[8] = 0.0f;
     d[9] = 0.0f;
     if (dx_style) {
-        d[10] = zfar / (znear - zfar);
-        d[11] = znear * zfar / (znear - zfar);
+        if (zfar == INFINITY) {
+            if (reverse_z) {
+                d[10] = 0.0f;
+                d[11] = znear;
+            } else {
+                d[10] = -1.0f;
+                d[11] = -znear;
+            }
+        } else {
+            if (reverse_z) {
+                d[10] = znear / (zfar - znear);
+                d[11] = znear * zfar / (zfar - znear);
+            } else {
+                d[10] = zfar / (znear - zfar);
+                d[11] = znear * zfar / (znear - zfar);
+            }
+        }
     } else {
-        d[10] = (zfar + znear) / (znear - zfar);
-        d[11] = (2.0f * znear * zfar) / (znear - zfar);
+        if (zfar == INFINITY) {
+            if (reverse_z) {
+                d[10] = 0.0f;
+                d[11] = znear;
+            } else {
+                d[10] = -1.0;
+                d[11] = -2.0f * znear;
+            }
+        } else {
+            if (reverse_z) {
+                d[10] = znear / (zfar - znear);
+                d[11] = znear * zfar / (zfar - znear);
+            } else {
+                d[10] = (zfar + znear) / (znear - zfar);
+                d[11] = (2.0f * znear * zfar) / (znear - zfar);
+            }
+        }
     }
 
     d[12] = 0.0f;

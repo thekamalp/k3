@@ -400,16 +400,16 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
             if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 1, k3keyState::RELEASED);
             break;
         case WM_MBUTTONDOWN:
-            if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 2, k3keyState::PRESSED);
-            break;
-        case WM_MBUTTONUP:
-            if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 2, k3keyState::RELEASED);
-            break;
-        case WM_RBUTTONDOWN:
             if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 3, k3keyState::PRESSED);
             break;
-        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
             if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 3, k3keyState::RELEASED);
+            break;
+        case WM_RBUTTONDOWN:
+            if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 2, k3keyState::PRESSED);
+            break;
+        case WM_RBUTTONUP:
+            if (winimpl->MouseButton) winimpl->MouseButton(winimpl->_data, x, y, 2, k3keyState::RELEASED);
             break;
         case WM_MOUSEWHEEL:
             if (winimpl->MouseScroll) {

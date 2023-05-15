@@ -389,6 +389,30 @@ K3API uint32_t k3tlasObj::GetViewIndex() const
     return _data->_view_index;
 }
 
+K3API void k3tlasObj::UpdateInstance(uint64_t inst_id, k3tlasInstance* inst)
+{
+    D3D12_RAYTRACING_INSTANCE_DESC* dx12_inst = (D3D12_RAYTRACING_INSTANCE_DESC*)_data->_instance_upbuf->MapRange(inst_id * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+    if (dx12_inst) {
+        memcpy(dx12_inst->Transform, inst->transform, 12 * sizeof(float));
+        dx12_inst->InstanceID = inst->id;
+        dx12_inst->InstanceContributionToHitGroupIndex = inst->hit_group;
+        dx12_inst->InstanceMask = inst->mask;
+        dx12_inst->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;  // TODO: implement flags
+        dx12_inst->AccelerationStructure = inst->blas->getImpl()->_blas->getImpl()->_dx12_resource->GetGPUVirtualAddress();
+        _data->_instance_upbuf->UnmapRange(inst_id * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+    }
+}
+
+K3API void k3tlasObj::UpdateTransform(uint64_t inst_id, float* xform)
+{
+    D3D12_RAYTRACING_INSTANCE_DESC* dx12_inst = (D3D12_RAYTRACING_INSTANCE_DESC*)_data->_instance_upbuf->MapRange(inst_id * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), 12 * sizeof(float));
+    if (dx12_inst) {
+        memcpy(dx12_inst->Transform, xform, 12 * sizeof(float));
+        _data->_instance_upbuf->UnmapRange(inst_id * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), 12 * sizeof(float));
+    }
+}
+
+
 // ------------------------------------------------------------
 // cmdBuf
 k3cmdBufImpl::k3cmdBufImpl()
@@ -590,6 +614,16 @@ K3API void k3cmdBufObj::UploadBuffer(k3uploadBuffer buf, k3resource resource, ui
     _data->_cmd_list->CopyBufferRegion(dst_resource_impl->_dx12_resource, start, src_buffer_impl->_resource, 0, size);
 }
 
+K3API void k3cmdBufObj::UploadBufferSrcRange(k3uploadBuffer buf, k3resource resource, uint64_t src_start, uint64_t size, uint64_t dst_start)
+{
+    k3uploadBufferImpl* src_buffer_impl = buf->getImpl();
+    k3resourceImpl* dst_resource_impl = resource->getImpl();
+    uint64_t src_size = src_buffer_impl->_logical_size - src_start;
+    if (size < src_size) src_size = size;
+    if (dst_resource_impl->_width - dst_start < src_size) src_size = dst_resource_impl->_width - dst_start;
+    _data->_cmd_list->CopyBufferRegion(dst_resource_impl->_dx12_resource, dst_start, src_buffer_impl->_resource, src_start, src_size);
+}
+
 K3API void k3cmdBufObj::GetCurrentViewport(k3rect* viewport)
 {
     *viewport = _data->_cur_viewport;
@@ -748,6 +782,16 @@ K3API void k3cmdBufObj::SetVertexBuffer(uint32_t slot, k3buffer vertex_buffer)
     dx12_vbv.StrideInBytes = buffer_impl->_stride;
     dx12_vbv.SizeInBytes = (uint32_t)resource_impl->_width;
     _data->_cmd_list->IASetVertexBuffers(slot, 1, &dx12_vbv);
+}
+
+K3API void k3cmdBufObj::SetConstant(uint32_t index, uint32_t value, uint32_t offset)
+{
+    _data->_cmd_list->SetGraphicsRoot32BitConstant(index, value, offset);
+}
+
+K3API void k3cmdBufObj::SetConstants(uint32_t index, uint32_t num_constants, const void* values, uint32_t offset)
+{
+    _data->_cmd_list->SetGraphicsRoot32BitConstants(index, num_constants, values, offset);
 }
 
 K3API void k3cmdBufObj::SetConstantBuffer(uint32_t index, k3buffer constant_buffer)
@@ -1456,6 +1500,42 @@ K3API void k3uploadBufferObj::Unmap()
 {
     if (_data->_resource) {
         _data->_resource->Unmap(0, NULL);
+    }
+}
+
+K3API void* k3uploadBufferObj::MapRange(uint64_t offset, uint64_t size)
+{
+    HRESULT hr;
+    void* ptr = NULL;
+    if (_data->_resource) {
+        if (offset + size >= _data->_logical_size) {
+            k3error::Handler("Mapping to exceeds buffer size", "k3uploadBufferObj::MapRange");
+            return NULL;
+        }
+        D3D12_RANGE range;
+        range.Begin = offset;
+        range.End = size;
+        hr = _data->_resource->Map(0, &range, &ptr);
+        ptr = ((uint8_t*)ptr) + offset;
+        if (hr != S_OK) {
+            k3error::Handler("Could not map image", "k3uploadBufferObj::MapRange");
+            return NULL;
+        }
+    }
+    return ptr;
+
+}
+K3API void k3uploadBufferObj::UnmapRange(uint64_t offset, uint64_t size)
+{
+    if (_data->_resource) {
+        if (offset + size >= _data->_logical_size) {
+            k3error::Handler("Mapping to exceeds buffer size", "k3uploadBufferObj::UnmapRange");
+            return;
+        }
+        D3D12_RANGE range;
+        range.Begin = offset;
+        range.End = size;
+        _data->_resource->Unmap(0, &range);
     }
 }
 
@@ -2532,7 +2612,7 @@ K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3
         dx12_samplers[i].MaxLOD = samplers[i].max_lod;
         dx12_samplers[i].ShaderRegister = i;
         dx12_samplers[i].RegisterSpace = 0;
-        dx12_samplers[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        dx12_samplers[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     }
     ID3DBlob* serial_sig;
     ID3DBlob* error;
@@ -3448,13 +3528,22 @@ K3API k3blas k3gfxObj::CreateBlas(const k3blasCreateDesc* bldesc)
     if (bldesc->ib != NULL) {
         const k3bufferImpl* ib_impl = bldesc->ib->getImpl();
         const k3resourceImpl* ib_res_impl = ib_impl->_resource->getImpl();
-        geom->Triangles.IndexBuffer = ib_res_impl->_dx12_resource->GetGPUVirtualAddress();
+        uint32_t index_stride = ((ib_res_impl->_format == k3fmt::R16_UINT) ? 2 : 4);
+        geom->Triangles.IndexBuffer = ib_res_impl->_dx12_resource->GetGPUVirtualAddress() + 3 * index_stride * bldesc->start_prim;
         geom->Triangles.IndexFormat = k3win32Dx12WinImpl::ConvertToDXGIFormat(ib_res_impl->_format, k3DxgiSurfaceType::COLOR);
-        geom->Triangles.IndexCount = (uint32_t)(ib_res_impl->_width / ((ib_res_impl->_format == k3fmt::R16_UINT) ? 2 : 4));
+        if (bldesc->num_prims) {
+            geom->Triangles.IndexCount = 3 * bldesc->num_prims;
+        } else {
+            geom->Triangles.IndexCount = (uint32_t)(ib_res_impl->_width / index_stride);
+        }
     } else {
         geom->Triangles.IndexBuffer = NULL;
         geom->Triangles.IndexFormat = DXGI_FORMAT_UNKNOWN;
         geom->Triangles.IndexCount = 0;
+        geom->Triangles.VertexBuffer.StartAddress += 3 * vb_impl->_stride * bldesc->start_prim;
+        if (bldesc->num_prims) {
+            geom->Triangles.VertexCount = 3 * bldesc->num_prims;
+        }
     }
     // TODO: add support for transform
     geom->Triangles.Transform3x4 = 0;

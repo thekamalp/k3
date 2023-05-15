@@ -13,6 +13,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include "fbx.h"
+
 const uint32_t K3_MATH_STATIC_ARRAY_SIZE = 16;
 
 class k3imageImpl
@@ -72,6 +74,32 @@ struct k3fontCBufferDynamic
 struct k3fontCBuffer {
     k3fontCBufferDynamic dyn;
     float char_scale[k3fontImpl::NUM_CHARS * 4];
+};
+
+struct k3meshModel {
+    uint32_t mesh_index;
+    uint32_t prim_start;
+    uint32_t num_prims;
+    float world_xform[16];
+    float diffuse_color[3];
+    uint32_t diffuse_map_index;
+};
+
+class k3meshImpl
+{
+public:
+    k3meshImpl();
+    virtual ~k3meshImpl();
+    uint32_t _num_meshes;
+    uint32_t _num_models;
+    uint32_t _num_tris;
+    uint32_t _num_textures;
+    uint32_t* _mesh_start;
+    k3meshModel* _model;
+    k3surf* _textures;
+    k3buffer _ib;
+    k3buffer _vb;
+    k3buffer _ab;  // attribute buffer
 };
 
 class k3winImpl
