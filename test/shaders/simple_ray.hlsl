@@ -103,12 +103,18 @@ void closestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float2 uv = uv0 * baryc.x + uv1 * baryc.y + uv2 * baryc.z;
 
     light_dir = mul(tan_mat, light_dir);
-    normal = float3(0.0, 0.0, 1.0);
     uint diffuse_texture_index = obj_prop[InstanceID()].diffuse_map_index;
+    uint normal_texture_index = obj_prop[InstanceID()].normal_map_index;
     if (diffuse_texture_index == 0xffffffff) {
         payload.color = obj_prop[InstanceID()].diffuse_color;
     } else {
         payload.color = texture_set[diffuse_texture_index].SampleLevel(sampleLinear, uv, 0).xyz;
     }
+    if (normal_texture_index == 0xffffffff) {
+        normal = float3(0.0, 0.0, 1.0);
+    } else {
+        normal = normalize(2.0 * texture_set[normal_texture_index].SampleLevel(sampleLinear, uv, 0).xyz - 1.0);
+    }
+
     payload.color  = payload.color * dot(normal, light_dir);
 }

@@ -520,6 +520,7 @@ const uint32_t FOURCC_ATI2 = FOURCC4('A', 'T', 'I', '2');
 const uint32_t FOURCC_DX10 = FOURCC4('D', 'X', '1', '0');
 
 // Float formats
+const uint32_t FOURCC_RGBA16U = 36;
 const uint32_t FOURCC_R16F    = 111;
 const uint32_t FOURCC_RG16F   = 112;
 const uint32_t FOURCC_RGBA16F = 113;
@@ -1634,6 +1635,7 @@ public:
     K3API float* getTransform(uint32_t obj);
     K3API float* getDiffuseColor(uint32_t obj);
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
+    K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
     K3API k3buffer getAttribBuffer();

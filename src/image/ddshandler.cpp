@@ -333,6 +333,7 @@ void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
         case FOURCC_DXT5:    *format = k3fmt::BC3_UNORM; break;
         case FOURCC_ATI1:    *format = k3fmt::BC4_UNORM; break;
         case FOURCC_ATI2:    *format = k3fmt::BC5_UNORM; break;
+        case FOURCC_RGBA16U: *format = k3fmt::RGBA16_UNORM; break;
         case FOURCC_R16F:    *format = k3fmt::R16_FLOAT; break;
         case FOURCC_RG16F:   *format = k3fmt::RG16_FLOAT; break;
         case FOURCC_RGBA16F: *format = k3fmt::RGBA16_FLOAT; break;
@@ -688,7 +689,8 @@ void K3CALLBACK k3dds_SaveData(FILE* file_handle,
     uint32_t dest_slice_pitch = height * dest_pitch;
     image_size = k3imageObj::GetImageSize(width, height, depth, outputformat);
 
-    if (outputformat != format || pitch != dest_pitch || slice_pitch != dest_slice_pitch) {
+    bool inplace = (outputformat == format && pitch == dest_pitch && slice_pitch == dest_slice_pitch);
+    if (!inplace) {
         uint8_t* bm = new uint8_t[image_size];
         bitmap = bm;
         if (bitmap == NULL) {
@@ -706,6 +708,6 @@ void K3CALLBACK k3dds_SaveData(FILE* file_handle,
     fwrite(&wheader, 1, sizeof(k3DDSHeader), file_handle);
     fwrite(bitmap, 1, image_size, file_handle);
 
-    if (format != outputformat) delete[] bitmap;
+    if (!inplace) delete[] bitmap;
 
 }

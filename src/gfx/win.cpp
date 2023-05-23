@@ -605,6 +605,15 @@ K3API uint32_t k3meshObj::getDiffuseMapIndex(uint32_t obj)
     }
 }
 
+K3API uint32_t k3meshObj::getNormalMapIndex(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        return _data->_model[obj].normal_map_index;
+    } else {
+        return NULL;
+    }
+}
+
 K3API k3buffer k3meshObj::getIndexBuffer()
 {
     return _data->_ib;
@@ -698,6 +707,7 @@ struct k3fbxMaterialData {
     uint64_t id;
     float diffuse_color[3];
     uint32_t diffuse_texture_index;
+    uint32_t normal_texture_index;
 };
 
 struct k3fbxTextureData {
@@ -738,6 +748,9 @@ struct k3fbxData {
     char norm_type;
     char uv_type;
 };
+
+static const uint64_t MAP_TYPE_DIFFUSE = 0;
+static const uint64_t MAP_TYPE_NORMAL = 1;
 
 uint32_t findFbxTextureNode(k3fbxData* fbx, uint64_t id)
 {
@@ -806,7 +819,14 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             // id1 should be a material
             index1 = findFbxMaterialNode(fbx, id[1]);
             if (index1 != ~0x0) {
-                fbx->material[index1].diffuse_texture_index = index0;
+                switch (id[2]) {
+                case MAP_TYPE_DIFFUSE:
+                    fbx->material[index1].diffuse_texture_index = index0;
+                    break;
+                case MAP_TYPE_NORMAL:
+                    fbx->material[index1].normal_texture_index = index0;
+                    break;
+                }
             }
             return;
         }
@@ -853,7 +873,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     k3fbxNodeType node_type = k3fbxNodeType::UNKNOWN;
     void* data_arr;
     uint32_t connect_index;
-    uint64_t connect_id[2];
+    uint32_t connect_params;
+    uint64_t connect_id[3];
     k3fbxProperty fbx_property = k3fbxProperty::NONE;
     uint32_t fbx_property_argument = 0;
 
@@ -937,6 +958,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->material[fbx->num_materials].diffuse_color[1] = 1.0f;
                 fbx->material[fbx->num_materials].diffuse_color[2] = 1.0f;
                 fbx->material[fbx->num_materials].diffuse_texture_index = ~0;
+                fbx->material[fbx->num_materials].normal_texture_index = ~0;
             }
             fbx->num_materials++;
         }
@@ -951,6 +973,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
 
         if (node_type == k3fbxNodeType::CONNECT) {
             connect_index = 0;
+            connect_params = 0;
         }
 
         for (i = 0; i < node.num_properties; i++) {
@@ -1034,7 +1057,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     if (connect_index < 2) {
                         connect_id[connect_index] = *i64_arr;
                         connect_index++;
-                        if (connect_index == 2) connectFbxNode(fbx, connect_id);
+                        if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
                     }
                     break;
                 }
@@ -1172,7 +1195,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     if (parent_node == k3fbxNodeType::TEXTURE && fbx->texture) {
                         strncpy(fbx->texture[fbx->num_textures - 1].filename, str, k3fbxTextureData::FILENAME_SIZE);
                     }
-                } else if(node_type == k3fbxNodeType::PROP) {
+                } else if (node_type == k3fbxNodeType::PROP) {
                     if (fbx_property == k3fbxProperty::NONE) {
                         if (!strncmp(str, "Lcl Translation", 16)) {
                             fbx_property = k3fbxProperty::LOCAL_TRANSLATION;
@@ -1183,6 +1206,18 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         } else if (K3_FBX_DEBUG) {
                             printf("%s\n", str);
                         }
+                    }
+                } else if(node_type == k3fbxNodeType::CONNECT) {
+                    if (connect_params == 0) {
+                        connect_params = (str[1] == 'P') ? 3 : 2;
+                    } else {
+                        if (!strncmp(str, "DiffuseColor", 13)) {
+                            connect_id[connect_index] = MAP_TYPE_DIFFUSE;
+                        } else if (!strncmp(str, "NormalMap", 10)) {
+                            connect_id[connect_index] = MAP_TYPE_NORMAL;
+                        }
+                        connect_index++;
+                        if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
                     }
                 } else if (K3_FBX_DEBUG) {
                     printf("%s\n", str);
@@ -1317,6 +1352,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = 1.0f;
             mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = 1.0f;
             mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = ~0;
+            mesh_impl->_model[mesh_impl->_num_models].normal_map_index = ~0;
             // Set initial model rotation and position
             k3m4_SetRotation(mesh_impl->_model[mesh_impl->_num_models].world_xform, deg2rad(fbx.model[i].rotation[0]), x_axis);
             k3m4_SetRotation(mat, deg2rad(fbx.model[i].rotation[1]), y_axis);
@@ -1336,6 +1372,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 uint32_t texture_index = fbx.material[material_index].diffuse_texture_index;
                 if (texture_index != ~0) {
                     mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = texture_index;
+                }
+                texture_index = fbx.material[material_index].normal_texture_index;
+                if (texture_index != ~0) {
+                    mesh_impl->_model[mesh_impl->_num_models].normal_map_index = texture_index;
                 }
             }
             mesh_impl->_num_models++;
@@ -1560,19 +1600,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
             k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
             k3v3_Normalize(attrs + 8 * i0 + 5);
+            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i1, verts + 3 * i2, verts + 3 * i0, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3);
             k3v3_Cross(attrs + 8 * i1 + 5, attrs + 8 * i1 + 0, bitangent);
             k3v3_Normalize(attrs + 8 * i1 + 5);
+            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i2, verts + 3 * i0, verts + 3 * i1, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3);
             k3v3_Cross(attrs + 8 * i2 + 5, attrs + 8 * i2 + 0, bitangent);
             k3v3_Normalize(attrs + 8 * i2 + 5);
-            //attrs[8 * i2 + 5] = attrs[8 * i1 + 5] = attrs[8 * i0 + 5];
-            //attrs[8 * i2 + 6] = attrs[8 * i1 + 6] = attrs[8 * i0 + 6];
-            //attrs[8 * i2 + 7] = attrs[8 * i1 + 7] = attrs[8 * i0 + 7];
-            //k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i1, verts + 3 * i2, verts + 3 * i0, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3);
-            //k3v3_Cross(attrs + 8 * i1 + 5, attrs + 8 * i1 + 0, bitangent);
-            //k3v3_Normalize(attrs + 8 * i1 + 5);
-            //k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i2, verts + 3 * i0, verts + 3 * i1, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3);
-            //k3v3_Cross(attrs + 8 * i2 + 5, attrs + 8 * i2 + 0, bitangent);
-            //k3v3_Normalize(attrs + 8 * i2 + 5);
         }
     }
 

@@ -83,6 +83,7 @@ struct k3meshModel {
     float world_xform[16];
     float diffuse_color[3];
     uint32_t diffuse_map_index;
+    uint32_t normal_map_index;
 };
 
 class k3meshImpl

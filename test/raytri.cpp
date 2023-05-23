@@ -453,6 +453,7 @@ void App::UpdateResources(uint32_t v)
         k3m4_Inverse(obj_data[i].iworld);
         memcpy(obj_data[i].diffuse_color, cube_mesh->getDiffuseColor(i), 3 * sizeof(float));
         obj_data[i].diffuse_map_index = cube_mesh->getDiffuseMapIndex(i);
+        obj_data[i].normal_map_index = cube_mesh->getNormalMapIndex(i);
         obj_data[i].prim_start = cube_mesh->getStartPrim(i);
         tlas_main_scene[v]->UpdateTransform(i, obj_data[i].world);
     }

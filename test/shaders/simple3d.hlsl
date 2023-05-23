@@ -68,14 +68,21 @@ float4 ps_main(VS2PS i) : SV_Target
 {
     float2 uv = i.texcoord;
     float3 light_dir = normalize(i.light.xyz);
-    float3 normal = float3(0.0, 0.0, 1.0);
+    float3 normal;
     float4 color;
     uint diffuse_texture_index = obj_prop[obj_id].diffuse_map_index;
+    uint normal_texture_index = obj_prop[obj_id].normal_map_index;
     if (diffuse_texture_index != 0xffffffff) {
         color = texture_set[diffuse_texture_index].Sample(sampleLinear, uv);
     } else {
         color = float4(obj_prop[obj_id].diffuse_color, 1.0);
     }
+    if (normal_texture_index != 0xffffffff) {
+        normal = normalize(2.0 * texture_set[normal_texture_index].Sample(sampleLinear, uv).xyz - 1.0);
+    } else {
+        normal = float3(0.0, 0.0, 1.0);
+    }
+
     color = color * dot(normal, light_dir);
 
     return color;
