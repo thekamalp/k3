@@ -749,6 +749,13 @@ struct k3fbxData {
     char uv_type;
 };
 
+struct k3fbxAttrLinkList {
+    uint32_t n_index;
+    uint32_t uv_index;
+    float* attr;
+    k3fbxAttrLinkList* next;
+};
+
 static const uint64_t MAP_TYPE_DIFFUSE = 0;
 static const uint64_t MAP_TYPE_NORMAL = 1;
 
@@ -1337,6 +1344,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     float x_axis[3] = { 1.0f, 0.0f, 0.0f };
     float y_axis[3] = { 0.0f, 1.0f, 0.0f };
     float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+    uint32_t max_mesh_prims = 0;
     for (i = 0; i < fbx.num_models; i++) {
         uint32_t mesh_index = fbx.model[i].mesh_index;
         uint32_t mesh_start, num_mesh_prims;
@@ -1345,6 +1353,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_start = mesh_impl->_mesh_start[mesh_index];
             num_mesh_prims = (mesh_index < mesh_impl->_num_meshes - 1) ? mesh_impl->_mesh_start[mesh_index + 1] : num_tris;
             num_mesh_prims -= mesh_start;
+            if (num_mesh_prims > max_mesh_prims) max_mesh_prims = num_mesh_prims;
             mesh_impl->_model[mesh_impl->_num_models].mesh_index = mesh_index;
             mesh_impl->_model[mesh_impl->_num_models].prim_start = mesh_start;
             mesh_impl->_model[mesh_impl->_num_models].num_prims = num_mesh_prims;
@@ -1418,7 +1427,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     uint32_t local_poly = 0;
     uint32_t v_index, n_index, uv_index;
     bool end_poly;
-    uint32_t i0, i1, i2;
+    uint32_t i0, i1, i2, j;
     float bitangent[3];
     o = 0;
     if(use_ib) {
@@ -1469,14 +1478,25 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     } else {
         poly_start = ipos;
         local_poly_start = local_ipos;
+        uint32_t obj_v_index[3];
+        uint32_t obj_n_index[3];
+        uint32_t obj_uv_index[3];
+        k3fbxAttrLinkList** attr_ll = new k3fbxAttrLinkList*[3 * max_mesh_prims];
+        k3fbxAttrLinkList* attr_nodes = new k3fbxAttrLinkList[3 * max_mesh_prims];
+        k3fbxAttrLinkList* alloc_attr_node = attr_nodes;
+        k3fbxAttrLinkList* cur_attr_node;
+        memset(attr_ll, 0, 3 * max_mesh_prims * sizeof(k3fbxAttrLinkList*));
         for (i = 0; i < num_tris; i++) {
             if (o + 1 < fbx.num_meshes && i >= mesh_impl->_mesh_start[o + 1]) {
                 local_ipos = 0;
                 local_poly_start = 0;
                 local_poly = 0;
                 o++;
+                alloc_attr_node = attr_nodes;
+                memset(attr_ll, 0, 3 * max_mesh_prims * sizeof(k3fbxAttrLinkList*));
             }
             v_index = fbx.indices[poly_start];
+            obj_v_index[0] = v_index;
             v_index += fbx.mesh[o].vert_offset;
             verts[9 * i + 0] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 1] = fbx_verts[3 * v_index + 1];
@@ -1491,6 +1511,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 n_index += fbx.mesh[o].normal_index_offset;
                 n_index = fbx.normal_indices[n_index];
             }
+            obj_n_index[0] = n_index;
             n_index += fbx.mesh[o].normal_offset;
             attrs[24 * i + 0] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 1] = fbx_normals[3 * n_index + 1];
@@ -1505,6 +1526,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 uv_index += fbx.mesh[o].uv_index_offset;
                 uv_index = fbx.uv_indices[uv_index];
             }
+            obj_uv_index[0] = uv_index;
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 3] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 4] = 1.0f - fbx_uvs[2 * uv_index + 1];
@@ -1512,6 +1534,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 6] = 0.0f;
             attrs[24 * i + 7] = 0.0f;
             v_index = fbx.indices[ipos + 1];
+            obj_v_index[1] = v_index;
             v_index += fbx.mesh[o].vert_offset;
             verts[9 * i + 3] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 4] = fbx_verts[3 * v_index + 1];
@@ -1526,6 +1549,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 n_index += fbx.mesh[o].normal_index_offset;
                 n_index = fbx.normal_indices[n_index];
             }
+            obj_n_index[1] = n_index;
             n_index += fbx.mesh[o].normal_offset;
             attrs[24 * i + 8] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 9] = fbx_normals[3 * n_index + 1];
@@ -1540,6 +1564,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 uv_index += fbx.mesh[o].uv_index_offset;
                 uv_index = fbx.uv_indices[uv_index];
             }
+            obj_uv_index[1] = uv_index;
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 11] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 12] = 1.0f - fbx_uvs[2 * uv_index + 1];
@@ -1549,6 +1574,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             v_index = fbx.indices[ipos + 2];
             end_poly = (v_index & 0x80000000) ? true : false;
             if (end_poly) v_index = ~v_index;
+            obj_v_index[2] = v_index;
             v_index += fbx.mesh[o].vert_offset;
             verts[9 * i + 6] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 7] = fbx_verts[3 * v_index + 1];
@@ -1563,6 +1589,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 n_index += fbx.mesh[o].normal_index_offset;
                 n_index = fbx.normal_indices[n_index];
             }
+            obj_n_index[2] = n_index;
             n_index += fbx.mesh[o].normal_offset;
             attrs[24 * i + 16] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 17] = fbx_normals[3 * n_index + 1];
@@ -1577,6 +1604,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 uv_index += fbx.mesh[o].uv_index_offset;
                 uv_index = fbx.uv_indices[uv_index];
             }
+            obj_uv_index[2] = uv_index;
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 19] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 20] = 1.0f - fbx_uvs[2 * uv_index + 1];
@@ -1594,19 +1622,34 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 ipos++;
                 local_ipos++;
             }
-            i0 = 3 * i + 0;
-            i1 = 3 * i + 1;
-            i2 = 3 * i + 2;
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
-            k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i0 + 5);
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i1, verts + 3 * i2, verts + 3 * i0, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3);
-            k3v3_Cross(attrs + 8 * i1 + 5, attrs + 8 * i1 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i1 + 5);
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i2, verts + 3 * i0, verts + 3 * i1, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3);
-            k3v3_Cross(attrs + 8 * i2 + 5, attrs + 8 * i2 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i2 + 5);
+            
+            for (j = 0; j < 3; j++) {
+                for (cur_attr_node = attr_ll[obj_v_index[j]]; cur_attr_node != NULL; cur_attr_node = cur_attr_node->next) {
+                    if (cur_attr_node->n_index == obj_n_index[j] && cur_attr_node->uv_index == obj_uv_index[j]) {
+                        break;
+                    }
+                }
+                if (cur_attr_node) {
+                    memcpy(attrs + 8 * (3 * i + j) + 5, cur_attr_node->attr, 3 * sizeof(float));
+                } else {
+                    i0 = 3 * i + j;
+                    i1 = 3 * i + ((j > 1) ? j - 2 : j + 1);
+                    i2 = 3 * i + ((j > 0) ? j - 1 : j + 2);
+                    k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
+                    k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
+                    k3v3_Normalize(attrs + 8 * i0 + 5);
+                    alloc_attr_node->n_index = obj_n_index[j];
+                    alloc_attr_node->uv_index = obj_uv_index[j];
+                    alloc_attr_node->attr = attrs + 8 * i0 + 5;
+                    alloc_attr_node->next = attr_ll[obj_v_index[j]];
+                    attr_ll[obj_v_index[j]] = alloc_attr_node;
+                    alloc_attr_node++;
+                }
+            }
+
         }
+        delete[] attr_ll;
+        delete[] attr_nodes;
     }
 
     desc->up_buf->Unmap();
