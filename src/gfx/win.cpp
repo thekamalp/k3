@@ -667,6 +667,7 @@ enum class k3fbxProperty {
 };
 
 enum class k3fbxMapping {
+    None,
     ByPoly,
     ByPolyVert,
     ByVert,
@@ -675,6 +676,7 @@ enum class k3fbxMapping {
 };
 
 enum class k3fbxReference {
+    None,
     Direct,
     ByIndex
 };
@@ -939,6 +941,11 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->mesh[fbx->num_meshes].uv_offset = fbx->num_uvs;
                 fbx->mesh[fbx->num_meshes].uv_index_offset = fbx->num_uv_indices;
                 fbx->mesh[fbx->num_meshes].material_offset = fbx->num_material_ids;
+                fbx->mesh[fbx->num_meshes].normal_mapping = k3fbxMapping::None;
+                fbx->mesh[fbx->num_meshes].uv_mapping = k3fbxMapping::None;
+                fbx->mesh[fbx->num_meshes].material_mapping = k3fbxMapping::None;
+                fbx->mesh[fbx->num_meshes].normal_reference = k3fbxReference::None;
+                fbx->mesh[fbx->num_meshes].uv_reference = k3fbxReference::None;
             }
             fbx->num_meshes++;
         }
@@ -1502,6 +1509,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 1] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 2] = fbx_verts[3 * v_index + 2];
             switch (fbx.mesh[o].normal_mapping) {
+            case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: n_index = local_poly_start; break;
             case k3fbxMapping::ByVert: n_index = fbx.indices[poly_start]; break;
@@ -1517,6 +1525,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 1] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 2] = fbx_normals[3 * n_index + 2];
             switch (fbx.mesh[o].uv_mapping) {
+            case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: uv_index = local_poly_start; break;
             case k3fbxMapping::ByVert: uv_index = fbx.indices[poly_start]; break;
@@ -1540,6 +1549,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 4] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 5] = fbx_verts[3 * v_index + 2];
             switch (fbx.mesh[o].normal_mapping) {
+            case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: n_index = local_ipos + 1; break;
             case k3fbxMapping::ByVert: n_index = fbx.indices[ipos + 1]; break;
@@ -1555,6 +1565,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 9] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 10] = fbx_normals[3 * n_index + 2];
             switch (fbx.mesh[o].uv_mapping) {
+            case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: uv_index = local_ipos + 1; break;
             case k3fbxMapping::ByVert: uv_index = fbx.indices[ipos + 1]; break;
@@ -1580,6 +1591,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 7] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 8] = fbx_verts[3 * v_index + 2];
             switch (fbx.mesh[o].normal_mapping) {
+            case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: n_index = local_ipos + 2; break;
             case k3fbxMapping::ByVert: n_index = fbx.indices[ipos + 2]; break;
@@ -1595,6 +1607,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 17] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 18] = fbx_normals[3 * n_index + 2];
             switch (fbx.mesh[o].uv_mapping) {
+            case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: uv_index = local_ipos + 2; break;
             case k3fbxMapping::ByVert: uv_index = fbx.indices[ipos + 2]; break;

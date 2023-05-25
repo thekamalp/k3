@@ -806,11 +806,7 @@ K3API void k3cmdBufObj::SetConstantBuffer(uint32_t index, k3buffer constant_buff
 
 K3API void k3cmdBufObj::SetShaderView(uint32_t index, k3surf surf)
 {
-    if (surf == NULL) {
-        D3D12_GPU_DESCRIPTOR_HANDLE dx12_handle = { NULL };
-        _data->_cmd_list->SetGraphicsRootDescriptorTable(index, dx12_handle);
-        return;
-    }
+    if (surf == NULL)  return;
     k3surfImpl* surf_impl = surf->getImpl();
     if (surf_impl->_srv_gpu_view.ptr == NULL) {
         k3error::Handler("Surface does not support shader resource view", "k3cmdBufObj::SetShaderView");
@@ -821,11 +817,7 @@ K3API void k3cmdBufObj::SetShaderView(uint32_t index, k3surf surf)
 
 K3API void k3cmdBufObj::SetSampler(uint32_t index, k3sampler sampler)
 {
-    if (sampler == NULL) {
-        D3D12_GPU_DESCRIPTOR_HANDLE dx12_handle = { NULL };
-        _data->_cmd_list->SetGraphicsRootDescriptorTable(index, dx12_handle);
-        return;
-    }
+    if (sampler == NULL) return;
     k3samplerImpl* sampler_impl = sampler->getImpl();
     _data->_cmd_list->SetGraphicsRootDescriptorTable(index, sampler_impl->_gpu_view);
 }
@@ -929,36 +921,40 @@ K3API void k3cmdBufObj::UpdateRTStateTable(k3rtStateTable table, k3rtStateTableU
         for (j = 0; j < table_impl->_num_args; j++) {
             if (j < desc->entries[i].num_args) {
                 if (desc->entries[i].args[j].type == k3rtStateTableArgType::HANDLE) {
-                    switch (desc->entries[i].args[j].obj->getObjType()) {
-                    case k3objType::SURF:
-                        surf_impl = ((k3surf)desc->entries[i].args[j].obj)->getImpl();
-                        switch (desc->entries[i].args[j].bind_type) {
-                        case k3shaderBindType::SRV:
-                            gpu_view = surf_impl->_srv_gpu_view;
+                    if (desc->entries[i].args[j].obj == NULL) {
+                        gpu_view.ptr = NULL;
+                    } else {
+                        switch (desc->entries[i].args[j].obj->getObjType()) {
+                        case k3objType::SURF:
+                            surf_impl = ((k3surf)desc->entries[i].args[j].obj)->getImpl();
+                            switch (desc->entries[i].args[j].bind_type) {
+                            case k3shaderBindType::SRV:
+                                gpu_view = surf_impl->_srv_gpu_view;
+                                break;
+                            case k3shaderBindType::UAV:
+                                gpu_view = surf_impl->_uav_gpu_view;
+                                break;
+                            default:
+                                gpu_view.ptr = NULL;
+                                break;
+                            }
                             break;
-                        case k3shaderBindType::UAV:
-                            gpu_view = surf_impl->_uav_gpu_view;
+                        case k3objType::TLAS:
+                            tlas_impl = ((k3tlas)desc->entries[i].args[j].obj)->getImpl();
+                            gpu_view = tlas_impl->_gpu_view;
+                            break;
+                        case k3objType::BUFFER:
+                            buffer_impl = ((k3buffer)desc->entries[i].args[j].obj)->getImpl();
+                            gpu_view = buffer_impl->_gpu_view;
                             break;
                         default:
                             gpu_view.ptr = NULL;
                             break;
                         }
-                        break;
-                    case k3objType::TLAS:
-                        tlas_impl = ((k3tlas)desc->entries[i].args[j].obj)->getImpl();
-                        gpu_view = tlas_impl->_gpu_view;
-                        break;
-                    case k3objType::BUFFER:
-                        buffer_impl = ((k3buffer)desc->entries[i].args[j].obj)->getImpl();
-                        gpu_view = buffer_impl->_gpu_view;
-                        break;
-                    default:
-                        gpu_view.ptr = NULL;
-                        break;
-                    }
-                    if (gpu_view.ptr == NULL) {
-                        k3error::Handler("Resource does not have appropriate view", "k3cmdBufObj::UpdateRTStateTable");
-                        return;
+                        if (gpu_view.ptr == NULL) {
+                            k3error::Handler("Resource does not have appropriate view", "k3cmdBufObj::UpdateRTStateTable");
+                            return;
+                        }
                     }
                     memcpy(data, &(gpu_view.ptr), 8);
                 } else {

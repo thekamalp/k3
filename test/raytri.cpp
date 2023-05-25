@@ -146,6 +146,7 @@ void App::Setup()
     bind_params[1].type = k3bindingType::VIEW_SET;
     bind_params[1].view_set_desc.type = k3shaderBindType::SRV;
     bind_params[1].view_set_desc.num_views = cube_mesh->getNumTextures();
+    if (bind_params[1].view_set_desc.num_views == 0) bind_params[1].view_set_desc.num_views = 1;
     bind_params[1].view_set_desc.reg = 1;
     bind_params[1].view_set_desc.space = 0;
     bind_params[1].view_set_desc.offset = 1;
@@ -276,6 +277,7 @@ void App::Setup()
     rt_bindings[4].type = k3bindingType::VIEW_SET;
     rt_bindings[4].view_set_desc.type = k3shaderBindType::SRV;
     rt_bindings[4].view_set_desc.num_views = cube_mesh->getNumTextures();
+    if (rt_bindings[4].view_set_desc.num_views == 0) rt_bindings[4].view_set_desc.num_views = 1;
     rt_bindings[4].view_set_desc.reg = 3;
     rt_bindings[4].view_set_desc.space = 0;
     rt_bindings[4].view_set_desc.offset = 4;
@@ -475,29 +477,29 @@ void App::UpdateResources(uint32_t v)
 void App::Keyboard(k3key k, char c, k3keyState state)
 {
     if (state == k3keyState::PRESSED) {
-        float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+        float rot_axis[3] = { 0.0f, 0.0f, 1.0f };
         float new_xform[16];
-        float* model_xform = cube_mesh->getTransform(1);
+        float* model_xform = cube_mesh->getTransform(cube_mesh->getNumMeshes() - 1);
         switch (k) {
         case k3key::ESCAPE:
             k3winObj::ExitLoop();
             break;
         case k3key::LEFT:
-            k3m4_SetIdentity(new_xform);
-            new_xform[3] = -1.0f;
+            k3m4_SetRotation(new_xform, deg2rad(15.0f), rot_axis);
             k3m4_Mul(model_xform, new_xform, model_xform);
             break;
         case k3key::RIGHT:
-            k3m4_SetIdentity(new_xform);
-            new_xform[3] = 1.0f;
+            k3m4_SetRotation(new_xform, deg2rad(-15.0f), rot_axis);
             k3m4_Mul(model_xform, new_xform, model_xform);
             break;
         case k3key::UP:
-            k3m4_SetRotation(new_xform, deg2rad(-15.0f), x_axis);
+            k3m4_SetIdentity(new_xform);
+            new_xform[11] = 1.0f;
             k3m4_Mul(model_xform, model_xform, new_xform);
             break;
         case k3key::DOWN:
-            k3m4_SetRotation(new_xform, deg2rad(15.0f), x_axis);
+            k3m4_SetIdentity(new_xform);
+            new_xform[11] = -1.0f;
             k3m4_Mul(model_xform, model_xform, new_xform);
             break;
         case k3key::SPACE:
