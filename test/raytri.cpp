@@ -98,7 +98,7 @@ void App::Setup()
     mdesc.view_index = view_index;
     mdesc.cmd_buf = cmd_buf;
     mdesc.up_buf = gfx->CreateUploadBuffer();
-    mdesc.name = "cube2.fbx";
+    mdesc.name = "cube2e.fbx";
     cube_mesh = gfx->CreateMesh(&mdesc);
     view_index = mdesc.view_index;
     _chdir("..\\..\\bin");
@@ -418,7 +418,6 @@ void App::Setup()
 
     gfx->WaitGpuIdle();
 
-    if (mdesc.up_image) delete[] mdesc.up_image;
     if (tl_inst) delete[] tl_inst;
     if (blas) delete[] blas;
 }

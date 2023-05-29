@@ -206,29 +206,6 @@ void k3png_defilter_scanline(uint8_t* dst, uint8_t* prev_dst, uint32_t pix_pitch
     }
 }
 
-void k3png_defilter(uint8_t* dst, uint8_t* src, uint32_t pix_pitch, uint32_t row_pitch, uint32_t height)
-{
-    uint32_t row, col;
-    uint8_t filter_type;
-    uint8_t* cur_src = src;
-    uint8_t* cur_dst = dst;
-    uint8_t* prev_dst = NULL;
-    for (row = 0; row < height; row++) {
-        filter_type = *cur_src;
-        if (filter_type > 4) {
-            // bad filter type
-            filter_type = 0;
-        }
-        cur_src++;
-        memcpy(cur_dst, cur_src, row_pitch);
-        k3png_defilter_scanline(cur_dst, prev_dst, pix_pitch, row_pitch, filter_type);
-        prev_dst = cur_dst;
-        cur_dst += row_pitch;
-        cur_src += row_pitch;
-    }
-
-}
-
 void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice_pitch, void* data)
 {
     png_chunk_t chunk;
@@ -309,7 +286,6 @@ void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
     // clear the scanline to 0
     memset(src_buffer, 0, 2 * scanline_pitch);
 
-    uint8_t filter_type;
     uint32_t row = 0;
     uint32_t plane = (header.interlace_method == PNG_INTERLACE_ADAM7) ? 1 : 0;
     uint8_t* cur_dst = (uint8_t*)data;

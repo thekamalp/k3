@@ -66,66 +66,75 @@ K3API void k3imageObj::ReformatFromFile(k3image img, const char* file_name,
     k3fmt dest_format, const float* transform,
     k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode)
 {
+    FILE* file_handle;
+    fopen_s(&file_handle,  file_name, "rb");
+    if (file_handle == NULL) {
+        k3error::Handler("File not found", "ReformatFromFile");
+    } else {
+        ReformatFromFileHandle(img, file_handle, dest_width, dest_height, dest_depth,
+            dest_format, transform, x_addr_mode, y_addr_mode, z_addr_mode);
+    }
+}
+
+K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
+    uint32_t dest_width, uint32_t dest_height, uint32_t dest_depth,
+    k3fmt dest_format, const float* transform,
+    k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode)
+{
     uint32_t src_width, src_height, src_depth;
     k3fmt src_format = k3fmt::UNKNOWN;
     uint8_t* src_data_byte_ptr = NULL;
     void* src_data;
     uint32_t fhi;
 
-    FILE* file_handle;
-    fopen_s(&file_handle,  file_name, "rb");
-    if (file_handle == NULL) {
-        k3error::Handler("File not found", "ReformatFromFile");
-    } else {
-        for (fhi = 0; fhi < _num_file_handlers; fhi++) {
-            _fh[fhi]->LoadHeaderInfo(file_handle, &src_width, &src_height, &src_depth, &src_format);
-            if (src_format != k3fmt::UNKNOWN) break;
-        }
-        if (src_format != k3fmt::UNKNOWN) {
-            if (dest_width == 0) dest_width = src_width;
-            if (dest_height == 0) dest_height = src_height;
-            if (dest_depth == 0) dest_depth = src_depth;
-            if (dest_format == k3fmt::UNKNOWN) dest_format = src_format;
-            uint32_t src_format_size = k3imageObj::GetFormatSize(src_format);
-            uint32_t dest_format_size = k3imageObj::GetFormatSize(dest_format);
-            img->SetDimensions(dest_width, dest_height, dest_depth, dest_format);
-            uint32_t dest_pitch = img->GetPitch();
-            uint32_t dest_slice_pitch = img->GetSlicePitch();
-            uint32_t src_pitch = (src_width == dest_width && src_format_size == dest_format_size) ? dest_pitch : src_width * src_format_size;
-            uint32_t src_slice_pitch = (src_pitch == dest_pitch && src_height == dest_height) ? dest_slice_pitch : src_pitch * src_height;
-            
-            uint32_t src_image_size = src_depth * src_slice_pitch;
-            uint32_t dest_image_size = dest_depth * dest_slice_pitch;
-            bool inplace = (src_width == dest_width && src_height == dest_height &&
-                src_depth == dest_depth && src_image_size == dest_image_size && transform == NULL &&
-                src_pitch == dest_pitch && src_slice_pitch == dest_slice_pitch);
-
-            if (inplace) {
-                src_data = img->MapForWrite();
-            } else {
-                src_data_byte_ptr = new uint8_t[src_image_size];
-                src_data = static_cast<void*>(src_data_byte_ptr);
-            } // if( inplace )
-
-            _fh[fhi]->LoadData(file_handle, src_pitch, src_slice_pitch, src_data);
-
-            if (inplace) {
-                if (src_format != dest_format) k3imageObj::ReformatBuffer(src_width, src_height, src_depth,
-                    src_pitch, src_slice_pitch,
-                    src_format, src_data,
-                    dest_width, dest_height, dest_depth,
-                    dest_pitch, dest_slice_pitch,
-                    dest_format, src_data, transform,
-                    x_addr_mode, y_addr_mode, z_addr_mode);
-                img->Unmap();
-            } else {
-                k3imageObj::ReformatFromMemory(img, src_width, src_height, src_depth, src_pitch, src_slice_pitch, src_format, src_data,
-                    dest_width, dest_height, dest_depth, dest_format, transform,
-                    x_addr_mode, y_addr_mode, z_addr_mode);
-                delete[] src_data_byte_ptr;
-            } // if( inplace )
-        } // if (src_format != k3fmt::UNKNOWN)
+    for (fhi = 0; fhi < _num_file_handlers; fhi++) {
+        _fh[fhi]->LoadHeaderInfo(file_handle, &src_width, &src_height, &src_depth, &src_format);
+        if (src_format != k3fmt::UNKNOWN) break;
     }
+    if (src_format != k3fmt::UNKNOWN) {
+        if (dest_width == 0) dest_width = src_width;
+        if (dest_height == 0) dest_height = src_height;
+        if (dest_depth == 0) dest_depth = src_depth;
+        if (dest_format == k3fmt::UNKNOWN) dest_format = src_format;
+        uint32_t src_format_size = k3imageObj::GetFormatSize(src_format);
+        uint32_t dest_format_size = k3imageObj::GetFormatSize(dest_format);
+        img->SetDimensions(dest_width, dest_height, dest_depth, dest_format);
+        uint32_t dest_pitch = img->GetPitch();
+        uint32_t dest_slice_pitch = img->GetSlicePitch();
+        uint32_t src_pitch = (src_width == dest_width && src_format_size == dest_format_size) ? dest_pitch : src_width * src_format_size;
+        uint32_t src_slice_pitch = (src_pitch == dest_pitch && src_height == dest_height) ? dest_slice_pitch : src_pitch * src_height;
+
+        uint32_t src_image_size = src_depth * src_slice_pitch;
+        uint32_t dest_image_size = dest_depth * dest_slice_pitch;
+        bool inplace = (src_width == dest_width && src_height == dest_height &&
+            src_depth == dest_depth && src_image_size == dest_image_size && transform == NULL &&
+            src_pitch == dest_pitch && src_slice_pitch == dest_slice_pitch);
+
+        if (inplace) {
+            src_data = img->MapForWrite();
+        } else {
+            src_data_byte_ptr = new uint8_t[src_image_size];
+            src_data = static_cast<void*>(src_data_byte_ptr);
+        } // if( inplace )
+
+        _fh[fhi]->LoadData(file_handle, src_pitch, src_slice_pitch, src_data);
+
+        if (inplace) {
+            if (src_format != dest_format) k3imageObj::ReformatBuffer(src_width, src_height, src_depth,
+                src_pitch, src_slice_pitch,
+                src_format, src_data,
+                dest_width, dest_height, dest_depth,
+                dest_pitch, dest_slice_pitch,
+                dest_format, src_data, transform,
+                x_addr_mode, y_addr_mode, z_addr_mode);
+            img->Unmap();
+        } else {
+            k3imageObj::ReformatFromMemory(img, src_width, src_height, src_depth, src_pitch, src_slice_pitch, src_format, src_data,
+                dest_width, dest_height, dest_depth, dest_format, transform,
+                x_addr_mode, y_addr_mode, z_addr_mode);
+            delete[] src_data_byte_ptr;
+        } // if( inplace )
+    } // if (src_format != k3fmt::UNKNOWN)
 }
 
 K3API void k3imageObj::ReformatFromMemory(k3image img, uint32_t src_width, uint32_t src_height, uint32_t src_depth,

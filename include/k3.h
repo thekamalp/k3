@@ -647,6 +647,11 @@ public:
         k3fmt dest_format, const float* transform,
         k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode);
 
+    static K3API void ReformatFromFileHandle(k3image img, FILE* file_handle,
+        uint32_t dest_width, uint32_t dest_height, uint32_t dest_depth,
+        k3fmt dest_format, const float* transform,
+        k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode);
+
     static void LoadFromFile(k3image img, const char* src)
     {
         ReformatFromFile((img), (src), 0, 0, 0, k3fmt::UNKNOWN, NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
@@ -658,6 +663,19 @@ public:
     static void TransformFromFile(k3image img, const char* src, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df, const float* t, k3texAddr xa, k3texAddr ya, k3texAddr za)
     {
         ReformatFromFile((img), (src), (dw), (dh), (dd), (df), (t), (xa), (ya), (za));
+    }
+
+    static void LoadFromFileHandle(k3image img, FILE* src)
+    {
+        ReformatFromFileHandle((img), (src), 0, 0, 0, k3fmt::UNKNOWN, NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
+    }
+    static void ReformatFromFileHandle(k3image img, FILE* src, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df)
+    {
+        ReformatFromFileHandle((img), (src), (dw), (dh), (dd), (df), NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
+    }
+    static void TransformFromFileHandle(k3image img, FILE* src, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df, const float* t, k3texAddr xa, k3texAddr ya, k3texAddr za)
+    {
+        ReformatFromFileHandle((img), (src), (dw), (dh), (dd), (df), (t), (xa), (ya), (za));
     }
 
     static K3API void ReformatFromMemory(k3image img, uint32_t src_width, uint32_t src_height, uint32_t src_depth,
@@ -1603,7 +1621,6 @@ struct k3meshDesc {
     const char* name;
     k3cmdBuf cmd_buf;
     k3uploadBuffer up_buf;
-    k3uploadImage* up_image;
 };
 
 class k3meshObj : public k3obj

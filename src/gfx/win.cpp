@@ -656,7 +656,9 @@ enum class k3fbxNodeType {
     TEXTURE,
     RELATIVE_FILE_NAME,
     CONNECTIONS,
-    CONNECT
+    CONNECT,
+    VIDEO,
+    CONTENT
 };
 
 enum class k3fbxProperty {
@@ -712,10 +714,18 @@ struct k3fbxMaterialData {
     uint32_t normal_texture_index;
 };
 
+static const uint32_t K3_FBX_FILENAME_SIZE = 64;
+
 struct k3fbxTextureData {
-    static const uint32_t FILENAME_SIZE = 64;
     uint64_t id;
-    char filename[FILENAME_SIZE];
+    char filename[K3_FBX_FILENAME_SIZE];
+    uint32_t file_pos;
+};
+
+struct k3fbxContentData {
+    uint64_t id;
+    char filename[K3_FBX_FILENAME_SIZE];
+    uint32_t file_pos;
 };
 
 struct k3fbxData {
@@ -723,6 +733,7 @@ struct k3fbxData {
     uint32_t num_models;
     uint32_t num_materials;
     uint32_t num_textures;
+    uint32_t num_content_data;
     uint32_t num_vertices;
     uint32_t num_vertex_bytes;
     uint32_t num_indices;
@@ -739,6 +750,7 @@ struct k3fbxData {
     k3fbxModelData* model;
     k3fbxMaterialData* material;
     k3fbxTextureData* texture;
+    k3fbxContentData* content_data;
     uint32_t* indices;
     uint32_t* normal_indices;
     uint32_t* uv_indices;
@@ -760,6 +772,15 @@ struct k3fbxAttrLinkList {
 
 static const uint64_t MAP_TYPE_DIFFUSE = 0;
 static const uint64_t MAP_TYPE_NORMAL = 1;
+
+uint32_t findFbxContentDataNode(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_content_data; i++) {
+        if (fbx->content_data[i].id == id) break;
+    }
+    return (i < fbx->num_content_data) ? i : ~0x0;
+}
 
 uint32_t findFbxTextureNode(k3fbxData* fbx, uint64_t id)
 {
@@ -839,6 +860,16 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             }
             return;
         }
+        // Chec if id0 is content data
+        index0 = findFbxContentDataNode(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // id1 should be a texture
+            index1 = findFbxTextureNode(fbx, id[1]);
+            if (index1 != ~0x0) {
+                fbx->texture[index1].file_pos = fbx->content_data[index0].file_pos;
+            }
+            return;
+        }
     }
 }
 
@@ -859,6 +890,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_models = 0;
         fbx->num_materials = 0;
         fbx->num_textures = 0;
+        fbx->num_content_data = 0;
         fbx->num_vertices = 0;
         fbx->num_vertex_bytes = 0;
         fbx->num_indices = 0;
@@ -886,6 +918,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint64_t connect_id[3];
     k3fbxProperty fbx_property = k3fbxProperty::NONE;
     uint32_t fbx_property_argument = 0;
+    uint32_t str_file_pos;
 
     while (1) {
         fread(&node, K3_FBX_NODE_RECORD_LENGTH, 1, in_file);
@@ -918,6 +951,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "P", 2)) node_type = k3fbxNodeType::PROP;
             else if (!strncmp(str, "Connections", 12)) node_type = k3fbxNodeType::CONNECTIONS;
             else if (!strncmp(str, "C", 2)) node_type = k3fbxNodeType::CONNECT;
+            else if (!strncmp(str, "Video", 6)) node_type = k3fbxNodeType::VIDEO;
+            else if (!strncmp(str, "Content", 8)) node_type = k3fbxNodeType::CONTENT;
             else node_type = k3fbxNodeType::UNKNOWN;
             if (K3_FBX_DEBUG) {
                 for (i = 0; i < level; i++) printf("-");
@@ -981,8 +1016,18 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             if (fbx->texture) {
                 fbx->texture[fbx->num_textures].id = 0;
                 fbx->texture[fbx->num_textures].filename[0] = '\0';
+                fbx->texture[fbx->num_textures].file_pos = ~0x0;
             }
             fbx->num_textures++;
+        }
+
+        if(node_type == k3fbxNodeType::VIDEO) {
+            if (fbx->content_data) {
+                fbx->content_data[fbx->num_content_data].id = 0;
+                fbx->content_data[fbx->num_content_data].filename[0] = '\0';
+                fbx->content_data[fbx->num_content_data].file_pos = ~0x0;
+            }
+            fbx->num_content_data++;
         }
 
         if (node_type == k3fbxNodeType::CONNECT) {
@@ -1066,6 +1111,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     break;
                 case k3fbxNodeType::TEXTURE:
                     if (fbx->texture) fbx->texture[fbx->num_textures - 1].id = *i64_arr;
+                    break;
+                case k3fbxNodeType::VIDEO:
+                    if (fbx->content_data) fbx->content_data[fbx->num_content_data - 1].id = *i64_arr;
                     break;
                 case k3fbxNodeType::CONNECT:
                     if (connect_index < 2) {
@@ -1170,10 +1218,13 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             case K3_FBX_TYPECODE_RAW:
                 fread(&bytes_remaining, sizeof(uint32_t), 1, in_file);
                 str[0] = '\0';
+                str_file_pos = ftell(in_file);
                 while (bytes_remaining) {
                     if (bytes_remaining >= 256) {
-                        fread(str, 1, 256, in_file);
-                        bytes_remaining -= 256;
+                        //fread(str, 1, 256, in_file);
+                        //bytes_remaining -= 256;
+                        fseek(in_file, bytes_remaining, SEEK_CUR);
+                        bytes_remaining = 0;
                     } else {
                         fread(str, 1, bytes_remaining, in_file);
                         str[bytes_remaining] = '\0';
@@ -1207,7 +1258,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     }
                 } else if (node_type == k3fbxNodeType::RELATIVE_FILE_NAME) {
                     if (parent_node == k3fbxNodeType::TEXTURE && fbx->texture) {
-                        strncpy(fbx->texture[fbx->num_textures - 1].filename, str, k3fbxTextureData::FILENAME_SIZE);
+                        strncpy(fbx->texture[fbx->num_textures - 1].filename, str, K3_FBX_FILENAME_SIZE);
+                    } else if (parent_node == k3fbxNodeType::VIDEO && fbx->content_data) {
+                        strncpy(fbx->content_data[fbx->num_content_data - 1].filename, str, K3_FBX_FILENAME_SIZE);
                     }
                 } else if (node_type == k3fbxNodeType::PROP) {
                     if (fbx_property == k3fbxProperty::NONE) {
@@ -1221,7 +1274,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             printf("%s\n", str);
                         }
                     }
-                } else if(node_type == k3fbxNodeType::CONNECT) {
+                } else if (node_type == k3fbxNodeType::CONNECT) {
                     if (connect_params == 0) {
                         connect_params = (str[1] == 'P') ? 3 : 2;
                     } else {
@@ -1232,6 +1285,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         }
                         connect_index++;
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
+                    }
+                } else if( node_type == k3fbxNodeType::CONTENT) {
+                    if (parent_node == k3fbxNodeType::VIDEO && fbx->content_data) {
+                        fbx->content_data[fbx->num_content_data - 1].file_pos = str_file_pos;
                     }
                 } else if (K3_FBX_DEBUG) {
                     printf("%s\n", str);
@@ -1290,6 +1347,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     fbx.model = new k3fbxModelData[fbx.num_models];
     if (fbx.num_materials) fbx.material = new k3fbxMaterialData[fbx.num_materials];
     if (fbx.num_textures) fbx.texture = new k3fbxTextureData[fbx.num_textures];
+    if (fbx.num_content_data) fbx.content_data = new k3fbxContentData[fbx.num_content_data];
     fbx.vertices = new char[fbx.num_vertex_bytes];
     fbx.indices = new uint32_t[fbx.num_indices];
     if (fbx.num_normal_indices) fbx.normal_indices = new uint32_t[fbx.num_normal_indices];
@@ -1308,8 +1366,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
     if (fbx.norm_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) doubleToFloatArray(fbx.normals, fbx.num_normal_bytes / sizeof(double));
     if (fbx.uv_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) doubleToFloatArray(fbx.uvs, fbx.num_uv_bytes / sizeof(double));
-
-    fclose(in_file);
 
     k3mesh mesh = new k3meshObj;
     k3meshImpl* mesh_impl = mesh->getImpl();
@@ -1330,20 +1386,59 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     mesh_impl->_num_textures = fbx.num_textures;
     if (fbx.num_textures) {
+        static const uint32_t NUM_UP_BUF = 4;
+        uint64_t f = 0;
+        uint32_t v = 0;
+        k3uploadImage up_image[NUM_UP_BUF];
+        k3fence up_image_fence = CreateFence();
+        for (i = 0; i < NUM_UP_BUF; i++) {
+            up_image[i] = CreateUploadImage();
+        }
+
         mesh_impl->_textures = new k3surf[fbx.num_textures];
-        desc->up_image = new k3uploadImage[fbx.num_textures];
         k3resourceDesc rdesc;
         k3viewDesc vdesc = { 0 };
+        k3resource img_res;
         for (i = 0; i < fbx.num_textures; i++) {
-            desc->up_image[i] = CreateUploadImage();
-            k3imageObj::LoadFromFile(desc->up_image[i], fbx.texture[i].filename);
-            desc->up_image[i]->GetDesc(&rdesc);
+            if(f >= NUM_UP_BUF) {
+                up_image_fence->WaitGpuFence(f - NUM_UP_BUF);
+            }
+
+            //uint32_t j;
+            //uint32_t content_start_pos = ~0x0;
+            //for (j = 0; j < fbx.num_content_data; j++) {
+            //    if (!strncmp(fbx.texture[i].filename, fbx.content_data[j].filename, K3_FBX_FILENAME_SIZE)) {
+            //        content_start_pos = fbx.content_data[j].file_pos;
+            //    }
+            //}
+
+            uint32_t content_start_pos = fbx.texture[i].file_pos;
+            if (content_start_pos == ~0x0) {
+                k3imageObj::LoadFromFile(up_image[v], fbx.texture[i].filename);
+            } else {
+                fseek(in_file, content_start_pos, SEEK_SET);
+                k3imageObj::LoadFromFileHandle(up_image[v], in_file);
+            }
+            up_image[v]->GetDesc(&rdesc);
             vdesc.view_index = desc->view_index++;
             mesh_impl->_textures[i] = CreateSurface(&rdesc, NULL, &vdesc, NULL);
+
+            desc->cmd_buf->Reset();
+            img_res = mesh_impl->_textures[i]->GetResource();
+            desc->cmd_buf->TransitionResource(img_res, k3resourceState::COPY_DEST);
+            desc->cmd_buf->UploadImage(up_image[v], img_res);
+            desc->cmd_buf->TransitionResource(img_res, k3resourceState::SHADER_RESOURCE);
+            desc->cmd_buf->Close();
+            SubmitCmdBuf(desc->cmd_buf);
+
+            f = up_image_fence->SetGpuFence(k3gpuQueue::GRAPHICS);
+            v++;
+            if (v >= NUM_UP_BUF) v = 0;
         }
-    } else {
-        desc->up_image = NULL;
+        WaitGpuIdle();
     }
+
+    fclose(in_file);
 
     mesh_impl->_num_models = 0;  // determine which models have actual geometries...those are the only valid ones
     mesh_impl->_model = new k3meshModel[fbx.num_models];  // This is potentially overallocating
@@ -1677,12 +1772,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
     desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    for (i = 0; i < mesh_impl->_num_textures; i++) {
-        buf_res = mesh_impl->_textures[i]->GetResource();
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-        desc->cmd_buf->UploadImage(desc->up_image[i], buf_res);
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::SHADER_RESOURCE);
-    }
     desc->cmd_buf->Close();
     SubmitCmdBuf(desc->cmd_buf);
 
@@ -1690,6 +1779,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     delete[] fbx.model;
     if (fbx.material) delete[] fbx.material;
     if (fbx.texture) delete[] fbx.texture;
+    if (fbx.content_data) delete[] fbx.content_data;
     delete[] fbx.vertices;
     if (fbx.uv_indices) delete[] fbx.uv_indices;
     if (fbx.normal_indices) delete[] fbx.normal_indices;
