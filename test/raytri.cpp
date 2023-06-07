@@ -82,8 +82,6 @@ void App::Setup()
     win->SetIdleFunc(DisplayCallback);
     win->SetResizeFunc(ResizeCallback);
     win->SetMouseFunc(MouseMoveCallback, MouseButtonCallback, MouseScrollCallback);
-    win->SetVisible(true);
-    win->SetCursorVisible(true);
     win->SetDataPtr(this);
 
     gfx = win->GetGfx();
@@ -103,6 +101,22 @@ void App::Setup()
     view_index = mdesc.view_index;
     _chdir("..\\..\\bin");
 
+    uint32_t i;
+    // if there are any cameras, set window resolution to the first one
+    if (cube_mesh->getNumCameras()) {
+        uint32_t win_width, win_height;
+        cube_mesh->getCameraResolution(0, &win_width, &win_height);
+        win->SetSize(win_width, win_height);
+        // set all cameras to have infinite far plane
+        for (i = 0; i < cube_mesh->getNumCameras(); i++) {
+            cube_mesh->setCameraFarPlane(i, INFINITY);
+        }
+    }
+
+    // Make window visible after setting size
+    win->SetVisible(true);
+    win->SetCursorVisible(true);
+
     k3resourceDesc rdesc;
     win->GetBackBuffer()->GetResource()->getDesc(&rdesc);
     k3viewDesc vdesc = {};
@@ -114,7 +128,6 @@ void App::Setup()
     eye_attitude_angle = 45.0f;
     fence = gfx->CreateFence();
 
-    uint32_t i;
     k3bufferDesc bdesc = { 0 };
     for (i = 0; i < NUM_VERSIONS; i++) {
         cb_camera_upload[i] = gfx->CreateUploadBuffer();
@@ -136,7 +149,7 @@ void App::Setup()
         cb_obj[i] = gfx->CreateBuffer(&bdesc);
     }
 
-    k3bindingParam bind_params[4];
+    k3bindingParam bind_params[5];
     bind_params[0].type = k3bindingType::VIEW_SET;
     bind_params[0].view_set_desc.type = k3shaderBindType::CBV;
     bind_params[0].view_set_desc.num_views = 1;
@@ -147,7 +160,7 @@ void App::Setup()
     bind_params[1].view_set_desc.type = k3shaderBindType::SRV;
     bind_params[1].view_set_desc.num_views = cube_mesh->getNumTextures();
     if (bind_params[1].view_set_desc.num_views == 0) bind_params[1].view_set_desc.num_views = 1;
-    bind_params[1].view_set_desc.reg = 1;
+    bind_params[1].view_set_desc.reg = 2;
     bind_params[1].view_set_desc.space = 0;
     bind_params[1].view_set_desc.offset = 1;
     bind_params[2].type = k3bindingType::VIEW_SET;
@@ -160,13 +173,19 @@ void App::Setup()
     bind_params[3].constant.num_const = 1;
     bind_params[3].constant.reg = 1;
     bind_params[3].constant.space = 0;
+    bind_params[4].type = k3bindingType::VIEW_SET;
+    bind_params[4].view_set_desc.type = k3shaderBindType::SRV;
+    bind_params[4].view_set_desc.num_views = 1;
+    bind_params[4].view_set_desc.reg = 1;
+    bind_params[4].view_set_desc.space = 0;
+    bind_params[4].view_set_desc.offset = 4;
 
     k3samplerDesc sdesc = { 0 };
     sdesc.filter = k3texFilter::MIN_MAG_MIP_LINEAR;
     sdesc.addr_u = k3texAddr::CLAMP;
     sdesc.addr_v = k3texAddr::CLAMP;
     sdesc.addr_w = k3texAddr::CLAMP;
-    k3shaderBinding raster_binding = gfx->CreateShaderBinding(4, bind_params, 1, &sdesc);
+    k3shaderBinding raster_binding = gfx->CreateShaderBinding(5, bind_params, 1, &sdesc);
 
     k3shader vs, ps;
     vs = gfx->CreateShaderFromCompiledFile("simple3d_vs.cso");
@@ -249,7 +268,7 @@ void App::Setup()
     const char* shader_entries[3] = { ray_gen_entry, miss_entry, closest_hit_entry };
     const char* hit_miss_shader_entries[2] = { miss_entry, closest_hit_entry };
 
-    k3bindingParam rt_bindings[6];
+    k3bindingParam rt_bindings[7];
     rt_bindings[0].type = k3bindingType::VIEW_SET;
     rt_bindings[0].view_set_desc.type = k3shaderBindType::UAV;
     rt_bindings[0].view_set_desc.num_views = 1;
@@ -273,23 +292,29 @@ void App::Setup()
     rt_bindings[3].view_set_desc.num_views = 1;
     rt_bindings[3].view_set_desc.reg = 1;
     rt_bindings[3].view_set_desc.space = 0;
-    rt_bindings[3].view_set_desc.offset = 3;
+    rt_bindings[3].view_set_desc.offset = 0;
     rt_bindings[4].type = k3bindingType::VIEW_SET;
     rt_bindings[4].view_set_desc.type = k3shaderBindType::SRV;
     rt_bindings[4].view_set_desc.num_views = cube_mesh->getNumTextures();
     if (rt_bindings[4].view_set_desc.num_views == 0) rt_bindings[4].view_set_desc.num_views = 1;
-    rt_bindings[4].view_set_desc.reg = 3;
+    rt_bindings[4].view_set_desc.reg = 4;
     rt_bindings[4].view_set_desc.space = 0;
-    rt_bindings[4].view_set_desc.offset = 4;
+    rt_bindings[4].view_set_desc.offset = 1;
     rt_bindings[5].type = k3bindingType::VIEW_SET;
     rt_bindings[5].view_set_desc.type = k3shaderBindType::SRV;
     rt_bindings[5].view_set_desc.num_views = 1;
     rt_bindings[5].view_set_desc.reg = 2;
     rt_bindings[5].view_set_desc.space = 0;
-    rt_bindings[5].view_set_desc.offset = 5;
+    rt_bindings[5].view_set_desc.offset = 2;
+    rt_bindings[6].type = k3bindingType::VIEW_SET;
+    rt_bindings[6].view_set_desc.type = k3shaderBindType::SRV;
+    rt_bindings[6].view_set_desc.num_views = 1;
+    rt_bindings[6].view_set_desc.reg = 3;
+    rt_bindings[6].view_set_desc.space = 0;
+    rt_bindings[6].view_set_desc.offset = 3;
 
     k3shaderBinding ray_gen_bindings = gfx->CreateTypedShaderBinding(3, rt_bindings, 0, NULL, k3shaderBindingType::LOCAL);
-    k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(3, &(rt_bindings[3]), 0, NULL, k3shaderBindingType::LOCAL);
+    k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(4, &(rt_bindings[3]), 0, NULL, k3shaderBindingType::LOCAL);
     k3shaderBinding global_bindings = gfx->CreateShaderBinding(0, NULL, 1, &sdesc);
 
     k3rtStateDesc rt_state_desc[10] = {};
@@ -341,14 +366,14 @@ void App::Setup()
 
     k3rtStateTableDesc rt_state_table_desc = {};
     rt_state_table_desc.num_entries = 3;
-    rt_state_table_desc.num_args = 3;
+    rt_state_table_desc.num_args = 4;
     rt_state_table_desc.mem_pool = NULL;
     rt_state_table_desc.mem_offset = 0;
     for (i = 0; i < NUM_VERSIONS; i++) {
         rt_state_table[i] = gfx->CreateRTStateTable(&rt_state_table_desc);
     }
 
-    k3rtStateTableArg rt_state_table_arg[6];
+    k3rtStateTableArg rt_state_table_arg[7];
     rt_state_table_arg[0].type = k3rtStateTableArgType::HANDLE;
     rt_state_table_arg[0].bind_type = k3shaderBindType::UAV;
     rt_state_table_arg[0].obj = rt_out;
@@ -367,16 +392,19 @@ void App::Setup()
     rt_state_table_arg[5].type = k3rtStateTableArgType::HANDLE;
     rt_state_table_arg[5].bind_type = k3shaderBindType::SRV;
     //rt_state_table_arg[5].obj = cb_obj;
+    rt_state_table_arg[6].type = k3rtStateTableArgType::HANDLE;
+    rt_state_table_arg[6].bind_type = k3shaderBindType::SRV;
+    rt_state_table_arg[6].obj = cube_mesh->getLightBuffer();
 
     k3rtStateTableEntryDesc rt_state_table_entries[3];
     rt_state_table_entries[0].shader = ray_gen_entry;
     rt_state_table_entries[0].num_args = 3;
     rt_state_table_entries[0].args = rt_state_table_arg;
     rt_state_table_entries[1].shader = miss_entry;
-    rt_state_table_entries[1].num_args = 3;
+    rt_state_table_entries[1].num_args = 4;
     rt_state_table_entries[1].args = &(rt_state_table_arg[3]);
     rt_state_table_entries[2].shader = hit_group;
-    rt_state_table_entries[2].num_args = 3;
+    rt_state_table_entries[2].num_args = 4;
     rt_state_table_entries[2].args = &(rt_state_table_arg[3]);
     
     k3rtStateTableUpdate rt_state_table_update = {};
@@ -404,6 +432,7 @@ void App::Setup()
         rt_state_table_arg[5].obj = cb_obj[i];
         cmd_buf->UpdateRTStateTable(rt_state_table[i], &rt_state_table_update);
     }
+    cmd_buf->TransitionResource(cube_mesh->getLightBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
     //cmd_buf->UpdateRTStateTable(rt_state_table, &rt_state_table_update);
     cmd_buf->Close();
     gfx->SubmitCmdBuf(cmd_buf);
@@ -426,20 +455,26 @@ void App::UpdateResources(uint32_t v)
 {
     float* camera_data = (float*)cb_camera_upload[v]->MapForWrite(32 * sizeof(float));
     float mat_data[16];
-    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
-    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
-    k3m3_SetRotation(camera_data, deg2rad(eye_attitude_angle), y_axis);
-    k3m3_SetRotation(mat_data, deg2rad(eye_rotation_angle), z_axis);
-    k3m3_Mul(camera_data, mat_data, camera_data);
-    mat_data[0] = eye_distance; mat_data[1] = 0.0f; mat_data[2] = 0.0f;
-    k3mv3_Mul(mat_data, camera_data, mat_data);
 
-    //mat_data[0] = 2.0f; mat_data[1] = 2.0f; mat_data[2] = 2.0f; // eye position
-    mat_data[4] = 0.0f; mat_data[5] = 0.0f; mat_data[6] = 0.0f;  // look at position
-    mat_data[8] = z_axis[0]; mat_data[9] = z_axis[1]; mat_data[10] = z_axis[2]; // up direction
-    float aspect = win->GetWidth() / (float)win->GetHeight();
-    k3m4_SetLookAtRH(camera_data, &(mat_data[0]), &(mat_data[4]), &(mat_data[8]));
-    k3m4_SetDXPerspectiveFovRevZRH(mat_data, deg2rad(60), aspect, 0.5f, INFINITY);
+    if (cube_mesh->getNumCameras()) {
+        cube_mesh->getCameraView(camera_data, 0);
+        cube_mesh->getCameraPerspective(mat_data, 0);
+    } else {
+        float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+        float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+        k3m3_SetRotation(camera_data, deg2rad(eye_attitude_angle), y_axis);
+        k3m3_SetRotation(mat_data, deg2rad(eye_rotation_angle), z_axis);
+        k3m3_Mul(camera_data, mat_data, camera_data);
+        mat_data[0] = eye_distance; mat_data[1] = 0.0f; mat_data[2] = 0.0f;
+        k3mv3_Mul(mat_data, camera_data, mat_data);
+
+        //mat_data[0] = 2.0f; mat_data[1] = 2.0f; mat_data[2] = 2.0f; // eye position
+        mat_data[4] = 0.0f; mat_data[5] = 0.0f; mat_data[6] = 0.0f;  // look at position
+        mat_data[8] = z_axis[0]; mat_data[9] = z_axis[1]; mat_data[10] = z_axis[2]; // up direction
+        float aspect = win->GetWidth() / (float)win->GetHeight();
+        k3m4_SetLookAtRH(camera_data, &(mat_data[0]), &(mat_data[4]), &(mat_data[8]));
+        k3m4_SetDXPerspectiveFovRevZRH(mat_data, deg2rad(60), aspect, 0.5f, INFINITY);
+    }
     k3m4_Mul(camera_data, mat_data, camera_data);
     memcpy(camera_data + 16, camera_data, 16 * sizeof(float));
     k3m4_Inverse(camera_data);
@@ -534,6 +569,7 @@ void App::Display()
         cmd_buf->SetConstantBuffer(0, cb_camera[v]);
         cmd_buf->SetShaderView(1, cube_mesh->getTexture(0));
         cmd_buf->SetConstantBuffer(2, cb_obj[v]);
+        cmd_buf->SetConstantBuffer(4, cube_mesh->getLightBuffer());
         cmd_buf->SetDrawPrim(k3drawPrimType::TRIANGLELIST);
         cmd_buf->SetViewToSurface(back_buffer_resource);
         cmd_buf->SetRenderTargets(&rt);
@@ -587,10 +623,27 @@ void App::Resize(uint32_t width, uint32_t height)
 void App::MouseMove(uint32_t x, uint32_t y)
 {
     if (mouse_button & 0x1) {
-        eye_rotation_angle += ((float)x - last_mouse_x) / 4.0f;
-        eye_attitude_angle += ((float)y - last_mouse_y) / 4.0f;
-        if (eye_attitude_angle > 89.0f) eye_attitude_angle = 89.0f;
-        if (eye_attitude_angle < -89.0f) eye_attitude_angle = -89.0f;
+        if (cube_mesh->getNumCameras()) {
+            float* pos = cube_mesh->getCameraPosition(0);
+            float* look = cube_mesh->getCameraLookAt(0);
+            float* up = cube_mesh->getCameraUp(0);
+            float right[3];
+            float look_dir[3];
+            k3v3_Sub(look_dir, look, pos);
+            k3v3_Cross(right, look_dir, up);
+            float rot[9];
+            k3m3_SetRotation(rot, deg2rad(((float)last_mouse_y - y) / 16.0f), right);
+            k3mv3_Mul(look_dir, rot, look_dir);
+            k3mv3_Mul(up, rot, up);
+            k3m3_SetRotation(rot, deg2rad(((float)last_mouse_x - x) / 16.0f), up);
+            k3mv3_Mul(look_dir, rot, look_dir);
+            k3v3_Add(look, pos, look_dir);
+        } else {
+            eye_rotation_angle += ((float)x - last_mouse_x) / 4.0f;
+            eye_attitude_angle += ((float)y - last_mouse_y) / 4.0f;
+            if (eye_attitude_angle > 89.0f) eye_attitude_angle = 89.0f;
+            if (eye_attitude_angle < -89.0f) eye_attitude_angle = -89.0f;
+        }
     }
     last_mouse_x = x;
     last_mouse_y = y;
@@ -608,8 +661,19 @@ void App::MouseButton(uint32_t x, uint32_t y, uint32_t b, k3keyState state)
 
 void App::MouseScroll(uint32_t x, uint32_t y, int32_t vscroll, int32_t hscroll)
 {
-    eye_distance += vscroll;
-    if (eye_distance < 2.0f) eye_distance = 2.0f;
+    if (cube_mesh->getNumCameras()) {
+        float* pos = cube_mesh->getCameraPosition(0);
+        float* look = cube_mesh->getCameraLookAt(0);
+        float look_dir[3];
+        float move = (float)-vscroll;
+        k3v3_Sub(look_dir, look, pos);
+        k3sv3_Mul(look_dir, move, look_dir);
+        k3v3_Add(pos, pos, look_dir);
+        k3v3_Add(look, look, look_dir);
+    } else {
+        eye_distance += vscroll;
+        if (eye_distance < 2.0f) eye_distance = 2.0f;
+    }
 }
 
 void K3CALLBACK App::KeyboardCallback(void* data, k3key k, char c, k3keyState state)

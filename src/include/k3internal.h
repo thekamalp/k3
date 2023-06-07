@@ -86,6 +86,27 @@ struct k3meshModel {
     uint32_t normal_map_index;
 };
 
+struct k3camera {
+    float translation[3];
+    float look_at[3];
+    float up[3];
+    uint32_t res_x;
+    uint32_t res_y;
+    float fovy;
+    float near_plane;
+    float far_plane;
+};
+
+struct k3light {
+    float position[4];
+    float color[3];
+    float intensity;
+    uint32_t light_type;
+    uint32_t decay_type;
+    float decay_start;
+    bool cast_shadows;
+};
+
 class k3meshImpl
 {
 public:
@@ -95,12 +116,17 @@ public:
     uint32_t _num_models;
     uint32_t _num_tris;
     uint32_t _num_textures;
+    uint32_t _num_cameras;
+    uint32_t _num_lights;
     uint32_t* _mesh_start;
     k3meshModel* _model;
     k3surf* _textures;
+    k3camera* _cameras;
+    k3light* _lights;
     k3buffer _ib;
     k3buffer _vb;
     k3buffer _ab;  // attribute buffer
+    k3buffer _lb;  // light buffer
 };
 
 class k3winImpl

@@ -17,6 +17,17 @@ struct attrib_t {
     float4 tangent; // v in  x; tangent in (y, z, w)
 };
 
+struct light_t {
+    float3 position;
+    float intensity;
+    float3 color;
+    float decay_start;
+    uint light_type;
+    uint decay_type;
+    uint cast_shadows;
+    float spot_angle;
+};
+
 cbuffer camera : register(b0)
 {
     row_major float4x4 ivp;
@@ -43,15 +54,18 @@ cbuffer object : register(b1)
 
 StructuredBuffer<object_t> obj_prop : register(t0);
 
-Texture2D<float4> texture_set[] : register(t1);
+Texture2D<float4> texture_set[] : register(t2);
+
+StructuredBuffer<light_t> light : register(t1);
 
 VS2PS vs_main(VS_IN i)
 {
-    float3 light_dir = normalize(float3(0.25, -0.5, 1.0));
+    float4 world_pos = mul(obj_prop[obj_id].world, float4(i.pos, 1.0));
+    float3 light_dir = normalize(light[0].position);
+    //float3 light_dir = normalize(float3(0.25, -0.5, 1.0));
     light_dir = mul(obj_prop[obj_id].iworld, float4(light_dir, 0.0f)).xyz;
 
     VS2PS o;
-    float4 world_pos = mul(obj_prop[obj_id].world, float4(i.pos, 1.0));
     o.pos = mul(vp, world_pos);
     float3 normal = i.norm.xyz;
     float3 tangent = i.tang.yzw;

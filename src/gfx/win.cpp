@@ -460,12 +460,17 @@ k3meshImpl::k3meshImpl()
     _num_models = 0;
     _num_tris = 0;
     _num_textures = 0;
+    _num_cameras = 0;
+    _num_lights = 0;
     _mesh_start = NULL;
     _model = NULL;
     _textures = NULL;
+    _cameras = NULL;
+    _lights = NULL;
     _ib = NULL;
     _vb = NULL;
     _ab = NULL;
+    _lb = NULL;
 }
 
 k3meshImpl::~k3meshImpl()
@@ -481,6 +486,14 @@ k3meshImpl::~k3meshImpl()
     if (_textures) {
         delete[] _textures;
         _textures = NULL;
+    }
+    if (_cameras) {
+        delete[] _cameras;
+        _cameras = NULL;
+    }
+    if (_lights) {
+        delete[] _lights;
+        _lights = NULL;
     }
 }
 
@@ -520,6 +533,11 @@ K3API uint32_t k3meshObj::getNumTextures()
 K3API uint32_t k3meshObj::getNumMeshes()
 {
     return _data->_num_meshes;
+}
+
+K3API uint32_t k3meshObj::getNumCameras()
+{
+    return _data->_num_cameras;
 }
 
 K3API k3surf k3meshObj::getTexture(uint32_t tex)
@@ -629,6 +647,89 @@ K3API k3buffer k3meshObj::getAttribBuffer()
     return _data->_ab;
 }
 
+K3API k3buffer k3meshObj::getLightBuffer()
+{
+    return _data->_lb;
+}
+
+K3API float* k3meshObj::getCameraPerspective(float* d, uint32_t camera, bool left_handed, bool dx_style, bool reverse_z)
+{
+    if (camera > _data->_num_cameras) return d;
+    k3camera* cam = _data->_cameras + camera;
+    float aspect = cam->res_x / (float)cam->res_y;
+    k3m4_SetPerspectiveFov(d, deg2rad(cam->fovy), aspect, cam->near_plane, cam->far_plane, left_handed, dx_style, reverse_z);
+    return d;
+}
+
+K3API float* k3meshObj::getCameraView(float* d, uint32_t camera, bool left_handed)
+{
+    if (camera > _data->_num_cameras) return d;
+    k3camera* cam = _data->_cameras + camera;
+    k3m4_SetLookAt(d, cam->translation, cam->look_at, cam->up, left_handed);
+    return d;
+}
+
+K3API float* k3meshObj::getCameraPosition(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return NULL;
+    return _data->_cameras[camera].translation;
+}
+
+K3API float* k3meshObj::getCameraLookAt(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return NULL;
+    return _data->_cameras[camera].look_at;
+}
+
+K3API float* k3meshObj::getCameraUp(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return NULL;
+    return _data->_cameras[camera].up;
+}
+
+K3API void k3meshObj::getCameraResolution(uint32_t camera, uint32_t* width, uint32_t* height)
+{
+    if (camera > _data->_num_cameras) return;
+    k3camera* cam = _data->_cameras + camera;
+    *width = cam->res_x;
+    *height = cam->res_y;
+}
+
+K3API float k3meshObj::getCameraNearPlane(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    return _data->_cameras[camera].near_plane;
+}
+
+K3API float k3meshObj::getCameraFarPlane(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    return _data->_cameras[camera].far_plane;
+}
+
+K3API void k3meshObj::setCameraResolution(uint32_t camera, uint32_t width, uint32_t height)
+{
+    if (camera > _data->_num_cameras) return;
+    k3camera* cam = _data->_cameras + camera;
+    cam->res_x = width;
+    cam->res_y = height;
+}
+
+K3API void k3meshObj::setCameraNearPlane(uint32_t camera, float near)
+{
+    if (camera > _data->_num_cameras) return;
+    k3camera* cam = _data->_cameras + camera;
+    cam->near_plane = near;
+}
+
+K3API void k3meshObj::setCameraFarPlane(uint32_t camera, float far)
+{
+    if (camera > _data->_num_cameras) return;
+    k3camera* cam = _data->_cameras + camera;
+    cam->far_plane = far;
+}
+
+
 #define K3_FBX_DEBUG 0
 
 enum class k3fbxNodeType {
@@ -658,14 +759,39 @@ enum class k3fbxNodeType {
     CONNECTIONS,
     CONNECT,
     VIDEO,
-    CONTENT
+    CONTENT,
+    NODE_ATTRIBUTE,
+    POSITION,
+    UP,
+    LOOK_AT
+};
+
+enum class k3fbxObjType {
+    NONE,
+    MESH,
+    LIGHT,
+    CAMERA
 };
 
 enum class k3fbxProperty {
     NONE,
     LOCAL_TRANSLATION,
     LOCAL_ROTATION,
-    DIFFUSE_COLOR
+    DIFFUSE_COLOR,
+    POSITION,
+    UP_VECTOR,
+    INTEREST_POSITION,
+    ASPECT_WIDTH,
+    ASPECT_HEIGHT,
+    FOVX,
+    NEAR_PLANE,
+    FAR_PLANE,
+    LIGHT_TYPE,
+    COLOR,
+    INTENSITY,
+    DECAY_TYPE,
+    DECAY_START,
+    CAST_SHADOWS
 };
 
 enum class k3fbxMapping {
@@ -701,8 +827,9 @@ struct k3fbxMeshData {
 
 struct k3fbxModelData {
     uint64_t id;
+    k3fbxObjType obj_type;
     uint32_t mesh_index;
-    uint32_t material_index;
+    uint32_t material_index;  // used for light node index for lights
     float translation[3];
     float rotation[3];
 };
@@ -728,6 +855,28 @@ struct k3fbxContentData {
     uint32_t file_pos;
 };
 
+struct k3fbxCamera {
+    uint64_t id;
+    float translation[3];
+    float look_at[3];
+    float up[3];
+    uint32_t res_x;
+    uint32_t res_y;
+    float fovx;
+    float near_plane;
+    float far_plane;
+};
+
+struct k3fbxLightNode {
+    uint64_t id;
+    uint32_t light_type;
+    float color[3];
+    float intensity;
+    uint32_t decay_type;
+    float decay_start;
+    bool cast_shadows;
+};
+
 struct k3fbxData {
     uint32_t num_meshes;
     uint32_t num_models;
@@ -744,6 +893,9 @@ struct k3fbxData {
     uint32_t num_uvs;
     uint32_t num_uv_bytes;
     uint32_t num_material_ids;
+    uint32_t num_cameras;
+    uint32_t num_light_nodes;
+    uint32_t num_lights;
     k3fbxReference last_normal_reference;
     k3fbxReference last_uv_reference;
     k3fbxMeshData* mesh;
@@ -751,10 +903,13 @@ struct k3fbxData {
     k3fbxMaterialData* material;
     k3fbxTextureData* texture;
     k3fbxContentData* content_data;
+    k3fbxLightNode* light_node;
     uint32_t* indices;
     uint32_t* normal_indices;
     uint32_t* uv_indices;
     uint32_t* material_ids;
+    k3fbxObjType node_attrib_obj;
+    k3fbxCamera* camera;
     void* vertices;
     void* normals;
     void* uvs;
@@ -772,6 +927,15 @@ struct k3fbxAttrLinkList {
 
 static const uint64_t MAP_TYPE_DIFFUSE = 0;
 static const uint64_t MAP_TYPE_NORMAL = 1;
+
+uint32_t findFbxLightNode(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_light_nodes; i++) {
+        if (fbx->light_node[i].id == id) break;
+    }
+    return (i < fbx->num_light_nodes) ? i : ~0x0;
+}
 
 uint32_t findFbxContentDataNode(k3fbxData* fbx, uint64_t id)
 {
@@ -860,7 +1024,7 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             }
             return;
         }
-        // Chec if id0 is content data
+        // Check if id0 is content data
         index0 = findFbxContentDataNode(fbx, id[0]);
         if (index0 != ~0x0) {
             // id1 should be a texture
@@ -869,6 +1033,15 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
                 fbx->texture[index1].file_pos = fbx->content_data[index0].file_pos;
             }
             return;
+        }
+        // Check if id0 is a light node
+        index0 = findFbxLightNode(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // id1 should be a model
+            index1 = findFbxModelNode(fbx, id[1]);
+            if (index1 != ~0x0) {
+                fbx->model[index1].material_index = index0;
+            }
         }
     }
 }
@@ -901,6 +1074,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_uvs = 0;
         fbx->num_uv_bytes = 0;
         fbx->num_material_ids = 0;
+        fbx->num_cameras = 0;
+        fbx->num_lights = 0;
+        fbx->num_light_nodes = 0;
+        fbx->node_attrib_obj = k3fbxObjType::NONE;
         if(K3_FBX_DEBUG) printf("----------starting fbx parse ---------------\n");
     }
 
@@ -918,6 +1095,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint64_t connect_id[3];
     k3fbxProperty fbx_property = k3fbxProperty::NONE;
     uint32_t fbx_property_argument = 0;
+    uint32_t fbx_node_argument = 0;
+    uint64_t node_attrib_id;
     uint32_t str_file_pos;
 
     while (1) {
@@ -953,6 +1132,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "C", 2)) node_type = k3fbxNodeType::CONNECT;
             else if (!strncmp(str, "Video", 6)) node_type = k3fbxNodeType::VIDEO;
             else if (!strncmp(str, "Content", 8)) node_type = k3fbxNodeType::CONTENT;
+            else if (!strncmp(str, "NodeAttribute", 14)) node_type = k3fbxNodeType::NODE_ATTRIBUTE;
+            else if (!strncmp(str, "Position", 9)) node_type = k3fbxNodeType::POSITION;
+            else if (!strncmp(str, "Up", 3)) node_type = k3fbxNodeType::UP;
+            else if (!strncmp(str, "LookAt", 7)) node_type = k3fbxNodeType::LOOK_AT;
             else node_type = k3fbxNodeType::UNKNOWN;
             if (K3_FBX_DEBUG) {
                 for (i = 0; i < level; i++) printf("-");
@@ -983,11 +1166,13 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->mesh[fbx->num_meshes].uv_reference = k3fbxReference::None;
             }
             fbx->num_meshes++;
+            fbx_node_argument = 0;
         }
 
         if (node_type == k3fbxNodeType::MODEL) {
             if (fbx->model) {
                 fbx->model[fbx->num_models].id = 0;
+                fbx->model[fbx->num_models].obj_type = k3fbxObjType::NONE;
                 fbx->model[fbx->num_models].mesh_index = ~0;
                 fbx->model[fbx->num_models].material_index = ~0;
                 fbx->model[fbx->num_models].translation[0] = 0.0f;
@@ -998,6 +1183,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->model[fbx->num_models].rotation[2] = 0.0f;
             }
             fbx->num_models++;
+            fbx_node_argument = 0;
         }
 
         if (node_type == k3fbxNodeType::MATERIAL) {
@@ -1010,6 +1196,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->material[fbx->num_materials].normal_texture_index = ~0;
             }
             fbx->num_materials++;
+            fbx_node_argument = 0;
         }
 
         if (node_type == k3fbxNodeType::TEXTURE) {
@@ -1019,6 +1206,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->texture[fbx->num_textures].file_pos = ~0x0;
             }
             fbx->num_textures++;
+            fbx_node_argument = 0;
         }
 
         if(node_type == k3fbxNodeType::VIDEO) {
@@ -1028,6 +1216,18 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->content_data[fbx->num_content_data].file_pos = ~0x0;
             }
             fbx->num_content_data++;
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::PROP || node_type == k3fbxNodeType::POSITION ||
+            node_type == k3fbxNodeType::UP || node_type == k3fbxNodeType::LOOK_AT) {
+            fbx_property = k3fbxProperty::NONE;
+            fbx_property_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::NODE_ATTRIBUTE) {
+            fbx->node_attrib_obj = k3fbxObjType::NONE;
+            fbx_node_argument = 0;
         }
 
         if (node_type == k3fbxNodeType::CONNECT) {
@@ -1049,51 +1249,253 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             case K3_FBX_TYPECODE_SINT32:
                 fread(i32_arr, sizeof(int32_t), 1, in_file);
                 if (K3_FBX_DEBUG) printf("I: %d\n", *i32_arr);
+                switch (node_type) {
+                case k3fbxNodeType::PROP:
+                    switch (fbx_property) {
+                    case k3fbxProperty::LIGHT_TYPE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].light_type = *i32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::DECAY_TYPE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].decay_type = *i32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::CAST_SHADOWS:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].cast_shadows = (*i32_arr != 0);
+                            fbx_property_argument++;
+                        }
+                        break;
+                    }
+                    break;
+                }
                 break;
             case K3_FBX_TYPECODE_FLOAT:
                 fread(f32_arr, sizeof(float), 1, in_file);
                 if (K3_FBX_DEBUG) printf("F: %0.4f\n", *f32_arr);
-                switch (fbx_property) {
-                case k3fbxProperty::LOCAL_TRANSLATION:
-                    if (fbx->model && fbx_property_argument < 3) {
-                        fbx->model[fbx->num_models - 1].translation[fbx_property_argument] = *f32_arr;
+                switch (node_type) {
+                case k3fbxNodeType::POSITION:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].translation[fbx_property_argument] = *f32_arr;
                         fbx_property_argument++;
                     }
                     break;
-                case k3fbxProperty::LOCAL_ROTATION:
-                    if (fbx->model && fbx_property_argument < 3) {
-                        fbx->model[fbx->num_models - 1].rotation[fbx_property_argument] = *f32_arr;
+                case k3fbxNodeType::UP:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].up[fbx_property_argument] = *f32_arr;
                         fbx_property_argument++;
                     }
                     break;
-                case k3fbxProperty::DIFFUSE_COLOR:
-                    if (fbx->material && fbx_property_argument < 3) {
-                        fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = *f32_arr;
+                case k3fbxNodeType::LOOK_AT:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].look_at[fbx_property_argument] = *f32_arr;
                         fbx_property_argument++;
                     }
+                    break;
+                case k3fbxNodeType::PROP:
+                    switch (fbx_property) {
+                    case k3fbxProperty::LOCAL_TRANSLATION:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].translation[fbx_property_argument] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::LOCAL_ROTATION:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].rotation[fbx_property_argument] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::DIFFUSE_COLOR:
+                        if (fbx->material && fbx_property_argument < 3) {
+                            fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    //case k3fbxProperty::POSITION:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].translation[fbx_property_argument] = *f32_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    //case k3fbxProperty::UP_VECTOR:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].up[fbx_property_argument] = *f32_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    //case k3fbxProperty::INTEREST_POSITION:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].look_at[fbx_property_argument] = *f32_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    case k3fbxProperty::ASPECT_WIDTH:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].res_x = (uint32_t)*f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::ASPECT_HEIGHT:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].res_y = (uint32_t)*f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::FOVX:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].fovx = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::NEAR_PLANE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].near_plane = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::FAR_PLANE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].far_plane = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::COLOR:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 3) {
+                            fbx->light_node[fbx->num_light_nodes - 1].color[fbx_property_argument] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::INTENSITY:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].intensity = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::DECAY_START:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].decay_start = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    }
+                    break;
                 }
                 break;
             case K3_FBX_TYPECODE_DOUBLE:
                 fread(d64_arr, sizeof(double), 1, in_file);
                 if (K3_FBX_DEBUG) printf("D: %0.4f\n", *d64_arr);
-                switch (fbx_property) {
-                case k3fbxProperty::LOCAL_TRANSLATION:
-                    if (fbx->model && fbx_property_argument < 3) {
-                        fbx->model[fbx->num_models - 1].translation[fbx_property_argument] = (float) *d64_arr;
+                switch (node_type) {
+                case k3fbxNodeType::POSITION:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].translation[fbx_property_argument] = (float)*d64_arr;
                         fbx_property_argument++;
                     }
                     break;
-                case k3fbxProperty::LOCAL_ROTATION:
-                    if (fbx->model && fbx_property_argument < 3) {
-                        fbx->model[fbx->num_models - 1].rotation[fbx_property_argument] = (float) *d64_arr;
+                case k3fbxNodeType::UP:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].up[fbx_property_argument] = (float)*d64_arr;
                         fbx_property_argument++;
                     }
                     break;
-                case k3fbxProperty::DIFFUSE_COLOR:
-                    if (fbx->material && fbx_property_argument < 3) {
-                        fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = (float)*d64_arr;
+                case k3fbxNodeType::LOOK_AT:
+                    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                        fbx->camera[fbx->num_cameras - 1].look_at[fbx_property_argument] = (float)*d64_arr;
                         fbx_property_argument++;
                     }
+                    break;
+                case k3fbxNodeType::PROP:
+                    switch (fbx_property) {
+                    case k3fbxProperty::LOCAL_TRANSLATION:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].translation[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::LOCAL_ROTATION:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].rotation[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::DIFFUSE_COLOR:
+                        if (fbx->material && fbx_property_argument < 3) {
+                            fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    //case k3fbxProperty::POSITION:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].translation[fbx_property_argument] = (float)*d64_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    //case k3fbxProperty::UP_VECTOR:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].up[fbx_property_argument] = (float)*d64_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    //case k3fbxProperty::INTEREST_POSITION:
+                    //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
+                    //        fbx->camera[fbx->num_cameras - 1].look_at[fbx_property_argument] = (float)*d64_arr;
+                    //        fbx_property_argument++;
+                    //    }
+                    //    break;
+                    case k3fbxProperty::ASPECT_WIDTH:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].res_x = (uint32_t)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::ASPECT_HEIGHT:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].res_y = (uint32_t)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::FOVX:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].fovx = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::NEAR_PLANE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].near_plane = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::FAR_PLANE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].far_plane = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::COLOR:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 3) {
+                            fbx->light_node[fbx->num_light_nodes - 1].color[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::INTENSITY:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].intensity = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::DECAY_START:
+                        if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
+                            fbx->light_node[fbx->num_light_nodes - 1].decay_start = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    }
+                    break;
                 }
                 break;
             case K3_FBX_TYPECODE_SINT64:
@@ -1101,19 +1503,40 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 if (K3_FBX_DEBUG) printf("L: %lld\n", *i64_arr);
                 switch (node_type) {
                 case k3fbxNodeType::GEOMETRY:
-                    if (fbx->mesh) fbx->mesh[fbx->num_meshes - 1].id = *i64_arr;
+                    if (fbx_node_argument == 0) {
+                        if (fbx->mesh) fbx->mesh[fbx->num_meshes - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                     break;
                 case k3fbxNodeType::MODEL:
-                    if (fbx->model) fbx->model[fbx->num_models - 1].id = *i64_arr;
+                    if (fbx_node_argument == 0) {
+                        if (fbx->model) fbx->model[fbx->num_models - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                     break;
                 case k3fbxNodeType::MATERIAL:
-                    if (fbx->material) fbx->material[fbx->num_materials - 1].id = *i64_arr;
+                    if (fbx_node_argument == 0) {
+                        if (fbx->material) fbx->material[fbx->num_materials - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                     break;
                 case k3fbxNodeType::TEXTURE:
-                    if (fbx->texture) fbx->texture[fbx->num_textures - 1].id = *i64_arr;
+                    if (fbx_node_argument == 0) {
+                        if (fbx->texture) fbx->texture[fbx->num_textures - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                     break;
                 case k3fbxNodeType::VIDEO:
-                    if (fbx->content_data) fbx->content_data[fbx->num_content_data - 1].id = *i64_arr;
+                    if (fbx_node_argument == 0) {
+                        if (fbx->content_data) fbx->content_data[fbx->num_content_data - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
+                    break;
+                case k3fbxNodeType::NODE_ATTRIBUTE:
+                    if (fbx_node_argument == 0) {
+                        node_attrib_id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                     break;
                 case k3fbxNodeType::CONNECT:
                     if (connect_index < 2) {
@@ -1231,6 +1654,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         bytes_remaining = 0;
                     }
                 }
+                if (K3_FBX_DEBUG) {
+                    printf("%s\n", str);
+                }
                 if (node_type == k3fbxNodeType::MAPPING_TYPE) {
                     k3fbxMapping mapping = k3fbxMapping::ByVert;
                     if (!strncmp(str, "ByPolygon", 10)) mapping = k3fbxMapping::ByPoly;
@@ -1270,6 +1696,34 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::LOCAL_ROTATION;
                         } else if (!strncmp(str, "DiffuseColor", 13)) {
                             fbx_property = k3fbxProperty::DIFFUSE_COLOR;
+                        } else if (!strncmp(str, "Position", 9)) {
+                            fbx_property = k3fbxProperty::POSITION;
+                        } else if (!strncmp(str, "UpVector", 9)) {
+                            fbx_property = k3fbxProperty::UP_VECTOR;
+                        } else if (!strncmp(str, "InterestPosition", 17)) {
+                            fbx_property = k3fbxProperty::INTEREST_POSITION;
+                        } else if (!strncmp(str, "AspectWidth", 12)) {
+                            fbx_property = k3fbxProperty::ASPECT_WIDTH;
+                        } else if (!strncmp(str, "AspectHeight", 13)) {
+                            fbx_property = k3fbxProperty::ASPECT_HEIGHT;
+                        } else if (!strncmp(str, "FieldOfViewX", 13)) {
+                            fbx_property = k3fbxProperty::FOVX;
+                        } else if (!strncmp(str, "NearPlane", 10)) {
+                            fbx_property = k3fbxProperty::NEAR_PLANE;
+                        } else if (!strncmp(str, "FarPlane", 9)) {
+                            fbx_property = k3fbxProperty::FAR_PLANE;
+                        } else if (!strncmp(str, "LightType", 10)) {
+                            fbx_property = k3fbxProperty::LIGHT_TYPE;
+                        } else if (!strncmp(str, "Color", 6)) {
+                            fbx_property = k3fbxProperty::COLOR;
+                        } else if (!strncmp(str, "Intensity", 10)) {
+                            fbx_property = k3fbxProperty::INTENSITY;
+                        } else if (!strncmp(str, "DecayType", 10)) {
+                            fbx_property = k3fbxProperty::DECAY_TYPE;
+                        } else if (!strncmp(str, "DecayStart", 11)) {
+                            fbx_property = k3fbxProperty::DECAY_START;
+                        } else if (!strncmp(str, "CastShadows", 12)) {
+                            fbx_property = k3fbxProperty::CAST_SHADOWS;
                         } else if (K3_FBX_DEBUG) {
                             printf("%s\n", str);
                         }
@@ -1286,13 +1740,64 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         connect_index++;
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
                     }
+                } else if(node_type == k3fbxNodeType::NODE_ATTRIBUTE) {
+                    if (fbx_node_argument == 2) {
+                        // third argument is the type
+                        if (!strncmp(str, "Camera", 7)) {
+                            if (fbx->camera) {
+                                fbx->camera[fbx->num_cameras].id = node_attrib_id;
+                                fbx->camera[fbx->num_cameras].translation[0] = 1.0f;
+                                fbx->camera[fbx->num_cameras].translation[1] = 1.0f;
+                                fbx->camera[fbx->num_cameras].translation[2] = 1.0f;
+                                fbx->camera[fbx->num_cameras].look_at[0] = 0.0f;
+                                fbx->camera[fbx->num_cameras].look_at[1] = 0.0f;
+                                fbx->camera[fbx->num_cameras].look_at[2] = 0.0f;
+                                fbx->camera[fbx->num_cameras].up[0] = 0.0f;
+                                fbx->camera[fbx->num_cameras].up[1] = 0.0f;
+                                fbx->camera[fbx->num_cameras].up[2] = 1.0f;
+                                fbx->camera[fbx->num_cameras].fovx = 40.0f;
+                                fbx->camera[fbx->num_cameras].res_x = 640;
+                                fbx->camera[fbx->num_cameras].res_y = 480;
+                                fbx->camera[fbx->num_cameras].near_plane = 0.1f;
+                                fbx->camera[fbx->num_cameras].far_plane = 1000.0f;
+                            }
+                            fbx->num_cameras++;
+                            fbx->node_attrib_obj = k3fbxObjType::CAMERA;
+                        } else if (!strncmp(str, "Light", 6)) {
+                            if (fbx->light_node) {
+                                fbx->light_node[fbx->num_light_nodes].id = node_attrib_id;
+                                fbx->light_node[fbx->num_light_nodes].color[0] = 1.0f;
+                                fbx->light_node[fbx->num_light_nodes].color[1] = 1.0f;
+                                fbx->light_node[fbx->num_light_nodes].color[2] = 1.0f;
+                                fbx->light_node[fbx->num_light_nodes].intensity = 1000.0f;
+                                fbx->light_node[fbx->num_light_nodes].light_type = k3lightBufferData::POINT;
+                                fbx->light_node[fbx->num_light_nodes].decay_start = 0.0f;
+                                fbx->light_node[fbx->num_light_nodes].decay_type = k3lightBufferData::DECAY_QUADRATIC;
+                                fbx->light_node[fbx->num_light_nodes].cast_shadows = false;
+                            }
+                            fbx->num_light_nodes++;
+                            fbx->node_attrib_obj = k3fbxObjType::LIGHT;
+                        }
+                    }
                 } else if( node_type == k3fbxNodeType::CONTENT) {
                     if (parent_node == k3fbxNodeType::VIDEO && fbx->content_data) {
                         fbx->content_data[fbx->num_content_data - 1].file_pos = str_file_pos;
                     }
-                } else if (K3_FBX_DEBUG) {
-                    printf("%s\n", str);
+                } else if (node_type == k3fbxNodeType::MODEL) {
+                    if (fbx_node_argument == 2) {
+                        if (!strncmp(str, "Light", 6)) {
+                            fbx->num_lights++;
+                            if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::LIGHT;
+                        } else if (!strncmp(str, "Camera", 7)) {
+                            if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::CAMERA;
+                        } else if (!strncmp(str, "Mesh", 5)) {
+                            if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::MESH;
+                        } else {
+                            if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::NONE;
+                        }
+                    }
                 }
+                if (fbx_node_argument) fbx_node_argument++;
                 break;
             }
         }
@@ -1353,6 +1858,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_normal_indices) fbx.normal_indices = new uint32_t[fbx.num_normal_indices];
     if (fbx.num_uv_indices) fbx.uv_indices = new uint32_t[fbx.num_uv_indices];
     if (fbx.num_material_ids) fbx.material_ids = new uint32_t[fbx.num_material_ids];
+    if (fbx.num_cameras) fbx.camera = new k3fbxCamera[fbx.num_cameras];
+    if (fbx.num_light_nodes) fbx.light_node = new k3fbxLightNode[fbx.num_light_nodes];
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
@@ -1404,14 +1911,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 up_image_fence->WaitGpuFence(f - NUM_UP_BUF);
             }
 
-            //uint32_t j;
-            //uint32_t content_start_pos = ~0x0;
-            //for (j = 0; j < fbx.num_content_data; j++) {
-            //    if (!strncmp(fbx.texture[i].filename, fbx.content_data[j].filename, K3_FBX_FILENAME_SIZE)) {
-            //        content_start_pos = fbx.content_data[j].file_pos;
-            //    }
-            //}
-
             uint32_t content_start_pos = fbx.texture[i].file_pos;
             if (content_start_pos == ~0x0) {
                 k3imageObj::LoadFromFile(up_image[v], fbx.texture[i].filename);
@@ -1440,8 +1939,64 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     fclose(in_file);
 
+    mesh_impl->_lights = new k3light[fbx.num_lights];
+    mesh_impl->_num_lights = 0;
+    for (i = 0; i < fbx.num_models && mesh_impl->_num_lights < fbx.num_lights; i++) {
+        if (fbx.model[i].obj_type == k3fbxObjType::LIGHT) {
+            uint32_t light_node_index = fbx.model[i].material_index;
+            if (light_node_index != ~0x0) {
+                k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
+                mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
+                mesh_impl->_lights[mesh_impl->_num_lights].position[1] = fbx.model[i].translation[1];
+                mesh_impl->_lights[mesh_impl->_num_lights].position[2] = fbx.model[i].translation[2];
+                mesh_impl->_lights[mesh_impl->_num_lights].light_type = light_node->light_type;
+                mesh_impl->_lights[mesh_impl->_num_lights].color[0] = light_node->color[0];
+                mesh_impl->_lights[mesh_impl->_num_lights].color[1] = light_node->color[1];
+                mesh_impl->_lights[mesh_impl->_num_lights].color[2] = light_node->color[2];
+                mesh_impl->_lights[mesh_impl->_num_lights].intensity = light_node->intensity;
+                mesh_impl->_lights[mesh_impl->_num_lights].decay_type = light_node->decay_type;
+                mesh_impl->_lights[mesh_impl->_num_lights].decay_start = light_node->decay_start;
+                mesh_impl->_lights[mesh_impl->_num_lights].cast_shadows = light_node->cast_shadows;
+                mesh_impl->_num_lights++;
+            }
+
+        }
+    }
+
+    mesh_impl->_num_cameras = fbx.num_cameras;
+    mesh_impl->_cameras = new k3camera[mesh_impl->_num_cameras];
+    for (i = 0; i < mesh_impl->_num_cameras; i++) {
+        mesh_impl->_cameras[i].translation[0] = fbx.camera[i].translation[0];
+        mesh_impl->_cameras[i].translation[1] = fbx.camera[i].translation[1];
+        mesh_impl->_cameras[i].translation[2] = fbx.camera[i].translation[2];
+        mesh_impl->_cameras[i].look_at[0] = fbx.camera[i].look_at[1];
+        mesh_impl->_cameras[i].look_at[1] = -fbx.camera[i].look_at[0];
+        mesh_impl->_cameras[i].look_at[2] = fbx.camera[i].look_at[2];
+        mesh_impl->_cameras[i].up[0] = fbx.camera[i].up[0];
+        mesh_impl->_cameras[i].up[1] = fbx.camera[i].up[1];
+        mesh_impl->_cameras[i].up[2] = fbx.camera[i].up[2];
+
+        // Set the look at position properly
+        k3v3_Cross(mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].up);
+        k3v3_Cross(mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].up, mesh_impl->_cameras[i].look_at);
+        k3v3_Add(mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].translation, mesh_impl->_cameras[i].look_at);
+
+        mesh_impl->_cameras[i].res_x = fbx.camera[i].res_x;
+        mesh_impl->_cameras[i].res_y = fbx.camera[i].res_y;
+        float aspect = fbx.camera[i].res_y / (float)fbx.camera[i].res_x;
+        mesh_impl->_cameras[i].fovy = aspect * fbx.camera[i].fovx;
+        mesh_impl->_cameras[i].near_plane = fbx.camera[i].near_plane;
+        mesh_impl->_cameras[i].far_plane = fbx.camera[i].far_plane;
+    }
+
     mesh_impl->_num_models = 0;  // determine which models have actual geometries...those are the only valid ones
-    mesh_impl->_model = new k3meshModel[fbx.num_models];  // This is potentially overallocating
+    for (i = 0; i < fbx.num_models; i++) {
+        uint32_t mesh_index = fbx.model[i].mesh_index;
+        if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) mesh_impl->_num_models++;
+    }
+
+    mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
+    mesh_impl->_num_models = 0;  // reset the count, and count again, but this time with allocated entries which are filled in
     float mat[16];
     float x_axis[3] = { 1.0f, 0.0f, 0.0f };
     float y_axis[3] = { 0.0f, 1.0f, 0.0f };
@@ -1450,7 +2005,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     for (i = 0; i < fbx.num_models; i++) {
         uint32_t mesh_index = fbx.model[i].mesh_index;
         uint32_t mesh_start, num_mesh_prims;
-        if (mesh_index != ~0) {
+        if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) {
             // this is a valid model
             mesh_start = mesh_impl->_mesh_start[mesh_index];
             num_mesh_prims = (mesh_index < mesh_impl->_num_meshes - 1) ? mesh_impl->_mesh_start[mesh_index + 1] : num_tris;
@@ -1502,7 +2057,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (!use_ib) num_verts = 3 * num_tris;
 
 
-    uint32_t up_buf_size = (11 * num_verts * sizeof(float)) + ((use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
+    uint32_t geom_size = (11 * num_verts * sizeof(float)) + ((use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
+    uint32_t lbuf_size = mesh_impl->_num_lights * sizeof(k3lightBufferData);
+    uint32_t up_buf_size = geom_size + lbuf_size;
     float* verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
     float* attrs = verts + 3 * num_verts;
 
@@ -1518,6 +2075,33 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     bdesc.view_index = desc->view_index++;
     bdesc.shader_resource = true;
     mesh_impl->_ab = CreateBuffer(&bdesc);
+
+    uint32_t num_lights = mesh_impl->_num_lights;
+    if (num_lights) {
+        bdesc.size = lbuf_size;
+        bdesc.stride = sizeof(k3lightBufferData);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        mesh_impl->_lb = CreateBuffer(&bdesc);
+
+        k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
+
+        for (i = 0; i < num_lights; i++) {
+            lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
+            lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
+            lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
+            lb_data[i].intensity = mesh_impl->_lights[i].intensity;
+            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
+            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
+            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+            lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
+            lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
+            lb_data[i].light_type = mesh_impl->_lights[i].light_type;
+            lb_data[i].cast_shadows = mesh_impl->_lights[i].cast_shadows;
+            lb_data[i].spot_angle = 45.0f;
+        }
+    }
 
     float* fbx_verts = (float*)fbx.vertices;
     float* fbx_normals = (float*)fbx.normals;
@@ -1772,11 +2356,19 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
     desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    if (lbuf_size) {
+        buf_res = mesh_impl->_lb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
     desc->cmd_buf->Close();
     SubmitCmdBuf(desc->cmd_buf);
 
     delete[] fbx.mesh;
     delete[] fbx.model;
+    if (fbx.light_node) delete[] fbx.light_node;
+    if (fbx.camera) delete[] fbx.camera;
     if (fbx.material) delete[] fbx.material;
     if (fbx.texture) delete[] fbx.texture;
     if (fbx.content_data) delete[] fbx.content_data;

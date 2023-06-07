@@ -650,8 +650,6 @@ K3API k3win k3winObj::Create(const char* title,
         k3win32WinImpl::_win_count++;
     }
 
-    d->ResizeBackBuffer();
-
     // Register input devices
     RAWINPUTDEVICE rid[2];
 
@@ -666,8 +664,8 @@ K3API k3win k3winObj::Create(const char* title,
     rid[1].hwndTarget = d->_hwnd;
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
-    //ShowWindow( _hwnd, ((_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
-    ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
+    ShowWindow( d->_hwnd, ((d->_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
+    //ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
     d->SetWin32CursorState(d->_is_cursor_visible);
 
     d->_mouse_in_nc = false;
@@ -717,6 +715,7 @@ K3API void k3winObj::SetSize(uint32_t width, uint32_t height)
         GetClientRect(d->_hwnd, &r);
         d->_width = r.right - r.left;
         d->_height = r.bottom - r.top;
+        d->ResizeBackBuffer();
     }
 }
 

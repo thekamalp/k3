@@ -31,12 +31,23 @@ struct object_t {
     uint dummy1;
 };
 
+struct light_t {
+    float3 position;
+    float intensity;
+    float3 color;
+    float decay_start;
+    uint light_type;
+    uint decay_type;
+    uint cast_shadows;
+    float spot_angle;
+};
+
 StructuredBuffer<object_t> obj_prop : register(t2);
 
 SamplerState sampleLinear : register(s0);
-Texture2D<float4> texture_set[] : register(t3);
+Texture2D<float4> texture_set[] : register(t4);
 
-
+StructuredBuffer<light_t> light : register(t3);
 
 [shader("raygeneration")]
 void rayGen()
@@ -83,7 +94,8 @@ void closestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         attribs.barycentrics.xy);
     uint vert_index = 3 * (PrimitiveIndex() + obj_prop[InstanceID()].prim_start);
 
-    float3 light_dir = normalize(float3(0.25, -0.5, 1.0));
+    //float3 light_dir = normalize(float3(0.25, -0.5, 1.0));
+    float3 light_dir = normalize(light[0].position);
     light_dir = mul(obj_prop[InstanceID()].iworld, float4(light_dir, 0.0f)).xyz;
 
     float3 normal = vert_attribs[vert_index + 0].normal.xyz * baryc.x +

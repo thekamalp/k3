@@ -1616,6 +1616,25 @@ public:
     }
 };
 
+struct k3lightBufferData {
+    static const uint32_t POINT = 0;
+    static const uint32_t SPOT = 1;
+    static const uint32_t DIRECTIONAL = 2;
+    static const uint32_t DECAY_NONE = 0;
+    static const uint32_t DECAY_LINEAR = 1;
+    static const uint32_t DECAY_QUADRATIC = 2;
+    static const uint32_t DECAY_CUBIC = 3;
+
+    float position[3];
+    float intensity;
+    float color[3];
+    float decay_start;
+    uint32_t light_type;
+    uint32_t decay_type;
+    uint32_t cast_shadows;
+    float spot_angle;
+};
+
 struct k3meshDesc {
     uint32_t view_index;
     const char* name;
@@ -1643,6 +1662,7 @@ public:
     K3API uint32_t getNumObjects();
     K3API uint32_t getNumTextures();
     K3API uint32_t getNumMeshes();
+    K3API uint32_t getNumCameras();
     K3API k3surf getTexture(uint32_t tex);
     K3API uint32_t getMeshStartPrim(uint32_t mesh);
     K3API uint32_t getMeshNumPrims(uint32_t mesh);
@@ -1653,9 +1673,22 @@ public:
     K3API float* getDiffuseColor(uint32_t obj);
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
     K3API uint32_t getNormalMapIndex(uint32_t obj);
+    K3API float* getCameraPerspective(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
+    K3API float* getCameraView(float* d, uint32_t camera, bool left_handed = false);
+    K3API float* getCameraPosition(uint32_t camera);
+    K3API float* getCameraLookAt(uint32_t camera);
+    K3API float* getCameraUp(uint32_t camera);
+    K3API void getCameraResolution(uint32_t camera, uint32_t* width, uint32_t* height);
+    K3API float getCameraNearPlane(uint32_t camera);
+    K3API float getCameraFarPlane(uint32_t camera);
+    K3API void setCameraResolution(uint32_t camera, uint32_t width, uint32_t height);
+    K3API void setCameraNearPlane(uint32_t camera, float near);
+    K3API void setCameraFarPlane(uint32_t camera, float far);
+
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
     K3API k3buffer getAttribBuffer();
+    K3API k3buffer getLightBuffer();
 };
 
 class k3cmdBufObj : public k3obj
