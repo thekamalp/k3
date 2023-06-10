@@ -24,6 +24,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
+file (GLOB SOURCE_JPG    "src/image/jpeg-6b/*.c")
 file (GLOB SOURCE_IMAGE  "src/image/*.cpp")
 file (GLOB SOURCE_MATH   "src/math/*.cpp")
 file (GLOB SOURCE_COMMON "src/cmn/*.cpp")
@@ -37,7 +38,7 @@ if(WIN32)
 	set (LINK_LIB dsound hid dxguid winmm zlib ${FT_LIB} ${GFX_LINK_LIB})
 endif()
 
-add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_PLATFORM})
+add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_JPG} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_PLATFORM})
 
 target_link_libraries(${PROJ} ${LINK_LIB})
 

@@ -5,9 +5,10 @@
 #include "k3internal.h"
 #include "ddshandler.h"
 #include "pnghandler.h"
+#include "jpghandler.h"
 
-uint32_t k3imageObj::_num_file_handlers = 2;
-k3image_file_handler_t* k3imageObj::_fh[MAX_FILE_HANDLERS] = { &k3DDSHandler, &k3PNGHandler };
+uint32_t k3imageObj::_num_file_handlers = 3;
+k3image_file_handler_t* k3imageObj::_fh[MAX_FILE_HANDLERS] = { &k3DDSHandler, &k3PNGHandler, &k3JPGHandler };
 
 K3API uint32_t k3imageObj::AddImageFileHandler(k3image_file_handler_t* fh)
 {
