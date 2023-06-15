@@ -2020,10 +2020,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = ~0;
             mesh_impl->_model[mesh_impl->_num_models].normal_map_index = ~0;
             // Set initial model rotation and position
-            k3m4_SetRotation(mesh_impl->_model[mesh_impl->_num_models].world_xform, deg2rad(fbx.model[i].rotation[0]), x_axis);
-            k3m4_SetRotation(mat, deg2rad(fbx.model[i].rotation[1]), y_axis);
+            k3m4_SetRotation(mesh_impl->_model[mesh_impl->_num_models].world_xform, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
             k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
-            k3m4_SetRotation(mat, deg2rad(fbx.model[i].rotation[2]), z_axis);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
             k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
             k3m4_SetIdentity(mat);
             mat[3] = fbx.model[i].translation[0];
