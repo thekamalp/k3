@@ -925,8 +925,9 @@ struct k3fbxAttrLinkList {
     k3fbxAttrLinkList* next;
 };
 
-static const uint64_t MAP_TYPE_DIFFUSE = 0;
-static const uint64_t MAP_TYPE_NORMAL = 1;
+static const uint64_t MAP_TYPE_UNKNOWN = 0;
+static const uint64_t MAP_TYPE_DIFFUSE = 1;
+static const uint64_t MAP_TYPE_NORMAL = 2;
 
 uint32_t findFbxLightNode(k3fbxData* fbx, uint64_t id)
 {
@@ -1098,6 +1099,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint32_t fbx_node_argument = 0;
     uint64_t node_attrib_id;
     uint32_t str_file_pos;
+    bool first_uv = true;
 
     while (1) {
         fread(&node, K3_FBX_NODE_RECORD_LENGTH, 1, in_file);
@@ -1111,7 +1113,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "Vertices", 9)) node_type = k3fbxNodeType::VERTICES;
             else if (!strncmp(str, "PolygonVertexIndex", 19)) node_type = k3fbxNodeType::POLYGON_VERT_INDEX;
             else if (!strncmp(str, "LayerElementNormal", 19)) node_type = k3fbxNodeType::LAYER_ELEMENT_NORMAL;
-            else if (!strncmp(str, "LayerElementUV", 15)) node_type = k3fbxNodeType::LAYER_ELEMENT_UV;
+            else if (!strncmp(str, "LayerElementUV", 15) && first_uv) { node_type = k3fbxNodeType::LAYER_ELEMENT_UV; first_uv = false; }
             else if (!strncmp(str, "LayerElementMaterial", 21)) node_type = k3fbxNodeType::LAYER_ELEMENT_MATERIAL;
             else if (!strncmp(str, "MappingInformationType", 23)) node_type = k3fbxNodeType::MAPPING_TYPE;
             else if (!strncmp(str, "ReferenceInformationType", 25)) node_type = k3fbxNodeType::REFERENCE_TYPE;
@@ -1736,6 +1738,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             connect_id[connect_index] = MAP_TYPE_DIFFUSE;
                         } else if (!strncmp(str, "NormalMap", 10)) {
                             connect_id[connect_index] = MAP_TYPE_NORMAL;
+                        } else {
+                            connect_id[connect_index] = MAP_TYPE_UNKNOWN;
                         }
                         connect_index++;
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
