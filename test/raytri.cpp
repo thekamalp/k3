@@ -79,12 +79,6 @@ App::~App()
 void App::Setup()
 {
     win = k3winObj::CreateWindowed("raytri", 100, 100, 640, 480, 128, 32);
-    win->SetKeyboardFunc(KeyboardCallback);
-    win->SetDisplayFunc(DisplayCallback);
-    win->SetIdleFunc(DisplayCallback);
-    win->SetResizeFunc(ResizeCallback);
-    win->SetMouseFunc(MouseMoveCallback, MouseButtonCallback, MouseScrollCallback);
-    win->SetDataPtr(this);
 
     gfx = win->GetGfx();
     printf("Adapter: %s\n", gfx->AdapterName());
@@ -467,6 +461,13 @@ void App::Setup()
 
     if (tl_inst) delete[] tl_inst;
     if (blas) delete[] blas;
+
+    win->SetDataPtr(this);
+    win->SetKeyboardFunc(KeyboardCallback);
+    win->SetDisplayFunc(DisplayCallback);
+    win->SetIdleFunc(DisplayCallback);
+    win->SetResizeFunc(ResizeCallback);
+    win->SetMouseFunc(MouseMoveCallback, MouseButtonCallback, MouseScrollCallback);
 }
 
 void App::UpdateResources(uint32_t v)
