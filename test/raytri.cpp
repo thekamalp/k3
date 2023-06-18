@@ -29,7 +29,9 @@ private:
     bool use_raster;
     k3fence fence;
     uint64_t version;
+    uint32_t dxr_tier;
 
+    k3surf depth_surf;
     k3surf rt_out;
     k3gfxState raster_state;
     k3mesh cube_mesh;
@@ -86,7 +88,8 @@ void App::Setup()
 
     gfx = win->GetGfx();
     printf("Adapter: %s\n", gfx->AdapterName());
-    printf("Raytracing Tier supported: %d\n", gfx->GetRayTracingSupport());
+    dxr_tier = gfx->GetRayTracingSupport();
+    printf("Raytracing Tier supported: %d\n", dxr_tier);
 
     cmd_buf = gfx->CreateCmdBuf();
     uint32_t view_index = 0;
@@ -111,6 +114,15 @@ void App::Setup()
         for (i = 0; i < cube_mesh->getNumCameras(); i++) {
             cube_mesh->setCameraFarPlane(i, INFINITY);
         }
+        k3resourceDesc rdesc = {};
+        rdesc.width = win_width;
+        rdesc.height = win_height;
+        rdesc.depth = 1;
+        rdesc.format = k3fmt::D32_FLOAT;
+        rdesc.mip_levels = 1;
+        rdesc.num_samples = 1;
+        k3viewDesc vdesc = {};
+        depth_surf = gfx->CreateSurface(&rdesc, &vdesc, NULL, NULL);
     }
 
     // Make window visible after setting size
@@ -224,213 +236,225 @@ void App::Setup()
     state_desc.rast_state.fill_mode = k3fill::SOLID;
     state_desc.rast_state.cull_mode = k3cull::BACK;
     state_desc.rast_state.front_counter_clockwise = true;
+    state_desc.depth_state.depth_enable = true;
+    state_desc.depth_state.depth_write_enable = true;
+    state_desc.depth_state.depth_test = k3testFunc::GREATER;
     state_desc.blend_state.blend_op[0].rt_write_mask = 0xf;
     state_desc.prim_type = k3primType::TRIANGLE;
     state_desc.num_render_targets = 1;
     state_desc.rtv_format[0] = k3fmt::RGBA8_UNORM;
+    state_desc.dsv_format = k3fmt::D32_FLOAT;
     state_desc.msaa_samples = 1;
     raster_state = gfx->CreateGfxState(&state_desc);
 
     uint32_t num_meshes = cube_mesh->getNumMeshes();
     k3blasCreateDesc bl_desc;
-    k3blas* blas = new k3blas[num_meshes];
-    bl_desc.xform_3x4 = NULL;
-    bl_desc.ib = cube_mesh->getIndexBuffer();
-    bl_desc.vb = cube_mesh->getVertexBuffer();
-    bl_desc.alloc = true;
-    for (i = 0; i < num_meshes; i++) {
-        bl_desc.start_prim = cube_mesh->getMeshStartPrim(i);
-        bl_desc.num_prims = cube_mesh->getMeshNumPrims(i);
-        blas[i] = gfx->CreateBlas(&bl_desc);
-    }
-
-    k3tlasInstance* tl_inst = new k3tlasInstance[num_objects];
-
-    for (i = 0; i < num_objects; i++) {
-        memcpy(tl_inst[i].transform, cube_mesh->getTransform(i), 12 * sizeof(float));
-        tl_inst[i].id = i;
-        tl_inst[i].hit_group = 0;
-        tl_inst[i].mask = 0xff;
-        tl_inst[i].flags = 0;
-        tl_inst[i].blas = blas[cube_mesh->getMeshIndex(i)];
-    }
-
-    k3tlasCreateDesc tl_desc;
-    tl_desc.num_instances = num_objects;
-    tl_desc.instances = tl_inst;
-    tl_desc.view_index = view_index++;
-    tl_desc.alloc = true;
-    for (i = 0; i < NUM_VERSIONS; i++) {
-        tlas_main_scene[i] = gfx->CreateTlas(&tl_desc);
-    }
-
-    k3shader ray_shaders = gfx->CreateShaderFromCompiledFile("simple_ray.cso");
-    const char* shader_entries[3] = { ray_gen_entry, miss_entry, closest_hit_entry };
-    const char* hit_miss_shader_entries[2] = { miss_entry, closest_hit_entry };
-
-    k3bindingParam rt_bindings[7];
-    rt_bindings[0].type = k3bindingType::VIEW_SET;
-    rt_bindings[0].view_set_desc.type = k3shaderBindType::UAV;
-    rt_bindings[0].view_set_desc.num_views = 1;
-    rt_bindings[0].view_set_desc.reg = 0;
-    rt_bindings[0].view_set_desc.space = 0;
-    rt_bindings[0].view_set_desc.offset = 0;
-    rt_bindings[1].type = k3bindingType::VIEW_SET;
-    rt_bindings[1].view_set_desc.type = k3shaderBindType::SRV;
-    rt_bindings[1].view_set_desc.num_views = 1;
-    rt_bindings[1].view_set_desc.reg = 0;
-    rt_bindings[1].view_set_desc.space = 0;
-    rt_bindings[1].view_set_desc.offset = 1;
-    rt_bindings[2].type = k3bindingType::VIEW_SET;
-    rt_bindings[2].view_set_desc.type = k3shaderBindType::CBV;
-    rt_bindings[2].view_set_desc.num_views = 1;
-    rt_bindings[2].view_set_desc.reg = 0;
-    rt_bindings[2].view_set_desc.space = 0;
-    rt_bindings[2].view_set_desc.offset = 2;
-    rt_bindings[3].type = k3bindingType::VIEW_SET;
-    rt_bindings[3].view_set_desc.type = k3shaderBindType::SRV;
-    rt_bindings[3].view_set_desc.num_views = 1;
-    rt_bindings[3].view_set_desc.reg = 1;
-    rt_bindings[3].view_set_desc.space = 0;
-    rt_bindings[3].view_set_desc.offset = 0;
-    rt_bindings[4].type = k3bindingType::VIEW_SET;
-    rt_bindings[4].view_set_desc.type = k3shaderBindType::SRV;
-    rt_bindings[4].view_set_desc.num_views = cube_mesh->getNumTextures();
-    if (rt_bindings[4].view_set_desc.num_views == 0) rt_bindings[4].view_set_desc.num_views = 1;
-    rt_bindings[4].view_set_desc.reg = 4;
-    rt_bindings[4].view_set_desc.space = 0;
-    rt_bindings[4].view_set_desc.offset = 1;
-    rt_bindings[5].type = k3bindingType::VIEW_SET;
-    rt_bindings[5].view_set_desc.type = k3shaderBindType::SRV;
-    rt_bindings[5].view_set_desc.num_views = 1;
-    rt_bindings[5].view_set_desc.reg = 2;
-    rt_bindings[5].view_set_desc.space = 0;
-    rt_bindings[5].view_set_desc.offset = 2;
-    rt_bindings[6].type = k3bindingType::VIEW_SET;
-    rt_bindings[6].view_set_desc.type = k3shaderBindType::SRV;
-    rt_bindings[6].view_set_desc.num_views = 1;
-    rt_bindings[6].view_set_desc.reg = 3;
-    rt_bindings[6].view_set_desc.space = 0;
-    rt_bindings[6].view_set_desc.offset = 3;
-
-    k3shaderBinding ray_gen_bindings = gfx->CreateTypedShaderBinding(3, rt_bindings, 0, NULL, k3shaderBindingType::LOCAL);
-    k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(4, &(rt_bindings[3]), 0, NULL, k3shaderBindingType::LOCAL);
-    k3shaderBinding global_bindings = gfx->CreateShaderBinding(0, NULL, 1, &sdesc);
-
-    k3rtStateDesc rt_state_desc[10] = {};
-    // Shader library
-    rt_state_desc[0].type = k3rtStateType::SHADER;
-    rt_state_desc[0].shader.obj = ray_shaders;
-    rt_state_desc[0].shader.num_entries = 3;
-    rt_state_desc[0].shader.entries = shader_entries;
-    // hit group
-    rt_state_desc[1].type = k3rtStateType::HIT_GROUP;
-    rt_state_desc[1].elem.hit_group.type = k3rtHitGroupType::TRIANGLES;
-    rt_state_desc[1].elem.hit_group.name = hit_group;
-    rt_state_desc[1].elem.hit_group.any_hit_shader = NULL;
-    rt_state_desc[1].elem.hit_group.closest_hit_shader = closest_hit_entry;
-    rt_state_desc[1].elem.hit_group.intersection_shader = NULL;
-    // ray gen shader binding
-    rt_state_desc[2].type = k3rtStateType::SHADER_BINDING;
-    rt_state_desc[2].shader_binding = ray_gen_bindings;
-    // ray gen association
-    rt_state_desc[3].type = k3rtStateType::EXPORT_ASSOCIATION;
-    rt_state_desc[3].elem.export_association.num_exports = 1;
-    rt_state_desc[3].elem.export_association.export_names = shader_entries;
-    rt_state_desc[3].elem.export_association.association_index = 2;
-    // hit-miss shader binding
-    rt_state_desc[4].type = k3rtStateType::SHADER_BINDING;
-    rt_state_desc[4].shader_binding = hit_miss_bindings;
-    // hit-miss association
-    rt_state_desc[5].type = k3rtStateType::EXPORT_ASSOCIATION;
-    rt_state_desc[5].elem.export_association.num_exports = 2;
-    rt_state_desc[5].elem.export_association.export_names = hit_miss_shader_entries;
-    rt_state_desc[5].elem.export_association.association_index = 4;
-    // shader config
-    rt_state_desc[6].type = k3rtStateType::SHADER_CONFIG;
-    rt_state_desc[6].elem.shader_config.attrib_size = 2 * sizeof(float);
-    rt_state_desc[6].elem.shader_config.payload_size = 3 * sizeof(float);
-    // shader config association
-    rt_state_desc[7].type = k3rtStateType::EXPORT_ASSOCIATION;
-    rt_state_desc[7].elem.export_association.num_exports = 3;
-    rt_state_desc[7].elem.export_association.export_names = shader_entries;
-    rt_state_desc[7].elem.export_association.association_index = 6;
-    // pipe config
-    rt_state_desc[8].type = k3rtStateType::PIPELINE_CONFIG;
-    rt_state_desc[8].elem.pipeline_config.max_recursion = 1;
-    // global bindings
-    rt_state_desc[9].type = k3rtStateType::SHADER_BINDING;
-    rt_state_desc[9].shader_binding = global_bindings;
-
-    rt_state = gfx->CreateRTState(10, rt_state_desc);
-
-    k3rtStateTableDesc rt_state_table_desc = {};
-    rt_state_table_desc.num_entries = 3;
-    rt_state_table_desc.num_args = 4;
-    rt_state_table_desc.mem_pool = NULL;
-    rt_state_table_desc.mem_offset = 0;
-    for (i = 0; i < NUM_VERSIONS; i++) {
-        rt_state_table[i] = gfx->CreateRTStateTable(&rt_state_table_desc);
-    }
-
+    k3tlasInstance* tl_inst = NULL;
+    k3blas* blas = NULL;
     k3rtStateTableArg rt_state_table_arg[7];
-    rt_state_table_arg[0].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[0].bind_type = k3shaderBindType::UAV;
-    rt_state_table_arg[0].obj = rt_out;
-    rt_state_table_arg[1].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[1].bind_type = k3shaderBindType::SRV;
-    //rt_state_table_arg[1].obj = tlas_main_scene;
-    rt_state_table_arg[2].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[2].bind_type = k3shaderBindType::CBV;
-    //rt_state_table_arg[2].obj = cb_camera;
-    rt_state_table_arg[3].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[3].bind_type = k3shaderBindType::SRV;
-    rt_state_table_arg[3].obj = cube_mesh->getAttribBuffer();
-    rt_state_table_arg[4].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[4].bind_type = k3shaderBindType::SRV;
-    rt_state_table_arg[4].obj = cube_mesh->getTexture(0);
-    rt_state_table_arg[5].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[5].bind_type = k3shaderBindType::SRV;
-    //rt_state_table_arg[5].obj = cb_obj;
-    rt_state_table_arg[6].type = k3rtStateTableArgType::HANDLE;
-    rt_state_table_arg[6].bind_type = k3shaderBindType::SRV;
-    rt_state_table_arg[6].obj = cube_mesh->getLightBuffer();
-
-    k3rtStateTableEntryDesc rt_state_table_entries[3];
-    rt_state_table_entries[0].shader = ray_gen_entry;
-    rt_state_table_entries[0].num_args = 3;
-    rt_state_table_entries[0].args = rt_state_table_arg;
-    rt_state_table_entries[1].shader = miss_entry;
-    rt_state_table_entries[1].num_args = 4;
-    rt_state_table_entries[1].args = &(rt_state_table_arg[3]);
-    rt_state_table_entries[2].shader = hit_group;
-    rt_state_table_entries[2].num_args = 4;
-    rt_state_table_entries[2].args = &(rt_state_table_arg[3]);
-    
     k3rtStateTableUpdate rt_state_table_update = {};
-    //rt_state_table_update.copy_buffer = gfx->CreateUploadBuffer();
-    rt_state_table_update.state = rt_state;
-    rt_state_table_update.start = 0;
-    rt_state_table_update.num_entries = 3;
-    rt_state_table_update.entries = rt_state_table_entries;
-
     k3uploadBuffer table_buffers[NUM_VERSIONS];
-    for (i = 0; i < NUM_VERSIONS; i++) {
-        table_buffers[i] = gfx->CreateUploadBuffer();
+
+    if (dxr_tier) {
+        blas = new k3blas[num_meshes];
+        bl_desc.xform_3x4 = NULL;
+        bl_desc.ib = cube_mesh->getIndexBuffer();
+        bl_desc.vb = cube_mesh->getVertexBuffer();
+        bl_desc.alloc = true;
+        for (i = 0; i < num_meshes; i++) {
+            bl_desc.start_prim = cube_mesh->getMeshStartPrim(i);
+            bl_desc.num_prims = cube_mesh->getMeshNumPrims(i);
+            blas[i] = gfx->CreateBlas(&bl_desc);
+        }
+
+        tl_inst = new k3tlasInstance[num_objects];
+
+        for (i = 0; i < num_objects; i++) {
+            memcpy(tl_inst[i].transform, cube_mesh->getTransform(i), 12 * sizeof(float));
+            tl_inst[i].id = i;
+            tl_inst[i].hit_group = 0;
+            tl_inst[i].mask = 0xff;
+            tl_inst[i].flags = 0;
+            tl_inst[i].blas = blas[cube_mesh->getMeshIndex(i)];
+        }
+
+        k3tlasCreateDesc tl_desc;
+        tl_desc.num_instances = num_objects;
+        tl_desc.instances = tl_inst;
+        tl_desc.view_index = view_index++;
+        tl_desc.alloc = true;
+        for (i = 0; i < NUM_VERSIONS; i++) {
+            tlas_main_scene[i] = gfx->CreateTlas(&tl_desc);
+        }
+
+        k3shader ray_shaders = gfx->CreateShaderFromCompiledFile("simple_ray.cso");
+        const char* shader_entries[3] = { ray_gen_entry, miss_entry, closest_hit_entry };
+        const char* hit_miss_shader_entries[2] = { miss_entry, closest_hit_entry };
+
+        k3bindingParam rt_bindings[7];
+        rt_bindings[0].type = k3bindingType::VIEW_SET;
+        rt_bindings[0].view_set_desc.type = k3shaderBindType::UAV;
+        rt_bindings[0].view_set_desc.num_views = 1;
+        rt_bindings[0].view_set_desc.reg = 0;
+        rt_bindings[0].view_set_desc.space = 0;
+        rt_bindings[0].view_set_desc.offset = 0;
+        rt_bindings[1].type = k3bindingType::VIEW_SET;
+        rt_bindings[1].view_set_desc.type = k3shaderBindType::SRV;
+        rt_bindings[1].view_set_desc.num_views = 1;
+        rt_bindings[1].view_set_desc.reg = 0;
+        rt_bindings[1].view_set_desc.space = 0;
+        rt_bindings[1].view_set_desc.offset = 1;
+        rt_bindings[2].type = k3bindingType::VIEW_SET;
+        rt_bindings[2].view_set_desc.type = k3shaderBindType::CBV;
+        rt_bindings[2].view_set_desc.num_views = 1;
+        rt_bindings[2].view_set_desc.reg = 0;
+        rt_bindings[2].view_set_desc.space = 0;
+        rt_bindings[2].view_set_desc.offset = 2;
+        rt_bindings[3].type = k3bindingType::VIEW_SET;
+        rt_bindings[3].view_set_desc.type = k3shaderBindType::SRV;
+        rt_bindings[3].view_set_desc.num_views = 1;
+        rt_bindings[3].view_set_desc.reg = 1;
+        rt_bindings[3].view_set_desc.space = 0;
+        rt_bindings[3].view_set_desc.offset = 0;
+        rt_bindings[4].type = k3bindingType::VIEW_SET;
+        rt_bindings[4].view_set_desc.type = k3shaderBindType::SRV;
+        rt_bindings[4].view_set_desc.num_views = cube_mesh->getNumTextures();
+        if (rt_bindings[4].view_set_desc.num_views == 0) rt_bindings[4].view_set_desc.num_views = 1;
+        rt_bindings[4].view_set_desc.reg = 4;
+        rt_bindings[4].view_set_desc.space = 0;
+        rt_bindings[4].view_set_desc.offset = 1;
+        rt_bindings[5].type = k3bindingType::VIEW_SET;
+        rt_bindings[5].view_set_desc.type = k3shaderBindType::SRV;
+        rt_bindings[5].view_set_desc.num_views = 1;
+        rt_bindings[5].view_set_desc.reg = 2;
+        rt_bindings[5].view_set_desc.space = 0;
+        rt_bindings[5].view_set_desc.offset = 2;
+        rt_bindings[6].type = k3bindingType::VIEW_SET;
+        rt_bindings[6].view_set_desc.type = k3shaderBindType::SRV;
+        rt_bindings[6].view_set_desc.num_views = 1;
+        rt_bindings[6].view_set_desc.reg = 3;
+        rt_bindings[6].view_set_desc.space = 0;
+        rt_bindings[6].view_set_desc.offset = 3;
+
+        k3shaderBinding ray_gen_bindings = gfx->CreateTypedShaderBinding(3, rt_bindings, 0, NULL, k3shaderBindingType::LOCAL);
+        k3shaderBinding hit_miss_bindings = gfx->CreateTypedShaderBinding(4, &(rt_bindings[3]), 0, NULL, k3shaderBindingType::LOCAL);
+        k3shaderBinding global_bindings = gfx->CreateShaderBinding(0, NULL, 1, &sdesc);
+
+        k3rtStateDesc rt_state_desc[10] = {};
+        // Shader library
+        rt_state_desc[0].type = k3rtStateType::SHADER;
+        rt_state_desc[0].shader.obj = ray_shaders;
+        rt_state_desc[0].shader.num_entries = 3;
+        rt_state_desc[0].shader.entries = shader_entries;
+        // hit group
+        rt_state_desc[1].type = k3rtStateType::HIT_GROUP;
+        rt_state_desc[1].elem.hit_group.type = k3rtHitGroupType::TRIANGLES;
+        rt_state_desc[1].elem.hit_group.name = hit_group;
+        rt_state_desc[1].elem.hit_group.any_hit_shader = NULL;
+        rt_state_desc[1].elem.hit_group.closest_hit_shader = closest_hit_entry;
+        rt_state_desc[1].elem.hit_group.intersection_shader = NULL;
+        // ray gen shader binding
+        rt_state_desc[2].type = k3rtStateType::SHADER_BINDING;
+        rt_state_desc[2].shader_binding = ray_gen_bindings;
+        // ray gen association
+        rt_state_desc[3].type = k3rtStateType::EXPORT_ASSOCIATION;
+        rt_state_desc[3].elem.export_association.num_exports = 1;
+        rt_state_desc[3].elem.export_association.export_names = shader_entries;
+        rt_state_desc[3].elem.export_association.association_index = 2;
+        // hit-miss shader binding
+        rt_state_desc[4].type = k3rtStateType::SHADER_BINDING;
+        rt_state_desc[4].shader_binding = hit_miss_bindings;
+        // hit-miss association
+        rt_state_desc[5].type = k3rtStateType::EXPORT_ASSOCIATION;
+        rt_state_desc[5].elem.export_association.num_exports = 2;
+        rt_state_desc[5].elem.export_association.export_names = hit_miss_shader_entries;
+        rt_state_desc[5].elem.export_association.association_index = 4;
+        // shader config
+        rt_state_desc[6].type = k3rtStateType::SHADER_CONFIG;
+        rt_state_desc[6].elem.shader_config.attrib_size = 2 * sizeof(float);
+        rt_state_desc[6].elem.shader_config.payload_size = 3 * sizeof(float);
+        // shader config association
+        rt_state_desc[7].type = k3rtStateType::EXPORT_ASSOCIATION;
+        rt_state_desc[7].elem.export_association.num_exports = 3;
+        rt_state_desc[7].elem.export_association.export_names = shader_entries;
+        rt_state_desc[7].elem.export_association.association_index = 6;
+        // pipe config
+        rt_state_desc[8].type = k3rtStateType::PIPELINE_CONFIG;
+        rt_state_desc[8].elem.pipeline_config.max_recursion = 1;
+        // global bindings
+        rt_state_desc[9].type = k3rtStateType::SHADER_BINDING;
+        rt_state_desc[9].shader_binding = global_bindings;
+
+        rt_state = gfx->CreateRTState(10, rt_state_desc);
+
+        k3rtStateTableDesc rt_state_table_desc = {};
+        rt_state_table_desc.num_entries = 3;
+        rt_state_table_desc.num_args = 4;
+        rt_state_table_desc.mem_pool = NULL;
+        rt_state_table_desc.mem_offset = 0;
+        for (i = 0; i < NUM_VERSIONS; i++) {
+            rt_state_table[i] = gfx->CreateRTStateTable(&rt_state_table_desc);
+        }
+
+        rt_state_table_arg[0].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[0].bind_type = k3shaderBindType::UAV;
+        rt_state_table_arg[0].obj = rt_out;
+        rt_state_table_arg[1].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[1].bind_type = k3shaderBindType::SRV;
+        //rt_state_table_arg[1].obj = tlas_main_scene;
+        rt_state_table_arg[2].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[2].bind_type = k3shaderBindType::CBV;
+        //rt_state_table_arg[2].obj = cb_camera;
+        rt_state_table_arg[3].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[3].bind_type = k3shaderBindType::SRV;
+        rt_state_table_arg[3].obj = cube_mesh->getAttribBuffer();
+        rt_state_table_arg[4].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[4].bind_type = k3shaderBindType::SRV;
+        rt_state_table_arg[4].obj = cube_mesh->getTexture(0);
+        rt_state_table_arg[5].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[5].bind_type = k3shaderBindType::SRV;
+        //rt_state_table_arg[5].obj = cb_obj;
+        rt_state_table_arg[6].type = k3rtStateTableArgType::HANDLE;
+        rt_state_table_arg[6].bind_type = k3shaderBindType::SRV;
+        rt_state_table_arg[6].obj = cube_mesh->getLightBuffer();
+
+        k3rtStateTableEntryDesc rt_state_table_entries[3];
+        rt_state_table_entries[0].shader = ray_gen_entry;
+        rt_state_table_entries[0].num_args = 3;
+        rt_state_table_entries[0].args = rt_state_table_arg;
+        rt_state_table_entries[1].shader = miss_entry;
+        rt_state_table_entries[1].num_args = 4;
+        rt_state_table_entries[1].args = &(rt_state_table_arg[3]);
+        rt_state_table_entries[2].shader = hit_group;
+        rt_state_table_entries[2].num_args = 4;
+        rt_state_table_entries[2].args = &(rt_state_table_arg[3]);
+
+        //rt_state_table_update.copy_buffer = gfx->CreateUploadBuffer();
+        rt_state_table_update.state = rt_state;
+        rt_state_table_update.start = 0;
+        rt_state_table_update.num_entries = 3;
+        rt_state_table_update.entries = rt_state_table_entries;
+
+        for (i = 0; i < NUM_VERSIONS; i++) {
+            table_buffers[i] = gfx->CreateUploadBuffer();
+        }
     }
 
     k3resource buffer_resource;
     cmd_buf->Reset();
-    for (i = 0; i < num_meshes; i++) {
-        cmd_buf->BuildBlas(blas[i]);
-    }
-    for (i = 0; i < NUM_VERSIONS; i++) {
-        cmd_buf->BuildTlas(tlas_main_scene[i]);
-        rt_state_table_update.copy_buffer = table_buffers[i];
-        rt_state_table_arg[1].obj = tlas_main_scene[i];
-        rt_state_table_arg[2].obj = cb_camera[i];
-        rt_state_table_arg[5].obj = cb_obj[i];
-        cmd_buf->UpdateRTStateTable(rt_state_table[i], &rt_state_table_update);
+    cmd_buf->TransitionResource(depth_surf->GetResource(), k3resourceState::RENDER_TARGET);
+    if (dxr_tier) {
+        for (i = 0; i < num_meshes; i++) {
+            cmd_buf->BuildBlas(blas[i]);
+        }
+        for (i = 0; i < NUM_VERSIONS; i++) {
+            cmd_buf->BuildTlas(tlas_main_scene[i]);
+            rt_state_table_update.copy_buffer = table_buffers[i];
+            rt_state_table_arg[1].obj = tlas_main_scene[i];
+            rt_state_table_arg[2].obj = cb_camera[i];
+            rt_state_table_arg[5].obj = cb_obj[i];
+            cmd_buf->UpdateRTStateTable(rt_state_table[i], &rt_state_table_update);
+        }
     }
     cmd_buf->TransitionResource(cube_mesh->getLightBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
     //cmd_buf->UpdateRTStateTable(rt_state_table, &rt_state_table_update);
@@ -440,7 +464,7 @@ void App::Setup()
         version = fence->SetGpuFence(k3gpuQueue::GRAPHICS);
     }
 
-    use_raster = false;
+    use_raster = (dxr_tier) ? false : true;
     last_mouse_x = 0;
     last_mouse_y = 0;
     mouse_button = 0x0;
@@ -491,7 +515,7 @@ void App::UpdateResources(uint32_t v)
         obj_data[i].diffuse_map_index = cube_mesh->getDiffuseMapIndex(i);
         obj_data[i].normal_map_index = cube_mesh->getNormalMapIndex(i);
         obj_data[i].prim_start = cube_mesh->getStartPrim(i);
-        tlas_main_scene[v]->UpdateTransform(i, obj_data[i].world);
+        if(dxr_tier) tlas_main_scene[v]->UpdateTransform(i, obj_data[i].world);
     }
     cb_obj_upload[v]->Unmap();
 
@@ -505,7 +529,7 @@ void App::UpdateResources(uint32_t v)
     cmd_buf->UploadBuffer(cb_obj_upload[v], buffer_resource);
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
 
-    cmd_buf->BuildTlas(tlas_main_scene[v]);
+    if(dxr_tier) cmd_buf->BuildTlas(tlas_main_scene[v]);
 }
 
 void App::Keyboard(k3key k, char c, k3keyState state)
@@ -537,7 +561,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             k3m4_Mul(model_xform, model_xform, new_xform);
             break;
         case k3key::SPACE:
-            use_raster = !use_raster;
+            use_raster = !use_raster || (dxr_tier == 0);
             printf("Using %s\n", (use_raster) ? "raster" : "ray tracing");
             break;
         }
@@ -552,6 +576,7 @@ void App::Display()
 
     k3renderTargets rt = { NULL };
     rt.render_targets[0] = back_buffer;
+    rt.depth_target = depth_surf;
     cmd_buf->Reset();
     cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::RENDER_TARGET);
     cmd_buf->ClearRenderTarget(back_buffer, clear_color, NULL);
@@ -561,6 +586,7 @@ void App::Display()
     UpdateResources(v);
 
     if (use_raster) {
+        cmd_buf->ClearDepthTarget(depth_surf, k3depthSelect::DEPTH, 0.0f, 0x0, NULL);
         cmd_buf->SetGfxState(raster_state);
         cmd_buf->TransitionResource(cube_mesh->getVertexBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
         cmd_buf->TransitionResource(cube_mesh->getAttribBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
