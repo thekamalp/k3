@@ -114,15 +114,6 @@ void App::Setup()
         for (i = 0; i < cube_mesh->getNumCameras(); i++) {
             cube_mesh->setCameraFarPlane(i, INFINITY);
         }
-        k3resourceDesc rdesc = {};
-        rdesc.width = win_width;
-        rdesc.height = win_height;
-        rdesc.depth = 1;
-        rdesc.format = k3fmt::D32_FLOAT;
-        rdesc.mip_levels = 1;
-        rdesc.num_samples = 1;
-        k3viewDesc vdesc = {};
-        depth_surf = gfx->CreateSurface(&rdesc, &vdesc, NULL, NULL);
     }
 
     // Make window visible after setting size
@@ -134,6 +125,9 @@ void App::Setup()
     k3viewDesc vdesc = {};
     vdesc.view_index = view_index++;
     rt_out = gfx->CreateSurface(&rdesc, NULL, NULL, &vdesc);
+
+    rdesc.format = k3fmt::D32_FLOAT;
+    depth_surf = gfx->CreateSurface(&rdesc, &vdesc, NULL, NULL);
 
     eye_distance = 3.0f;
     eye_rotation_angle = 45.0f;
@@ -194,8 +188,8 @@ void App::Setup()
 
     k3samplerDesc sdesc = { 0 };
     sdesc.filter = k3texFilter::MIN_MAG_MIP_LINEAR;
-    sdesc.addr_u = k3texAddr::CLAMP;
-    sdesc.addr_v = k3texAddr::CLAMP;
+    sdesc.addr_u = k3texAddr::WRAP;
+    sdesc.addr_v = k3texAddr::WRAP;
     sdesc.addr_w = k3texAddr::CLAMP;
     k3shaderBinding raster_binding = gfx->CreateShaderBinding(5, bind_params, 1, &sdesc);
 
