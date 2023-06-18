@@ -777,6 +777,7 @@ enum class k3fbxProperty {
     NONE,
     LOCAL_TRANSLATION,
     LOCAL_ROTATION,
+    LOCAL_SCALING,
     DIFFUSE_COLOR,
     POSITION,
     UP_VECTOR,
@@ -832,6 +833,7 @@ struct k3fbxModelData {
     uint32_t material_index;  // used for light node index for lights
     float translation[3];
     float rotation[3];
+    float scaling[3];
 };
 
 struct k3fbxMaterialData {
@@ -1183,6 +1185,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->model[fbx->num_models].rotation[0] = 0.0f;
                 fbx->model[fbx->num_models].rotation[1] = 0.0f;
                 fbx->model[fbx->num_models].rotation[2] = 0.0f;
+                fbx->model[fbx->num_models].scaling[0] = 1.0f;
+                fbx->model[fbx->num_models].scaling[1] = 1.0f;
+                fbx->model[fbx->num_models].scaling[2] = 1.0f;
             }
             fbx->num_models++;
             fbx_node_argument = 0;
@@ -1312,6 +1317,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::LOCAL_SCALING:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].scaling[fbx_property_argument] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     case k3fbxProperty::DIFFUSE_COLOR:
                         if (fbx->material && fbx_property_argument < 3) {
                             fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = *f32_arr;
@@ -1421,6 +1432,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::LOCAL_ROTATION:
                         if (fbx->model && fbx_property_argument < 3) {
                             fbx->model[fbx->num_models - 1].rotation[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::LOCAL_SCALING:
+                        if (fbx->model && fbx_property_argument < 3) {
+                            fbx->model[fbx->num_models - 1].scaling[fbx_property_argument] = (float)*d64_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -1696,6 +1713,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::LOCAL_TRANSLATION;
                         } else if (!strncmp(str, "Lcl Rotation", 13)) {
                             fbx_property = k3fbxProperty::LOCAL_ROTATION;
+                        } else if (!strncmp(str, "Lcl Scaling", 12)) {
+                            fbx_property = k3fbxProperty::LOCAL_SCALING;
                         } else if (!strncmp(str, "DiffuseColor", 13)) {
                             fbx_property = k3fbxProperty::DIFFUSE_COLOR;
                         } else if (!strncmp(str, "Position", 9)) {
@@ -2024,7 +2043,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = ~0;
             mesh_impl->_model[mesh_impl->_num_models].normal_map_index = ~0;
             // Set initial model rotation and position
-            k3m4_SetRotation(mesh_impl->_model[mesh_impl->_num_models].world_xform, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+            k3m4_SetIdentity(mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            mesh_impl->_model[mesh_impl->_num_models].world_xform[0] = fbx.model[i].scaling[0];
+            mesh_impl->_model[mesh_impl->_num_models].world_xform[5] = fbx.model[i].scaling[1];
+            mesh_impl->_model[mesh_impl->_num_models].world_xform[10] = fbx.model[i].scaling[2];
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+            k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
             k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
             k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
             k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);

@@ -97,6 +97,7 @@ void closestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     //float3 light_dir = normalize(float3(0.25, -0.5, 1.0));
     float3 light_dir = normalize(light[0].position);
     light_dir = mul(obj_prop[InstanceID()].iworld, float4(light_dir, 0.0f)).xyz;
+    light_dir = normalize(light_dir);
 
     float3 normal = vert_attribs[vert_index + 0].normal.xyz * baryc.x +
             vert_attribs[vert_index + 1].normal.xyz * baryc.y +
