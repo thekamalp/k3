@@ -2057,6 +2057,9 @@ DXGI_FORMAT k3win32Dx12WinImpl::ConvertToDXGIFormat(k3fmt fmt, k3DxgiSurfaceType
         case k3DxgiSurfaceType::DEPTH:    dxgi_format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT; break;
         }
         break;
+    case k3fmt::RGB9E5_FLOAT:
+        dxgi_format = DXGI_FORMAT_R9G9B9E5_SHAREDEXP;
+        break;
     }
 
     return dxgi_format;
@@ -2103,6 +2106,7 @@ k3fmt k3win32Dx12WinImpl::ConertFromDXGIFormat(DXGI_FORMAT fmt)
     case DXGI_FORMAT_D24_UNORM_S8_UINT: out_fmt = k3fmt::D24_UNORM_S8_UINT; break;
     case DXGI_FORMAT_D32_FLOAT: out_fmt = k3fmt::D32_FLOAT; break;
     case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: out_fmt = k3fmt::D32_FLOAT_S8X24_UINT; break;
+    case DXGI_FORMAT_R9G9B9E5_SHAREDEXP: out_fmt = k3fmt::RGB9E5_FLOAT; break;
     }
 
     return out_fmt;

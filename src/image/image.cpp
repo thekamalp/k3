@@ -961,6 +961,107 @@ float k3imageObj::ConvertFloat16ToFloat32(uint16_t f16)
     return f32out;
 }
 
+int32_t leading_one(uint32_t v, uint32_t place)
+{
+    int32_t p = place;
+    while (p >= 0) {
+        if (v & (1 << p)) break;
+        p--;
+    }
+    return p;
+}
+
+void k3imageObj::ConvertRGB9E5ToFloat32(uint32_t src, float* dest)
+{
+    // Extract the exponent.  The addition compensates for exponent bias.
+    // For 32b floating, the bias is 127
+    // For 99e5, the bias is 15, but since there is no implicit 1, we have to bias +1 extra
+    uint32_t shared_exp = (src >> 27) & 0x1f;
+    shared_exp += 127 - 16;
+    // extract out mantissas
+    uint32_t r_mant = (src >> 0) & 0x1ff;
+    uint32_t g_mant = (src >> 9) & 0x1ff;
+    uint32_t b_mant = (src >> 18) & 0x1ff;
+    // Find the leading one in each mantissa, and add 1
+    // this is the amount we need to shift the expanded mantissa when creating the 32b float
+    int32_t r_shift = leading_one(r_mant, 8) + 1;
+    int32_t g_shift = leading_one(g_mant, 8) + 1;
+    int32_t b_shift = leading_one(b_mant, 8) + 1;
+    // Shift the mantissa so its msb is at bit 9, and then drop the msb
+    r_mant = (r_mant << (9 - r_shift)) & 0xff;
+    g_mant = (g_mant << (9 - g_shift)) & 0xff;
+    b_mant = (b_mant << (9 - b_shift)) & 0xff;
+    // expand the mantissa by placing bit 7 to bit 22
+    // then repeat the last 8 bits of the mantissa to form a repeating fraction
+    r_mant = (r_mant << 15) | (r_mant << 7) | (r_mant >> 1);
+    g_mant = (g_mant << 15) | (g_mant << 7) | (g_mant >> 1);
+    b_mant = (b_mant << 15) | (b_mant << 7) | (b_mant >> 1);
+    // if the shift value is 0, all bits of the mantissa are 0, so make the exponent 0 as well
+    uint32_t r_exp = (r_shift == 0) ? 0x0 : shared_exp + r_shift - 9;
+    uint32_t g_exp = (g_shift == 0) ? 0x0 : shared_exp + g_shift - 9;
+    uint32_t b_exp = (b_shift == 0) ? 0x0 : shared_exp + b_shift - 9;
+    // shift exponent into position
+    r_exp = (r_exp & 0xff) << 23;
+    g_exp = (g_exp & 0xff) << 23;
+    b_exp = (b_exp & 0xff) << 23;
+
+    // Combine exponent and mantissa of each component
+    // alpha is 1.0
+    uint32_t* d = (uint32_t*)dest;
+    *(d + 0) = r_exp | r_mant;
+    *(d + 1) = g_exp | g_mant;
+    *(d + 2) = b_exp | b_mant;
+    *(d + 3) = 0x3f800000;  // 1.0f
+}
+
+void k3imageObj::ConvertFloat32ToRGB9E5(const float* src, uint32_t* dest)
+{
+    // Extract the 3 source components as 32 bit uint
+    const uint32_t* s = (const uint32_t*)src;
+    uint32_t r_src = *(s + 0);
+    uint32_t g_src = *(s + 1);
+    uint32_t b_src = *(s + 2);
+    // if the sign bit is set, clamp the value to 0
+    r_src = (r_src & 0x80000000) ? 0x0 : r_src;
+    g_src = (g_src & 0x80000000) ? 0x0 : g_src;
+    b_src = (b_src & 0x80000000) ? 0x0 : b_src;
+    // Extract the exponent
+    uint32_t r_exp = (r_src >> 23) & 0xff;
+    uint32_t g_exp = (g_src >> 23) & 0xff;
+    uint32_t b_exp = (b_src >> 23) & 0xff;
+    // extract the most significant 8 bits of mantissa, and ORing an explicit 1 at bit 9
+    // we don't need to worry about denorms here because if the exponent is that small
+    // we will be clamping the value to 0
+    uint32_t r_mant = ((r_src) & 0xffffff) | 0x800000;
+    uint32_t g_mant = ((g_src) & 0xffffff) | 0x800000;
+    uint32_t b_mant = ((b_src) & 0xffffff) | 0x800000;
+    // if the exponent is larger than what can be represented in 999e5, then clamp to the maximum exponanent and mantissa
+    if (r_exp > (127 + 15)) { r_exp = 127 + 15; r_mant = 0xffffff; }
+    if (g_exp > (127 + 15)) { g_exp = 127 + 15; g_mant = 0xffffff; }
+    if (b_exp > (127 + 15)) { b_exp = 127 + 15; b_mant = 0xffffff; }
+    // find the largest of the 3 exponents
+    // if this is smaller than the smallest represrntable exponent in 999e5, then clamp to 0
+    uint32_t max_exp = (r_exp > g_exp && r_exp > b_exp) ? r_exp : ((g_exp > b_exp) ? g_exp : b_exp);
+    if (max_exp < (127 - 16)) {
+        max_exp = 127 - 16;
+        r_mant = 0x0;
+        g_mant = 0x0;
+        b_mant = 0x0;
+    }
+    // rounding mode, if enabled, adds half lsb before truncating the value
+    r_mant += 0x4000 << (max_exp - r_exp);
+    g_mant += 0x4000 << (max_exp - g_exp);
+    b_mant += 0x4000 << (max_exp - b_exp);
+    // shift the mantissa based on the difference between the max exponent and the component's exponent
+    r_mant = (max_exp - r_exp > 8) ? 0x0 : (r_mant >> (15 + max_exp - r_exp));
+    g_mant = (max_exp - g_exp > 8) ? 0x0 : (g_mant >> (15 + max_exp - g_exp));
+    b_mant = (max_exp - b_exp > 8) ? 0x0 : (b_mant >> (15 + max_exp - b_exp));
+    // compensate for exponent bias (127 for 32b float; 15 for 99e5, but without implicit 1, it is 1 more)
+    max_exp -= 127 - 16;
+    // combine the exponent and 3 mantissas
+    *dest = (max_exp << 27) | (b_mant << 18) | (g_mant << 9) | r_mant;
+}
+
 uint16_t k3imageObj::ConvertFloat32ToFloat16(float f32)
 {
     uint16_t u16;
@@ -1184,6 +1285,9 @@ void k3imageObj::ConvertToFloat4(k3fmt format, const void* src, float* dest)
         dest[0] = f32src[0];
         dest[1] = static_cast<float>((u32src[1] >> 8) & 0xff);
         break;
+    case k3fmt::RGB9E5_FLOAT:
+        ConvertRGB9E5ToFloat32(*u32src, dest);
+        break;
     default:
         break;
     }
@@ -1385,6 +1489,9 @@ void k3imageObj::ConvertFromFloat4(k3fmt format, const float* src, void* dest)
         f32dest[0] = src[0];
         u32dest[1] = (static_cast<uint32_t>(src[1]) & 0xff);
         break;
+    case k3fmt::RGB9E5_FLOAT:
+        ConvertFloat32ToRGB9E5(src, u32dest);
+        break;
     default:
         break;
     }
@@ -1401,6 +1508,7 @@ void k3imageObj::ConvertToUnorm8(k3fmt format, const void* src, uint8_t* dest)
     const uint64_t* u64src = static_cast<const uint64_t*>(src);
     const k3ATI2NBlock* ati2nsrc = static_cast<const k3ATI2NBlock*>(src);
     dest[0] = 0; dest[1] = 0; dest[2] = 0; dest[3] = 0xff;
+    float f32dest[4];
 
     uint8_t alpha_val;
 
@@ -1594,6 +1702,13 @@ void k3imageObj::ConvertToUnorm8(k3fmt format, const void* src, uint8_t* dest)
         dest[0] = static_cast<uint8_t>(f32src[0] * 0xff);
         dest[1] = static_cast<uint8_t>((u32src[1]) & 0xff);
         break;
+    case k3fmt::RGB9E5_FLOAT:
+        ConvertRGB9E5ToFloat32(*u32src, f32dest);
+        dest[0] = static_cast<uint8_t>(f32dest[0] * 0xff);
+        dest[1] = static_cast<uint8_t>(f32dest[1] * 0xff);
+        dest[2] = static_cast<uint8_t>(f32dest[2] * 0xff);
+        dest[3] = static_cast<uint8_t>(f32dest[3] * 0xff);
+        break;
     default:
         break;
     }
@@ -1605,6 +1720,7 @@ void k3imageObj::ConvertFromUnorm8(k3fmt format, const uint8_t* src, void* dest)
     uint16_t* u16dest = static_cast<uint16_t*>(dest);
     uint32_t* u32dest = static_cast<uint32_t*>(dest);
     float* f32dest = static_cast<float*>(dest);
+    float f32src[4];
 
     uint32_t color32r, color32g, color32b, color32a;
 
@@ -1809,6 +1925,13 @@ void k3imageObj::ConvertFromUnorm8(k3fmt format, const uint8_t* src, void* dest)
         f32dest[0] = src[0] / 255.0f;
         u32dest[1] = (static_cast<uint32_t>(src[1]) & 0xff);
         break;
+    case k3fmt::RGB9E5_FLOAT:
+        f32src[0] = src[0] / 255.0f;
+        f32src[1] = src[1] / 255.0f;
+        f32src[2] = src[2] / 255.0f;
+        f32src[3] = src[3] / 255.0f;
+        ConvertFloat32ToRGB9E5(f32src, u32dest);
+        break;
     default:
         break;
     }
@@ -1848,6 +1971,7 @@ uint32_t k3imageObj::GetFormatSize(k3fmt format)
     case k3fmt::D24X8_UNORM:
     case k3fmt::D32_FLOAT:
     case k3fmt::D24_UNORM_S8_UINT:
+    case k3fmt::RGB9E5_FLOAT:
         return 4;
 
     case k3fmt::RGB8_UNORM:
@@ -1927,6 +2051,7 @@ uint32_t k3imageObj::GetFormatBlockSize(k3fmt format)
     case k3fmt::D32_FLOAT:
     case k3fmt::D24_UNORM_S8_UINT:
     case k3fmt::D32_FLOAT_S8X24_UINT:
+    case k3fmt::RGB9E5_FLOAT:
         return 1;
 
         // Compressed formats
@@ -1974,6 +2099,7 @@ uint32_t k3imageObj::GetFormatNumComponents(k3fmt format)
     case k3fmt::RGB8_UNORM:
     case k3fmt::BGR8_UNORM:
     case k3fmt::B5G6R5_UNORM:
+    case k3fmt::RGB9E5_FLOAT:
         return 3;
 
     case k3fmt::RG32_UNORM:
@@ -2126,6 +2252,9 @@ uint32_t k3imageObj::GetComponentBits(k3component component, k3fmt format)
         case k3fmt::BC7_UNORM:
             // TODO: check on these
             return 8;
+        case k3fmt::RGB9E5_FLOAT:
+            if (component == k3component::ALPHA) return 5;  // for exponent
+            return 9;
         default:
             return 0;
         }
@@ -2232,6 +2361,8 @@ uint32_t k3imageObj::GetMaxComponentBits(k3fmt format)
         return 24;
     case k3fmt::D32_FLOAT:
         return 32;
+    case k3fmt::RGB9E5_FLOAT:
+        return 9;
     default:
         return 0;
     }
