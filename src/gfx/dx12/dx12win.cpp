@@ -605,6 +605,29 @@ K3API void k3cmdBufObj::UploadImage(k3uploadImage img, k3resource resource)
     _data->_cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
 }
 
+K3API void k3cmdBufObj::DownloadImage(k3downloadImage img, k3resource resource)
+{
+    D3D12_TEXTURE_COPY_LOCATION src, dst;
+    k3resourceImpl* resource_impl = resource->getImpl();
+    src.pResource = resource_impl->_dx12_resource;
+    src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    src.SubresourceIndex = 0;
+    D3D12_RESOURCE_DESC dx12_desc = src.pResource->GetDesc();
+
+    img->SetDimensions(dx12_desc.Width, dx12_desc.Height, dx12_desc.DepthOrArraySize, k3win32Dx12WinImpl::ConertFromDXGIFormat(dx12_desc.Format));
+    img->MapForWrite();
+    dst.pResource = img->getDownloadImageImpl()->_resource;
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint.Offset = 0;
+    dst.PlacedFootprint.Footprint.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(img->GetFormat(), k3DxgiSurfaceType::COLOR);
+    dst.PlacedFootprint.Footprint.Width = img->GetWidth();
+    dst.PlacedFootprint.Footprint.Height = img->GetHeight();
+    dst.PlacedFootprint.Footprint.Depth = img->GetDepth();
+    dst.PlacedFootprint.Footprint.RowPitch = img->GetPitch();
+    _data->_cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+    img->Unmap();
+}
+
 K3API void k3cmdBufObj::UploadBuffer(k3uploadBuffer buf, k3resource resource, uint64_t start)
 {
     k3uploadBufferImpl* src_buffer_impl = buf->getImpl();
@@ -1393,6 +1416,127 @@ K3API void k3uploadImageObj::Unmap()
 }
 
 K3API void k3uploadImageObj::GetDesc(k3resourceDesc* desc)
+{
+    if (desc) {
+        desc->width = _data->_width;
+        desc->height = _data->_height;
+        desc->depth = _data->_depth;
+        desc->format = _data->_fmt;
+        desc->mip_levels = 1;
+        desc->num_samples = 1;
+        desc->mem_pool = NULL;
+        desc->mem_offset = 0;
+    }
+}
+
+// ------------------------------------------------------------
+// download image
+k3downloadImageImpl::k3downloadImageImpl()
+{
+    _dev = NULL;
+    _resource = NULL;
+}
+
+k3downloadImageImpl::~k3downloadImageImpl()
+{
+    if (_resource) {
+        _resource->Release();
+        _resource = NULL;
+    }
+    _dev = NULL;
+}
+
+k3downloadImageObj::k3downloadImageObj()
+{
+    _download_data = new k3downloadImageImpl;
+    _data->_pitch_pad = 256;
+    _data->_slice_pitch_pad = 256;
+}
+
+k3downloadImageObj::~k3downloadImageObj()
+{
+    if (_download_data) {
+        delete _download_data;
+        _download_data = NULL;
+    }
+}
+
+k3downloadImageImpl* k3downloadImageObj::getDownloadImageImpl()
+{
+    return _download_data;
+}
+
+const k3downloadImageImpl* k3downloadImageObj::getDownloadImageImpl() const
+{
+    return _download_data;
+}
+
+K3API const void* k3downloadImageObj::MapForRead()
+{
+    HRESULT hr;
+    void* ptr = NULL;
+    if (_download_data->_resource) {
+        hr = _download_data->_resource->Map(0, NULL, &ptr);
+        if (hr != S_OK) {
+            k3error::Handler("Could not map image", "k3downloadImageObj::MapForRead");
+            return NULL;
+        }
+    }
+    return ptr;
+}
+
+K3API void* k3downloadImageObj::MapForWrite()
+{
+    HRESULT hr;
+    void* ptr = NULL;
+    uint32_t size = _data->_depth * GetSlicePitch();
+    if (_download_data->_resource == NULL) _data->_size = 0;
+    if (_data->_size < size) {
+        if (_download_data->_resource) _download_data->_resource->Release();
+        _data->_size = size;
+        D3D12_HEAP_PROPERTIES heap_prop;
+        heap_prop.Type = D3D12_HEAP_TYPE_READBACK;
+        heap_prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        heap_prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        heap_prop.CreationNodeMask = 0;
+        heap_prop.VisibleNodeMask = 0;
+        D3D12_RESOURCE_DESC desc;
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        desc.Width = _data->_size;
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        hr = _download_data->_dev->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_COMMON, NULL, IID_PPV_ARGS(&_download_data->_resource));
+        if (hr != S_OK) {
+            k3error::Handler("Could not create commited resource", "k3downloadImageObj::MapForWrite");
+            return NULL;
+        }
+    }
+    if (_download_data->_resource) {
+        hr = _download_data->_resource->Map(0, NULL, &ptr);
+        if (hr != S_OK) {
+            k3error::Handler("Could not map image", "k3downloadImageObj::MapForWrite");
+            return NULL;
+        }
+    }
+    return ptr;
+}
+
+K3API void k3downloadImageObj::Unmap()
+{
+    if (_download_data->_resource) {
+        _download_data->_resource->Unmap(0, NULL);
+    }
+}
+
+K3API void k3downloadImageObj::GetDesc(k3resourceDesc* desc)
 {
     if (desc) {
         desc->width = _data->_width;
@@ -3037,6 +3181,14 @@ K3API k3uploadImage k3gfxObj::CreateUploadImage()
 {
     k3uploadImage img = new k3uploadImageObj;
     k3uploadImageImpl* imgImpl = img->getUploadImageImpl();
+    imgImpl->_dev = _data->_dev;
+    return img;
+}
+
+K3API k3downloadImage k3gfxObj::CreateDownloadImage()
+{
+    k3downloadImage img = new k3downloadImageObj;
+    k3downloadImageImpl* imgImpl = img->getDownloadImageImpl();
     imgImpl->_dev = _data->_dev;
     return img;
 }

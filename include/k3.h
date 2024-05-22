@@ -173,7 +173,8 @@ enum class k3objType {
     UPLOAD_BUFFER,
     GFX,
     WIN,
-    MESH
+    MESH,
+    DOWNLOAD_IMAGE
 };
 
 class k3obj
@@ -614,6 +615,8 @@ protected:
 
 public:
     static const uint32_t FILE_HANDLER_DDS = 0;
+    static const uint32_t FILE_HANDLER_PNG = 1;
+    static const uint32_t FILE_HANDLER_JPG = 2;
 
     virtual K3API k3objType getObjType() const
     {
@@ -1118,6 +1121,10 @@ typedef k3ptr<k3memPoolObj> k3memPool;
 class k3uploadImageImpl;
 class k3uploadImageObj;
 typedef k3ptr<k3uploadImageObj> k3uploadImage;
+
+class k3downloadImageImpl;
+class k3downloadImageObj;
+typedef k3ptr<k3downloadImageObj> k3downloadImage;
 
 class k3uploadBufferImpl;
 class k3uploadBufferObj;
@@ -1716,6 +1723,7 @@ public:
     K3API void ClearRenderTarget(k3surf surf, const float* color, const k3rect* rect);
     K3API void ClearDepthTarget(k3surf surf, k3depthSelect clear, const float depth, uint8_t stencil, const k3rect* rect);
     K3API void UploadImage(k3uploadImage img, k3resource resource);
+    K3API void DownloadImage(k3downloadImage img, k3resource resource);
     K3API void UploadBuffer(k3uploadBuffer buf, k3resource resource, uint64_t start = 0);
     K3API void UploadBufferSrcRange(k3uploadBuffer buf, k3resource resource, uint64_t src_start, uint64_t size, uint64_t dst_start = 0);
     K3API void GetCurrentViewport(k3rect* viewport);
@@ -2150,6 +2158,28 @@ public:
     K3API void GetDesc(k3resourceDesc* desc);
 };
 
+class k3downloadImageObj : public k3imageObj
+{
+private:
+    k3downloadImageImpl* _download_data;
+
+public:
+    k3downloadImageObj();
+    virtual ~k3downloadImageObj();
+    k3downloadImageImpl* getDownloadImageImpl();
+    const k3downloadImageImpl* getDownloadImageImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::DOWNLOAD_IMAGE;
+    }
+
+    virtual K3API const void* MapForRead();
+    virtual K3API void* MapForWrite();
+    virtual K3API void Unmap();
+    K3API void GetDesc(k3resourceDesc* desc);
+};
+
 class k3uploadBufferObj : public k3obj
 {
 private:
@@ -2212,6 +2242,7 @@ public:
 
     K3API k3memPool CreateMemPool(uint64_t size, k3memType mem_type, uint32_t flag);
     K3API k3uploadImage CreateUploadImage();
+    K3API k3downloadImage CreateDownloadImage();
     K3API k3uploadBuffer CreateUploadBuffer();
     K3API k3surf CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc, k3viewDesc* srv_desc, k3viewDesc* uav_desc);
     K3API k3surf CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_desc, k3viewDesc* srv_desc, k3viewDesc* uav_desc);

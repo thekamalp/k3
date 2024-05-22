@@ -209,6 +209,15 @@ public:
     ID3D12Resource* _resource;
 };
 
+class k3downloadImageImpl
+{
+public:
+    k3downloadImageImpl();
+    virtual ~k3downloadImageImpl();
+    ID3D12Device* _dev;
+    ID3D12Resource* _resource;
+};
+
 class k3uploadBufferImpl
 {
 public:
