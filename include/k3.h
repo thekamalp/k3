@@ -560,7 +560,9 @@ enum class k3fmt {
     // Depth/Stecnil formats
     D16_UNORM, D24X8_UNORM,
     D24_UNORM_S8_UINT, D32_FLOAT,
-    D32_FLOAT_S8X24_UINT
+    D32_FLOAT_S8X24_UINT,
+    // Shared exponent
+    RGB9E5_FLOAT
 };
 
 enum class k3component {
@@ -755,6 +757,8 @@ public:
     static void CompressATI1NBlock(const uint8_t* src, uint64_t* dest);
     static void CompressATI2NBlock(const uint8_t* src, k3ATI2NBlock* dest);
 
+    static void ConvertRGB9E5ToFloat32(uint32_t src, float* dest);
+    static void ConvertFloat32ToRGB9E5(const float* src, uint32_t* dest);
     static float ConvertFloat16ToFloat32(uint16_t f16);
     static uint16_t ConvertFloat32ToFloat16(float f32);
     static void ConvertToFloat4(k3fmt format, const void* src, float* dest);
