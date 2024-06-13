@@ -3391,7 +3391,7 @@ K3API k3surf k3gfxObj::CreateSurfaceAlias(k3resource resource, k3viewDesc* rtv_d
         uint32_t max_array_size = resource_impl->_depth - srv_desc->array_start;
         uint32_t array_size = (srv_desc->array_size > max_array_size) ? max_array_size : srv_desc->array_size;
         D3D12_SHADER_RESOURCE_VIEW_DESC dx12_srv_desc = { };
-        dx12_srv_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::TYPELESS);
+        dx12_srv_desc.Format = k3win32Dx12WinImpl::ConvertToDXGIFormat(resource_impl->_format, k3DxgiSurfaceType::COLOR);
         dx12_srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         if (resource_impl->_samples > 1) {
             if (resource_impl->_depth > 1) {
