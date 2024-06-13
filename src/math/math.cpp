@@ -807,3 +807,119 @@ K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float
 
     return d;
 }
+
+K3API float* k3m_QuatToMat(uint32_t cols, float* d, const float* s)
+{
+    // cols must >= 3
+    d[0 * cols + 0] = s[3] * s[3] + s[0] * s[0] - s[1] * s[1] - s[2] * s[2];
+    d[0 * cols + 1] = 2 * s[0] * s[1] - 2 * s[3] * s[2];
+    d[0 * cols + 2] = 2 * s[0] * s[2] + 2 * s[3] * s[1];
+    d[1 * cols + 0] = 2 * s[0] * s[1] + 2 * s[3] * s[2];
+    d[1 * cols + 1] = s[3] * s[3] - s[0] * s[0] + s[1] * s[1] - s[2] * s[2];
+    d[1 * cols + 2] = 2 * s[1] * s[2] - 2 * s[3] * s[0];
+    d[2 * cols + 0] = 2 * s[0] * s[2] - 2 * s[3] * s[1];
+    d[2 * cols + 1] = 2 * s[1] * s[2] + 2 * s[3] * s[0];
+    d[2 * cols + 2] = s[3] * s[3] - s[0] * s[0] - s[1] * s[1] + s[2] * s[2];
+    if (cols > 3) {
+        d[0 * cols + 3] = 0.0f;
+        d[1 * cols + 3] = 0.0f;
+        d[2 * cols + 3] = 0.0f;
+        d[3 * cols + 0] = 0.0f;
+        d[3 * cols + 1] = 0.0f;
+        d[3 * cols + 2] = 0.0f;
+        d[3 * cols + 3] = 1.0f;
+    }
+    return d;
+}
+
+K3API float* k3m_MatToQuat(uint32_t cols, float* d, const float* s)
+{
+    float r11 = s[0 * cols + 0];
+    float r12 = s[0 * cols + 1];
+    float r13 = s[0 * cols + 2];
+    float r21 = s[1 * cols + 0];
+    float r22 = s[1 * cols + 1];
+    float r23 = s[1 * cols + 2];
+    float r31 = s[2 * cols + 0];
+    float r32 = s[2 * cols + 1];
+    float r33 = s[2 * cols + 2];
+    d[0] = sqrtf((1 + r11 - r22 - r33) / 4.0f);
+    d[1] = sqrtf((1 - r11 + r22 - r33) / 4.0f);
+    d[2] = sqrtf((1 - r11 - r22 + r33) / 4.0f);
+    d[3] = sqrtf((1 + r11 + r22 + r33) / 4.0f);
+    if (d[3] >= d[2] && d[3] >= d[1] && d[3] >= d[0]) {
+        d[0] = (r32 - r23) / (4.0f * d[3]);
+        d[1] = (r13 - r31) / (4.0f * d[3]);
+        d[2] = (r21 - r12) / (4.0f * d[3]);
+    } else if (d[0] >= d[2] && d[0] >= d[1]) {
+        d[3] = (r32 - r23) / (4.0f * d[0]);
+        d[1] = (r12 + r21) / (4.0f * d[0]);
+        d[2] = (r13 + r31) / (4.0f * d[0]);
+    } else if (d[1] >= d[2]) {
+        d[3] = (r13 - r31) / (4.0f * d[1]);
+        d[0] = (r12 + r21) / (4.0f * d[1]);
+        d[2] = (r23 + r32) / (4.0f * d[1]);
+    } else {
+        d[3] = (r21 - r12) / (4.0f * d[2]);
+        d[0] = (r13 + r31) / (4.0f * d[2]);
+        d[1] = (r23 + r32) / (4.0f * d[2]);
+    }
+    return d;
+}
+
+K3API float* k3v4_SetQuatRotation(float* d, float angle, const float* axis)
+{
+    float cos_ang2 = cosf(angle / 2.0f);
+    float sin_ang2 = sinf(angle / 2.0f);
+    d[0] = axis[0] * sin_ang2;
+    d[1] = axis[1] * sin_ang2;
+    d[2] = axis[2] * sin_ang2;
+    d[3] = cos_ang2;
+    return d;
+}
+
+K3API float k3v3_GetQuatRotation(float* axis, float* angle, const float* quat)
+{
+    float ang = 2 * acosf(quat[3]);
+    float sin_ang2 = sinf(ang / 2.0f);
+    if (angle) *angle = ang;
+    axis[0] = quat[0] / sin_ang2;
+    axis[1] = quat[1] / sin_ang2;
+    axis[2] = quat[2] / sin_ang2;
+    return ang;
+}
+
+K3API float* k3v4_SetQuatEuler(float* d, const float* angles)
+{
+    float sin_x2 = sinf(angles[0] / 2.0f);
+    float cos_x2 = cosf(angles[0] / 2.0f);
+    float sin_y2 = sinf(angles[1] / 2.0f);
+    float cos_y2 = cosf(angles[1] / 2.0f);
+    float sin_z2 = sinf(angles[2] / 2.0f);
+    float cos_z2 = cosf(angles[2] / 2.0f);
+    d[0] = sin_x2 * cos_y2 * cos_z2 - cos_x2 * sin_y2 * sin_z2;
+    d[1] = cos_x2 * sin_y2 * cos_z2 + sin_x2 * cos_y2 * sin_z2;
+    d[2] = cos_x2 * cos_y2 * sin_z2 - sin_x2 * sin_y2 * cos_y2;
+    d[3] = cos_x2 * cos_y2 * cos_z2 + sin_x2 * sin_y2 * sin_z2;
+    return d;
+}
+
+K3API float* k3v3_GetQuatEuler(float* d, const float* quat)
+{
+    float t0, t1, t2, t3, t4;
+    t0 = 2.0f * (quat[3] * quat[0] + quat[1] * quat[2]);
+    t1 = 1.0f - 2.0f * (quat[0] * quat[0] + quat[1] * quat[1]);
+
+    t2 = 2.0f * (quat[3] * quat[1] - quat[2] * quat[0]);
+    t2 = (t2 > 1.0f) ? 1.0f : t2;
+    t2 = (t2 < -1.0f) ? -1.0f : t2;
+
+    t3 = 2.0f * (quat[3] * quat[2] + quat[0] * quat[1]);
+    t4 = 1.0f - 2.0f * (quat[1] * quat[1] + quat[2] * quat[2]);
+
+    d[0] = atan2f(t0, t1);
+    d[1] = asinf(t2);
+    d[2] = atan2f(t3, t4);
+
+    return d;
+}

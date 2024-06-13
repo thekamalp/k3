@@ -107,6 +107,26 @@ struct k3light {
     bool cast_shadows;
 };
 
+struct k3bone {
+    uint32_t parent;    // parent bone id, or ~0x0 if root
+    float rot_quat[4];  // quaternion representation of bone rotation
+    float scaling[3];   // bone scaling
+    float position[3];  // bone location
+};
+
+struct k3boneData {
+    float rot_quat[4];  // quaternion representation of bone rotation
+    float scaling[3];     // bone scaling
+    float position[3];  // bone location
+};
+
+struct k3anim {
+    char name[K3_FBX_MAX_ANIM_NAME_LENGTH];
+    uint32_t num_keyframes;
+    uint32_t keyframe_delta_msec;
+    k3boneData* bone_data;  // array of num_bones * num_keyframes
+};
+
 class k3meshImpl
 {
 public:
@@ -118,15 +138,20 @@ public:
     uint32_t _num_textures;
     uint32_t _num_cameras;
     uint32_t _num_lights;
+    uint32_t _num_bones;
+    uint32_t _num_anims;
     uint32_t* _mesh_start;
     k3meshModel* _model;
     k3surf* _textures;
     k3camera* _cameras;
     k3light* _lights;
+    k3bone* _bones;
+    k3anim* _anim;
     k3buffer _ib;
-    k3buffer _vb;
-    k3buffer _ab;  // attribute buffer
-    k3buffer _lb;  // light buffer
+    k3buffer _vb;  // vertex buffer; cotains only positions
+    k3buffer _ab;  // attribute buffer; contains normals, tangents and uv
+    k3buffer _sb;  // skin buffer; contains bone ids and weights (4 per vertex)
+    k3buffer _lb;  // light buffer; contains all light attributes
 };
 
 class k3winImpl

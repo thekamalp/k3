@@ -462,14 +462,19 @@ k3meshImpl::k3meshImpl()
     _num_textures = 0;
     _num_cameras = 0;
     _num_lights = 0;
+    _num_bones = 0;
+    _num_anims = 0;
     _mesh_start = NULL;
     _model = NULL;
     _textures = NULL;
     _cameras = NULL;
     _lights = NULL;
+    _bones = NULL;
+    _anim = NULL;
     _ib = NULL;
     _vb = NULL;
     _ab = NULL;
+    _sb = NULL;
     _lb = NULL;
 }
 
@@ -494,6 +499,18 @@ k3meshImpl::~k3meshImpl()
     if (_lights) {
         delete[] _lights;
         _lights = NULL;
+    }
+    if (_bones) {
+        delete[] _bones;
+        _bones = NULL;
+    }
+    if (_anim) {
+        uint32_t i;
+        for (i = 0; i < _num_anims; i++) {
+            if (_anim[i].bone_data) delete[] _anim[i].bone_data;
+        }
+        delete[] _anim;
+        _anim = NULL;
     }
 }
 
@@ -538,6 +555,16 @@ K3API uint32_t k3meshObj::getNumMeshes()
 K3API uint32_t k3meshObj::getNumCameras()
 {
     return _data->_num_cameras;
+}
+
+K3API uint32_t k3meshObj::getNumBones()
+{
+    return _data->_num_bones;
+}
+
+K3API uint32_t k3meshObj::getNumAnims()
+{
+    return _data->_num_anims;
 }
 
 K3API k3surf k3meshObj::getTexture(uint32_t tex)
@@ -652,6 +679,11 @@ K3API k3buffer k3meshObj::getLightBuffer()
     return _data->_lb;
 }
 
+K3API k3buffer k3meshObj::getSkinBuffer()
+{
+    return _data->_sb;
+}
+
 K3API float* k3meshObj::getCameraPerspective(float* d, uint32_t camera, bool left_handed, bool dx_style, bool reverse_z)
 {
     if (camera > _data->_num_cameras) return d;
@@ -729,6 +761,115 @@ K3API void k3meshObj::setCameraFarPlane(uint32_t camera, float far)
     cam->far_plane = far;
 }
 
+K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
+{
+    uint32_t bone_id, parent_bone_id;
+    uint32_t mat_stride = 16 + ((gen_inv) ? 16 : 0);
+    float* cur_mat = mat;
+    float* parent_mat = NULL;
+    float xlat_mat[16];
+    for (bone_id = 0; bone_id < _data->_num_bones; bone_id++, cur_mat += mat_stride) {
+        k3m4_SetIdentity(xlat_mat);
+        xlat_mat[0] = _data->_bones[bone_id].scaling[0];
+        xlat_mat[5] = _data->_bones[bone_id].scaling[1];
+        xlat_mat[10] = _data->_bones[bone_id].scaling[2];
+
+        xlat_mat[3] = -xlat_mat[0] * (_data->_bones[bone_id].position[0]);
+        xlat_mat[7] = -xlat_mat[5] * (_data->_bones[bone_id].position[1]);
+        xlat_mat[11] = -xlat_mat[10] * (_data->_bones[bone_id].position[2]);
+        k3m4_QuatToMat(cur_mat, _data->_bones[bone_id].rot_quat);
+        k3m4_Mul(cur_mat, cur_mat, xlat_mat);
+        xlat_mat[3] = -xlat_mat[3] / xlat_mat[0];
+        xlat_mat[7] = -xlat_mat[7] / xlat_mat[5];
+        xlat_mat[11] = -xlat_mat[11] / xlat_mat[10];
+        xlat_mat[0] = 1.0f;
+        xlat_mat[5] = 1.0f;
+        xlat_mat[10] = 1.0f;
+        k3m4_Mul(cur_mat, xlat_mat, cur_mat);
+        parent_bone_id = _data->_bones[bone_id].parent;
+        if (parent_bone_id < _data->_num_bones) {
+            parent_mat = mat + mat_stride * parent_bone_id;
+            k3m4_Mul(cur_mat, parent_mat, cur_mat);
+        }
+        if (gen_inv) {
+            // inverse of transform without scaling factored
+            float inv_quat[4] = { -_data->_bones[bone_id].rot_quat[0],
+                                  -_data->_bones[bone_id].rot_quat[1],
+                                  -_data->_bones[bone_id].rot_quat[2],
+                                   _data->_bones[bone_id].rot_quat[3] };
+            k3m4_SetIdentity(xlat_mat);
+            xlat_mat[3] = (_data->_bones[bone_id].position[0]);
+            xlat_mat[7] = (_data->_bones[bone_id].position[1]);
+            xlat_mat[11] = (_data->_bones[bone_id].position[2]);
+            k3m4_QuatToMat(cur_mat + 16, inv_quat);
+            k3m4_Mul(cur_mat + 16, cur_mat + 16, xlat_mat);
+            xlat_mat[3] = -xlat_mat[3];
+            xlat_mat[7] = -xlat_mat[7];
+            xlat_mat[11] = -xlat_mat[11];
+            k3m4_Mul(cur_mat + 16, xlat_mat, cur_mat + 16);
+            if (parent_bone_id < _data->_num_bones) {
+                parent_mat = mat + mat_stride * parent_bone_id + 16;
+                k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
+            }
+
+            //uint32_t i;
+            //for (i = 0; i < 16; i++) *(cur_mat + 16 + i) = *(cur_mat + i);
+            //k3m4_Inverse(cur_mat + 16);
+        }
+    }
+}
+
+K3API uint32_t k3meshObj::findAnim(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_anims; i++) {
+        if (!strncmp(name, _data->_anim[i].name, K3_FBX_MAX_ANIM_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
+K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
+{
+    if (anim_index >= _data->_num_anims) {
+        k3error::Handler("Invalid animation index", "k3meshObj::setAnimation");
+        return;
+    }
+    uint32_t num_frame_intervals = _data->_anim[anim_index].num_keyframes - 1;
+    uint32_t delta_msec = _data->_anim[anim_index].keyframe_delta_msec;
+    uint32_t total_anim_time_msec = num_frame_intervals * delta_msec;
+    uint32_t norm_time_msec = time_msec % total_anim_time_msec;
+    uint32_t anim_frame = norm_time_msec / delta_msec;
+    float anim_frame_frac = (norm_time_msec % delta_msec) / (float)delta_msec;
+    uint32_t bone_id;
+    float* dest_pos_ptr;
+    float* dest_scale_ptr;
+    float* dest_quat_ptr;
+    uint32_t src0_index, src1_index;
+    float temp_vec[4];
+    const k3boneData* bone_data = _data->_anim[anim_index].bone_data;
+
+    for (bone_id = 0; bone_id < _data->_num_bones; bone_id++) {
+        dest_pos_ptr = _data->_bones[bone_id].position;
+        dest_scale_ptr = _data->_bones[bone_id].scaling;
+        dest_quat_ptr = _data->_bones[bone_id].rot_quat;
+        src0_index = anim_frame * _data->_num_bones + bone_id;
+        src1_index = src0_index + _data->_num_bones;
+
+        //k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
+        //k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
+        //k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
+
+        k3sv3_Mul(dest_scale_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].scaling);
+        k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].scaling);
+        k3v3_Add(dest_scale_ptr, dest_scale_ptr, temp_vec);
+
+        k3sv4_Mul(dest_quat_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].rot_quat);
+        k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
+        k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
+        k3v4_Normalize(dest_quat_ptr);
+    }
+}
+
 
 #define K3_FBX_DEBUG 0
 
@@ -763,14 +904,28 @@ enum class k3fbxNodeType {
     NODE_ATTRIBUTE,
     POSITION,
     UP,
-    LOOK_AT
+    LOOK_AT,
+    DEFORMER,
+    INDEXES,
+    WEIGHTS,
+    TRANSFORM,
+    TRANSFORM_LINK,
+    TRANSFORM_ASSOCIATE_MODEL,
+    POSE,
+    ANIMATION_STACK,
+    ANIMATION_LAYER,
+    ANIMATION_CURVE_NODE,
+    ANIMATION_CURVE,
+    KEY_TIME,
+    KEY_VALUE_FLOAT
 };
 
 enum class k3fbxObjType {
     NONE,
     MESH,
     LIGHT,
-    CAMERA
+    CAMERA,
+    LIMB_NODE
 };
 
 enum class k3fbxProperty {
@@ -810,6 +965,19 @@ enum class k3fbxReference {
     ByIndex
 };
 
+enum class k3fbxDeformer {
+    None,
+    Skin,
+    Cluster
+};
+
+enum class k3fbxAnimCurveType {
+    None,
+    Translation,
+    Scaling,
+    Rotation
+};
+
 struct k3fbxMeshData {
     uint64_t id;
     uint32_t start;
@@ -826,11 +994,30 @@ struct k3fbxMeshData {
     k3fbxReference uv_reference;
 };
 
+struct k3fbxModelIndexData {
+    uint32_t mesh;
+    uint32_t material;
+};
+
+struct k3fbxLightIndexData {
+    uint32_t light_node;
+};
+
+struct k3fbxLimbNodeIndexData {
+    uint32_t parent;
+    uint32_t cluster_index;
+};
+
+union k3fbxModelIndex {
+    k3fbxModelIndexData model;
+    k3fbxLightIndexData light;
+    k3fbxLimbNodeIndexData limb_node;
+};
+
 struct k3fbxModelData {
     uint64_t id;
     k3fbxObjType obj_type;
-    uint32_t mesh_index;
-    uint32_t material_index;  // used for light node index for lights
+    k3fbxModelIndex index;
     float translation[3];
     float rotation[3];
     float scaling[3];
@@ -879,6 +1066,42 @@ struct k3fbxLightNode {
     bool cast_shadows;
 };
 
+struct k3fbxSkin {
+    uint64_t id;
+    uint32_t mesh_index;
+};
+struct k3fbxClusterNode {
+    uint64_t id;
+    uint32_t index_start;
+    uint32_t weight_start;
+    uint32_t skin_index;
+    char weight_type;
+    uint32_t bone_index;
+};
+
+static const uint32_t K3_FBX_BONE_TO_ANIM_MULTIPLIER = 4;
+
+struct k3fbxAnimLayer {
+    uint64_t id;
+    uint32_t num_anim_curve_nodes;
+    char name[K3_FBX_MAX_ANIM_NAME_LENGTH];
+    uint32_t* anim_curve_node_id;
+};
+
+struct k3fbxAnimCurveNode {
+    uint64_t id;
+    k3fbxAnimCurveType curve_type;
+    uint32_t anim_curve[3];
+    uint32_t limb_node;
+};
+
+struct k3fbxAnimCurve {
+    uint64_t id;
+    uint32_t num_key_frames;
+    uint32_t time_start;
+    uint32_t data_start;
+};
+
 struct k3fbxData {
     uint32_t num_meshes;
     uint32_t num_models;
@@ -898,6 +1121,17 @@ struct k3fbxData {
     uint32_t num_cameras;
     uint32_t num_light_nodes;
     uint32_t num_lights;
+    uint32_t num_skins;
+    uint32_t num_clusters;
+    uint32_t num_cluster_indexes;
+    uint32_t num_cluster_weights;
+    uint32_t num_cluster_weight_bytes;
+    uint32_t num_anim_layers;
+    uint32_t num_anim_curve_nodes;
+    uint32_t num_anim_curves;
+    uint32_t num_anim_curve_time_elements;
+    uint32_t num_anim_curve_data_elements;
+    k3fbxDeformer deformer_type;
     k3fbxReference last_normal_reference;
     k3fbxReference last_uv_reference;
     k3fbxMeshData* mesh;
@@ -912,9 +1146,18 @@ struct k3fbxData {
     uint32_t* material_ids;
     k3fbxObjType node_attrib_obj;
     k3fbxCamera* camera;
+    k3fbxSkin* skin;
+    k3fbxClusterNode* cluster;
+    k3fbxAnimLayer* anim_layer;
+    k3fbxAnimCurveNode* anim_curve_node;
+    k3fbxAnimCurve* anim_curve;
     void* vertices;
     void* normals;
     void* uvs;
+    uint32_t* cluster_indexes;
+    void* cluster_weights;
+    uint64_t* anim_curve_time;
+    float* anim_curve_data;
     char vert_type;
     char norm_type;
     char uv_type;
@@ -927,62 +1170,110 @@ struct k3fbxAttrLinkList {
     k3fbxAttrLinkList* next;
 };
 
-static const uint64_t MAP_TYPE_UNKNOWN = 0;
-static const uint64_t MAP_TYPE_DIFFUSE = 1;
-static const uint64_t MAP_TYPE_NORMAL = 2;
+static const uint64_t CONNECT_TYPE_UNKNOWN = 0;
+static const uint64_t CONNECT_TYPE_DIFFUSE_MAP = 1;
+static const uint64_t CONNECT_TYPE_NORMAL_MAP = 2;
+static const uint64_t CONNECT_TYPE_X_AXIS = 0x100;
+static const uint64_t CONNECT_TYPE_Y_AXIS = 0x101;
+static const uint64_t CONNECT_TYPE_Z_AXIS = 0x102;
 
 uint32_t findFbxLightNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_light_nodes; i++) {
-        if (fbx->light_node[i].id == id) break;
+        if (fbx->light_node[i].id == id) return i;
     }
-    return (i < fbx->num_light_nodes) ? i : ~0x0;
+    return ~0x0;
 }
 
 uint32_t findFbxContentDataNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_content_data; i++) {
-        if (fbx->content_data[i].id == id) break;
+        if (fbx->content_data[i].id == id) return i;
     }
-    return (i < fbx->num_content_data) ? i : ~0x0;
+    return ~0x0;
 }
 
 uint32_t findFbxTextureNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_textures; i++) {
-        if (fbx->texture[i].id == id) break;
+        if (fbx->texture[i].id == id) return i;
     }
-    return (i < fbx->num_textures) ? i : ~0x0;
+    return ~0x0;
 }
 
 uint32_t findFbxMaterialNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_materials; i++) {
-        if (fbx->material[i].id == id) break;
+        if (fbx->material[i].id == id) return i;
     }
-    return (i < fbx->num_materials) ? i : ~0x0;
+    return ~0x0;
 }
 
 uint32_t findFbxMeshNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_meshes; i++) {
-        if (fbx->mesh[i].id == id) break;
+        if (fbx->mesh[i].id == id) return i;
     }
-    return (i < fbx->num_meshes) ? i : ~0x0;
+    return ~0x0;
 }
 
 uint32_t findFbxModelNode(k3fbxData* fbx, uint64_t id)
 {
     uint32_t i;
     for (i = 0; i < fbx->num_models; i++) {
-        if (fbx->model[i].id == id) break;
+        if (fbx->model[i].id == id) return i;
     }
-    return (i < fbx->num_models) ? i : ~0x0;
+    return ~0x0;
+}
+
+uint32_t findFbxSkin(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_skins; i++) {
+        if (fbx->skin[i].id == id) return i;
+    }
+    return ~0x0;
+}
+
+uint32_t findFbxCluster(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_clusters; i++) {
+        if (fbx->cluster[i].id == id) return i;
+    }
+    return ~0x0;
+}
+
+uint32_t findFbxAnimLayer(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_anim_layers; i++) {
+        if (fbx->anim_layer[i].id == id) return i;
+    }
+    return ~0x0;
+}
+
+uint32_t findFbxAnimCurveNode(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_anim_curve_nodes; i++) {
+        if (fbx->anim_curve_node[i].id == id) return i;
+    }
+    return ~0x0;
+}
+
+uint32_t findFbxAnimCurve(k3fbxData* fbx, uint64_t id)
+{
+    uint32_t i;
+    for (i = 0; i < fbx->num_anim_curves; i++) {
+        if (fbx->anim_curve[i].id == id) return i;
+    }
+    return ~0x0;
 }
 
 void connectFbxNode(k3fbxData* fbx, uint64_t* id)
@@ -996,7 +1287,7 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             // id1 shoud be a model
             index1 = findFbxModelNode(fbx, id[1]);
             if (index1 != ~0x0) {
-                fbx->model[index1].mesh_index = index0;
+                fbx->model[index1].index.model.mesh = index0;
             }
             return;
         }
@@ -1006,7 +1297,7 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             // id1 shoud be a model
             index1 = findFbxModelNode(fbx, id[1]);
             if (index1 != ~0x0) {
-                fbx->model[index1].material_index = index0;
+                fbx->model[index1].index.model.material = index0;
             }
             return;
         }
@@ -1017,10 +1308,10 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             index1 = findFbxMaterialNode(fbx, id[1]);
             if (index1 != ~0x0) {
                 switch (id[2]) {
-                case MAP_TYPE_DIFFUSE:
+                case CONNECT_TYPE_DIFFUSE_MAP:
                     fbx->material[index1].diffuse_texture_index = index0;
                     break;
-                case MAP_TYPE_NORMAL:
+                case CONNECT_TYPE_NORMAL_MAP:
                     fbx->material[index1].normal_texture_index = index0;
                     break;
                 }
@@ -1043,7 +1334,80 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             // id1 should be a model
             index1 = findFbxModelNode(fbx, id[1]);
             if (index1 != ~0x0) {
-                fbx->model[index1].material_index = index0;
+                fbx->model[index1].index.light.light_node = index0;
+            }
+        }
+        // Check if id0 is a model, and a limb node
+        index0 = findFbxModelNode(fbx, id[0]);
+        if (index0 != ~0x0 && fbx->model[index0].obj_type == k3fbxObjType::LIMB_NODE) {
+            // id1 should also be a model/limb node
+            index1 = findFbxModelNode(fbx, id[1]);
+            if (index1 != ~0x0 && fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE) {
+                fbx->model[index0].index.limb_node.parent = index1;
+            }
+            // check if id1 is a cluster
+            index1 = findFbxCluster(fbx, id[1]);
+            if (index1 != ~0x0) {
+                //fbx->model[index0].index.limb_node.cluster = index0;
+                fbx->cluster[index1].bone_index = index0;
+                fbx->model[index0].index.limb_node.cluster_index = index1;
+            }
+        }
+        // Check if id0 is a cluster
+        index0 = findFbxCluster(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // id1 should be a skin
+            index1 = findFbxSkin(fbx, id[1]);
+            if (index1 != ~0x0) {
+                fbx->cluster[index0].skin_index = index1;
+            }
+        }
+        // Check if id0 is a skin
+        index0 = findFbxSkin(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // id1 should be a mesh
+            index1 = findFbxMeshNode(fbx, id[1]);
+            if (index1 != ~0x0) {
+                fbx->skin[index0].mesh_index = index1;
+            }
+        }
+        // Check if id0 is a anim_curve_node
+        index0 = findFbxAnimCurveNode(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // check if id1 is an anim_layer
+            index1 = findFbxAnimLayer(fbx, id[1]);
+            if (index1 != ~0x0) {
+                if (fbx->anim_layer[index1].num_anim_curve_nodes < K3_FBX_BONE_TO_ANIM_MULTIPLIER * fbx->num_clusters) {
+                    fbx->anim_layer[index1].anim_curve_node_id[fbx->anim_layer[index1].num_anim_curve_nodes] = index0;
+                    fbx->anim_layer[index1].num_anim_curve_nodes++;
+                } else {
+                    k3error::Handler("Too many anim curves in animation layer", "connectFbxNode");
+                }
+            } else {
+                // Check if id1 is a limb node
+                index1 = findFbxModelNode(fbx, id[1]);
+                if (index1 != ~0x0 && fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE) {
+                    fbx->anim_curve_node[index0].limb_node = index1;
+                }
+            }
+        }
+        // Check if id0 is an anim_curve
+        index0 = findFbxAnimCurve(fbx, id[0]);
+        if (index0 != ~0x0) {
+            // id1 should be an anim_curvve_node
+            index1 = findFbxAnimCurveNode(fbx, id[1]);
+            if (index1 != ~0x0) {
+                switch (id[2]) {
+                case CONNECT_TYPE_X_AXIS:
+                    fbx->anim_curve_node[index1].anim_curve[0] = index0;
+                    break;
+                case CONNECT_TYPE_Y_AXIS:
+                    fbx->anim_curve_node[index1].anim_curve[1] = index0;
+                    break;
+                case CONNECT_TYPE_Z_AXIS:
+                    fbx->anim_curve_node[index1].anim_curve[2] = index0;
+                    break;
+                }
             }
         }
     }
@@ -1081,6 +1445,23 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_lights = 0;
         fbx->num_light_nodes = 0;
         fbx->node_attrib_obj = k3fbxObjType::NONE;
+        fbx->num_skins = 0;
+        fbx->num_clusters = 0;
+        fbx->num_cluster_indexes = 0;
+        fbx->num_cluster_weights = 0;
+        fbx->num_cluster_weight_bytes = 0;
+        fbx->deformer_type = k3fbxDeformer::None;
+        if (fbx->anim_layer) {
+            uint32_t i;
+            for (i = 0; i < fbx->num_anim_layers; i++) {
+                fbx->anim_layer[i].num_anim_curve_nodes = 0;
+            }
+        }
+        fbx->num_anim_layers = 0;
+        fbx->num_anim_curve_nodes = 0;
+        fbx->num_anim_curves = 0;
+        fbx->num_anim_curve_time_elements = 0;
+        fbx->num_anim_curve_data_elements = 0;
         if(K3_FBX_DEBUG) printf("----------starting fbx parse ---------------\n");
     }
 
@@ -1115,8 +1496,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "Vertices", 9)) node_type = k3fbxNodeType::VERTICES;
             else if (!strncmp(str, "PolygonVertexIndex", 19)) node_type = k3fbxNodeType::POLYGON_VERT_INDEX;
             else if (!strncmp(str, "LayerElementNormal", 19)) node_type = k3fbxNodeType::LAYER_ELEMENT_NORMAL;
-            else if (!strncmp(str, "LayerElementUV", 15) && first_uv) { node_type = k3fbxNodeType::LAYER_ELEMENT_UV; first_uv = false; }
-            else if (!strncmp(str, "LayerElementMaterial", 21)) node_type = k3fbxNodeType::LAYER_ELEMENT_MATERIAL;
+            else if (!strncmp(str, "LayerElementUV", 15) && first_uv) { node_type = k3fbxNodeType::LAYER_ELEMENT_UV; first_uv = false; } else if (!strncmp(str, "LayerElementMaterial", 21)) node_type = k3fbxNodeType::LAYER_ELEMENT_MATERIAL;
             else if (!strncmp(str, "MappingInformationType", 23)) node_type = k3fbxNodeType::MAPPING_TYPE;
             else if (!strncmp(str, "ReferenceInformationType", 25)) node_type = k3fbxNodeType::REFERENCE_TYPE;
             else if (!strncmp(str, "Normals", 8)) node_type = k3fbxNodeType::NORMALS;
@@ -1140,6 +1520,19 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "Position", 9)) node_type = k3fbxNodeType::POSITION;
             else if (!strncmp(str, "Up", 3)) node_type = k3fbxNodeType::UP;
             else if (!strncmp(str, "LookAt", 7)) node_type = k3fbxNodeType::LOOK_AT;
+            else if (!strncmp(str, "Deformer", 9)) node_type = k3fbxNodeType::DEFORMER;
+            else if (!strncmp(str, "Indexes", 8)) node_type = k3fbxNodeType::INDEXES;
+            else if (!strncmp(str, "Weights", 8)) node_type = k3fbxNodeType::WEIGHTS;
+            else if (!strncmp(str, "Transform", 10)) node_type = k3fbxNodeType::TRANSFORM;
+            else if (!strncmp(str, "TransformLink", 14)) node_type = k3fbxNodeType::TRANSFORM_LINK;
+            else if (!strncmp(str, "TransformAssociateModel", 24)) node_type = k3fbxNodeType::TRANSFORM_ASSOCIATE_MODEL;
+            else if (!strncmp(str, "Pose", 5)) node_type = k3fbxNodeType::POSE;
+            else if (!strncmp(str, "AnimationStack", 15)) node_type = k3fbxNodeType::ANIMATION_STACK;
+            else if (!strncmp(str, "AnimationLayer", 15)) node_type = k3fbxNodeType::ANIMATION_LAYER;
+            else if (!strncmp(str, "AnimationCurveNode", 19)) node_type = k3fbxNodeType::ANIMATION_CURVE_NODE;
+            else if (!strncmp(str, "AnimationCurve", 15)) node_type = k3fbxNodeType::ANIMATION_CURVE;
+            else if (!strncmp(str, "KeyTime", 8)) node_type = k3fbxNodeType::KEY_TIME;
+            else if (!strncmp(str, "KeyValueFloat", 14)) node_type = k3fbxNodeType::KEY_VALUE_FLOAT;
             else node_type = k3fbxNodeType::UNKNOWN;
             if (K3_FBX_DEBUG) {
                 for (i = 0; i < level; i++) printf("-");
@@ -1177,8 +1570,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             if (fbx->model) {
                 fbx->model[fbx->num_models].id = 0;
                 fbx->model[fbx->num_models].obj_type = k3fbxObjType::NONE;
-                fbx->model[fbx->num_models].mesh_index = ~0;
-                fbx->model[fbx->num_models].material_index = ~0;
+                fbx->model[fbx->num_models].index.model.mesh = ~0;
+                fbx->model[fbx->num_models].index.model.material = ~0;
                 fbx->model[fbx->num_models].translation[0] = 0.0f;
                 fbx->model[fbx->num_models].translation[1] = 0.0f;
                 fbx->model[fbx->num_models].translation[2] = 0.0f;
@@ -1226,6 +1619,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             fbx_node_argument = 0;
         }
 
+        if (node_type == k3fbxNodeType::DEFORMER) {
+            fbx_node_argument = 0;
+        }
+
         if (node_type == k3fbxNodeType::PROP || node_type == k3fbxNodeType::POSITION ||
             node_type == k3fbxNodeType::UP || node_type == k3fbxNodeType::LOOK_AT) {
             fbx_property = k3fbxProperty::NONE;
@@ -1240,6 +1637,39 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         if (node_type == k3fbxNodeType::CONNECT) {
             connect_index = 0;
             connect_params = 0;
+        }
+
+        if (node_type == k3fbxNodeType::ANIMATION_LAYER) {
+            if (fbx->anim_layer) {
+                fbx->anim_layer[fbx->num_anim_layers].id = 0;
+                fbx->anim_layer[fbx->num_anim_layers].name[0] = '\0';
+            }
+            fbx->num_anim_layers++;
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::ANIMATION_CURVE_NODE) {
+            if (fbx->anim_curve_node) {
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].id = 0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].curve_type = k3fbxAnimCurveType::None;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[0] = ~0x0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[1] = ~0x0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[2] = ~0x0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].limb_node = ~0x0;
+            }
+            fbx->num_anim_curve_nodes++;
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::ANIMATION_CURVE) {
+            if (fbx->anim_curve) {
+                fbx->anim_curve[fbx->num_anim_curves].id = 0;
+                fbx->anim_curve[fbx->num_anim_curves].num_key_frames = 0;
+                fbx->anim_curve[fbx->num_anim_curves].time_start = ~0x0;
+                fbx->anim_curve[fbx->num_anim_curves].data_start = ~0x0;
+            }
+            fbx->num_anim_curves++;
+            fbx_node_argument = 0;
         }
 
         for (i = 0; i < node.num_properties; i++) {
@@ -1552,6 +1982,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     }
                     break;
                 case k3fbxNodeType::NODE_ATTRIBUTE:
+                case k3fbxNodeType::DEFORMER:
                     if (fbx_node_argument == 0) {
                         node_attrib_id = *i64_arr;
                         fbx_node_argument++;
@@ -1562,6 +1993,24 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         connect_id[connect_index] = *i64_arr;
                         connect_index++;
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
+                    }
+                    break;
+                case k3fbxNodeType::ANIMATION_LAYER:
+                    if (fbx_node_argument == 0) {
+                        if (fbx->anim_layer) fbx->anim_layer[fbx->num_anim_layers - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
+                    break;
+                case k3fbxNodeType::ANIMATION_CURVE_NODE:
+                    if (fbx_node_argument == 0) {
+                        if (fbx->anim_curve_node) fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].id = *i64_arr;
+                        fbx_node_argument++;
+                    }
+                    break;
+                case k3fbxNodeType::ANIMATION_CURVE:
+                    if (fbx_node_argument == 0) {
+                        if (fbx->anim_curve) fbx->anim_curve[fbx->num_anim_curves - 1].id = *i64_arr;
+                        fbx_node_argument++;
                     }
                     break;
                 }
@@ -1631,6 +2080,48 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 case k3fbxNodeType::MATERIAL_IDS:
                     if (fbx->material_ids) data_arr = fbx->material_ids + fbx->num_material_ids;
                     fbx->num_material_ids += arr_prop.array_length;
+                    break;
+                case k3fbxNodeType::INDEXES:
+                    if (parent_node == k3fbxNodeType::DEFORMER && fbx->deformer_type == k3fbxDeformer::Cluster) {
+                        if (fbx->cluster_indexes) data_arr = fbx->cluster_indexes + fbx->num_cluster_indexes;
+                        fbx->num_cluster_indexes += arr_prop.array_length;
+                    }
+                    break;
+                case k3fbxNodeType::WEIGHTS:
+                    if (parent_node == k3fbxNodeType::DEFORMER && fbx->deformer_type == k3fbxDeformer::Cluster) {
+                        if (fbx->cluster_weights) data_arr = (char*)fbx->cluster_weights + fbx->num_cluster_weight_bytes;
+                        fbx->num_cluster_weight_bytes += ((typecode == 'd') ? 8 : 4) * arr_prop.array_length;
+                        fbx->num_cluster_weights += arr_prop.array_length;
+                        if (fbx->cluster) {
+                            fbx->cluster[fbx->num_clusters - 1].weight_type = typecode;
+                        }
+                    }
+                    break;
+                case k3fbxNodeType::KEY_TIME:
+                    if (parent_node == k3fbxNodeType::ANIMATION_CURVE) {
+                        if (fbx->anim_curve_time) data_arr = fbx->anim_curve_time + fbx->num_anim_curve_time_elements;
+                        if(fbx->anim_curve) {
+                            if (typecode != K3_FBX_TYPECODE_SINT64_ARRAY) {
+                                k3error::Handler("Invalid key time type array", "readFbxNode");
+                            }
+                            fbx->anim_curve[fbx->num_anim_curves - 1].time_start = fbx->num_anim_curve_time_elements;
+                            fbx->anim_curve[fbx->num_anim_curves - 1].num_key_frames = arr_prop.array_length;
+                        }
+                        fbx->num_anim_curve_time_elements += arr_prop.array_length;
+                    }
+                    break;
+                case k3fbxNodeType::KEY_VALUE_FLOAT:
+                    if (parent_node == k3fbxNodeType::ANIMATION_CURVE) {
+                        if (fbx->anim_curve_data) data_arr = fbx->anim_curve_data + fbx->num_anim_curve_data_elements;
+                        if (fbx->anim_curve) {
+                            if (typecode != K3_FBX_TYPECODE_FLOAT_ARRAY) {
+                                k3error::Handler("Invalid key value type array", "readFbxNode");
+                            }
+                            fbx->anim_curve[fbx->num_anim_curves - 1].data_start = fbx->num_anim_curve_data_elements;
+                        }
+                        fbx->num_anim_curve_data_elements += arr_prop.array_length;
+                    }
+                    break;
                 }
                 if (data_arr == NULL) {
                     fseek(in_file, bytes_remaining, SEEK_CUR);
@@ -1754,11 +2245,17 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         connect_params = (str[1] == 'P') ? 3 : 2;
                     } else {
                         if (!strncmp(str, "DiffuseColor", 13)) {
-                            connect_id[connect_index] = MAP_TYPE_DIFFUSE;
+                            connect_id[connect_index] = CONNECT_TYPE_DIFFUSE_MAP;
                         } else if (!strncmp(str, "NormalMap", 10)) {
-                            connect_id[connect_index] = MAP_TYPE_NORMAL;
+                            connect_id[connect_index] = CONNECT_TYPE_NORMAL_MAP;
+                        } else if (!strncmp(str, "d|X", 4)) {
+                            connect_id[connect_index] = CONNECT_TYPE_X_AXIS;
+                        } else if (!strncmp(str, "d|Y", 4)) {
+                            connect_id[connect_index] = CONNECT_TYPE_Y_AXIS;
+                        } else if (!strncmp(str, "d|Z", 4)) {
+                            connect_id[connect_index] = CONNECT_TYPE_Z_AXIS;
                         } else {
-                            connect_id[connect_index] = MAP_TYPE_UNKNOWN;
+                            connect_id[connect_index] = CONNECT_TYPE_UNKNOWN;
                         }
                         connect_index++;
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
@@ -1815,8 +2312,52 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::CAMERA;
                         } else if (!strncmp(str, "Mesh", 5)) {
                             if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::MESH;
+                        } else if (!strncmp(str, "LimbNode", 9)) {
+                            if (fbx->model) {
+                                fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::LIMB_NODE;
+                                fbx->model[fbx->num_models - 1].index.limb_node.parent = ~0x0;  // initialize parent to all 1's, indicating the root
+                                fbx->model[fbx->num_models - 1].index.limb_node.cluster_index = ~0x0;
+                            }
                         } else {
                             if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::NONE;
+                        }
+                    }
+                } else if (node_type == k3fbxNodeType::DEFORMER) {
+                    if (fbx_node_argument == 2) {
+                        if (!strncmp(str, "Cluster", 8)) {
+                            if (fbx->cluster) {
+                                fbx->cluster[fbx->num_clusters].id = node_attrib_id;
+                                fbx->cluster[fbx->num_clusters].index_start = fbx->num_cluster_indexes;
+                                fbx->cluster[fbx->num_clusters].weight_start = fbx->num_cluster_weight_bytes;
+                            }
+                            fbx->num_clusters++;
+                            fbx->deformer_type = k3fbxDeformer::Cluster;
+                        } else if(!strncmp(str, "Skin", 5)) {
+                            if (fbx->skin) {
+                                fbx->skin[fbx->num_skins].id = node_attrib_id;
+                                fbx->skin[fbx->num_skins].mesh_index = ~0;
+                            }
+                            fbx->num_skins++;
+                            fbx->deformer_type = k3fbxDeformer::Skin;
+                        } else {
+                            fbx->deformer_type = k3fbxDeformer::None;
+                        }
+                    }
+                } else if (node_type == k3fbxNodeType::ANIMATION_LAYER) {
+                    if (fbx_node_argument == 1 && fbx->anim_layer) {
+                        // Find the last instance of '|'
+                        char* anim_name = strrchr(str, '|');
+                        // if found, use the characters following it; otherwise, sue the whole name
+                        anim_name = (anim_name) ? (anim_name + 1) : str;
+                        strncpy(fbx->anim_layer[fbx->num_anim_layers - 1].name, anim_name, K3_FBX_MAX_ANIM_NAME_LENGTH);
+                    }
+                } else if (node_type == k3fbxNodeType::ANIMATION_CURVE_NODE) {
+                    if (fbx_node_argument == 1 && fbx->anim_curve_node) {
+                        switch (str[0]) {
+                        case 'T': fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].curve_type = k3fbxAnimCurveType::Translation; break;
+                        case 'S': fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].curve_type = k3fbxAnimCurveType::Scaling; break;
+                        case 'R': fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].curve_type = k3fbxAnimCurveType::Rotation; break;
+                        default: fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].curve_type = k3fbxAnimCurveType::None; break;
                         }
                     }
                 }
@@ -1883,6 +2424,21 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_material_ids) fbx.material_ids = new uint32_t[fbx.num_material_ids];
     if (fbx.num_cameras) fbx.camera = new k3fbxCamera[fbx.num_cameras];
     if (fbx.num_light_nodes) fbx.light_node = new k3fbxLightNode[fbx.num_light_nodes];
+    if (fbx.num_skins) fbx.skin = new k3fbxSkin[fbx.num_skins];
+    if (fbx.num_clusters) fbx.cluster = new k3fbxClusterNode[fbx.num_clusters];
+    if (fbx.num_cluster_indexes) fbx.cluster_indexes = new uint32_t[fbx.num_cluster_indexes];
+    if (fbx.num_cluster_weight_bytes) fbx.cluster_weights = new char[fbx.num_cluster_weight_bytes];
+    if (fbx.num_anim_layers) {
+        fbx.anim_layer = new k3fbxAnimLayer[fbx.num_anim_layers];
+        uint32_t i;
+        for (i = 0; i < fbx.num_anim_layers; i++) {
+            fbx.anim_layer[i].anim_curve_node_id = new uint32_t[K3_FBX_BONE_TO_ANIM_MULTIPLIER * fbx.num_clusters];
+        }
+    }
+    if (fbx.num_anim_curve_nodes) fbx.anim_curve_node = new k3fbxAnimCurveNode[fbx.num_anim_curve_nodes];
+    if (fbx.num_anim_curves) fbx.anim_curve = new k3fbxAnimCurve[fbx.num_anim_curves];
+    if (fbx.num_anim_curve_time_elements) fbx.anim_curve_time = new uint64_t[fbx.num_anim_curve_time_elements];
+    if (fbx.num_anim_curve_data_elements) fbx.anim_curve_data = new float[fbx.num_anim_curve_data_elements];
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
@@ -1966,7 +2522,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     mesh_impl->_num_lights = 0;
     for (i = 0; i < fbx.num_models && mesh_impl->_num_lights < fbx.num_lights; i++) {
         if (fbx.model[i].obj_type == k3fbxObjType::LIGHT) {
-            uint32_t light_node_index = fbx.model[i].material_index;
+            uint32_t light_node_index = fbx.model[i].index.light.light_node;
             if (light_node_index != ~0x0) {
                 k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
                 mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
@@ -2014,7 +2570,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     mesh_impl->_num_models = 0;  // determine which models have actual geometries...those are the only valid ones
     for (i = 0; i < fbx.num_models; i++) {
-        uint32_t mesh_index = fbx.model[i].mesh_index;
+        uint32_t mesh_index = fbx.model[i].index.model.mesh;
         if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) mesh_impl->_num_models++;
     }
 
@@ -2026,7 +2582,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     float z_axis[3] = { 0.0f, 0.0f, 1.0f };
     uint32_t max_mesh_prims = 0;
     for (i = 0; i < fbx.num_models; i++) {
-        uint32_t mesh_index = fbx.model[i].mesh_index;
+        uint32_t mesh_index = fbx.model[i].index.model.mesh;
         uint32_t mesh_start, num_mesh_prims;
         if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) {
             // this is a valid model
@@ -2058,7 +2614,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mat[7] = fbx.model[i].translation[1];
             mat[11] = fbx.model[i].translation[2];
             k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
-            uint32_t material_index = fbx.model[i].material_index;
+            uint32_t material_index = fbx.model[i].index.model.material;
             if (material_index != ~0) {
                 mesh_impl->_model[mesh_impl->_num_models].diffuse_color[0] = fbx.material[material_index].diffuse_color[0];
                 mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = fbx.material[material_index].diffuse_color[1];
@@ -2084,12 +2640,21 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
     if (!use_ib) num_verts = 3 * num_tris;
 
+    bool use_skin = (fbx.num_skins > 0) && (fbx.num_clusters > 0);
+    uint32_t vert_size = (use_skin) ? 19 : 11;
+    mesh_impl->_num_bones = (use_skin) ? fbx.num_clusters : 0;
 
-    uint32_t geom_size = (11 * num_verts * sizeof(float)) + ((use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
+    uint32_t geom_size = (vert_size * num_verts * sizeof(float)) + ((use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
     uint32_t lbuf_size = mesh_impl->_num_lights * sizeof(k3lightBufferData);
     uint32_t up_buf_size = geom_size + lbuf_size;
     float* verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
     float* attrs = verts + 3 * num_verts;
+    float* skin_f = verts + 11 * num_verts;
+    uint32_t* skin_i = (uint32_t*)(skin_f);
+    float* bones = verts + (geom_size + lbuf_size) / sizeof(float);
+
+    float* alloc_skin_f = (use_ib) ? skin_f : new float[8 * num_verts];
+    uint32_t* alloc_skin_i = (uint32_t*)alloc_skin_f;
 
     k3bufferDesc bdesc = { 0 };
     bdesc.size = 3 * num_verts * sizeof(float);
@@ -2103,6 +2668,18 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     bdesc.view_index = desc->view_index++;
     bdesc.shader_resource = true;
     mesh_impl->_ab = CreateBuffer(&bdesc);
+
+    if (use_skin) {
+        bdesc.size = 8 * num_verts * sizeof(float);
+        bdesc.stride = 8 * sizeof(float);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        mesh_impl->_sb = CreateBuffer(&bdesc);
+
+        // clear the skin data
+        memset(alloc_skin_i, 0, 8 * num_verts * sizeof(float));
+    }
 
     uint32_t num_lights = mesh_impl->_num_lights;
     if (num_lights) {
@@ -2131,6 +2708,152 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
+    if (use_skin) {
+        uint32_t bone_id;
+        mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
+        // Loop through all the bones
+        for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
+            // Find the skin it belongs to
+            uint32_t skin_id = fbx.cluster[bone_id].skin_index;
+            if (skin_id < fbx.num_skins) {
+                // then find the corresponding mesh
+                uint32_t w_start = fbx.cluster[bone_id].weight_start;
+                uint32_t i_start = fbx.cluster[bone_id].index_start;
+                float* weights = (float*)((char*)fbx.cluster_weights + w_start);
+                uint32_t* cl_indexes = fbx.cluster_indexes + i_start;
+                uint32_t num_cl_indexes = (bone_id == mesh_impl->_num_bones - 1) ? fbx.num_cluster_indexes : fbx.cluster[bone_id + 1].index_start;
+                num_cl_indexes -= i_start;
+                if (fbx.cluster[bone_id].weight_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) {
+                    doubleToFloatArray(weights, num_cl_indexes);
+                    fbx.cluster[bone_id].weight_type = K3_FBX_TYPECODE_FLOAT_ARRAY;
+                }
+                uint32_t mesh_id = fbx.skin[skin_id].mesh_index;
+                if (mesh_id < fbx.num_meshes) {
+                    uint32_t v_id, v_start = fbx.mesh[mesh_id].vert_offset;
+                    uint32_t i, w;
+                    for (i = 0; i < num_cl_indexes; i++) {
+                        float temp_weight, cur_weight = weights[i];
+                        uint32_t temp_bone, cur_bone = bone_id;
+                        v_id = v_start + cl_indexes[i];
+                        for (w = 0; w < 4; w++) {
+                            if (alloc_skin_f[8 * v_id + 4 + w] < cur_weight) {
+                                temp_weight = cur_weight;
+                                temp_bone = cur_bone;
+                                cur_weight = alloc_skin_f[8 * v_id + 4 + w];
+                                cur_bone = alloc_skin_i[8 * v_id + w];
+                                alloc_skin_f[8 * v_id + 4 + w] = temp_weight;
+                                alloc_skin_i[8 * v_id + w] = temp_bone;
+                            }
+                        }
+                    }
+                }
+            }
+            // Find the bone model index
+            uint32_t bone_model_index = fbx.cluster[bone_id].bone_index;
+            uint32_t parent_bone_index = fbx.model[bone_model_index].index.limb_node.parent;
+            mesh_impl->_bones[bone_id].position[0] = fbx.model[bone_model_index].translation[0];
+            mesh_impl->_bones[bone_id].position[1] = fbx.model[bone_model_index].translation[1];
+            mesh_impl->_bones[bone_id].position[2] = fbx.model[bone_model_index].translation[2];
+            mesh_impl->_bones[bone_id].scaling[0] = fbx.model[bone_model_index].scaling[0];
+            mesh_impl->_bones[bone_id].scaling[1] = fbx.model[bone_model_index].scaling[1];
+            mesh_impl->_bones[bone_id].scaling[2] = fbx.model[bone_model_index].scaling[2];
+            if (parent_bone_index < fbx.num_models) {
+                uint32_t parent_bone_id = fbx.model[parent_bone_index].index.limb_node.cluster_index;
+                mesh_impl->_bones[bone_id].parent = parent_bone_id;
+                if (mesh_impl->_bones[bone_id].parent > bone_id) {
+                    k3error::Handler("Parent bone after child", "k3gfxObj::CreateMesh");
+                } else {
+                    mesh_impl->_bones[bone_id].position[0] += mesh_impl->_bones[parent_bone_id].position[0];
+                    mesh_impl->_bones[bone_id].position[1] += mesh_impl->_bones[parent_bone_id].position[1];
+                    mesh_impl->_bones[bone_id].position[2] += mesh_impl->_bones[parent_bone_id].position[2];
+                }
+                float rot_mat[16];
+                k3m4_SetRotation(rot_mat, -deg2rad(fbx.model[bone_model_index].rotation[0]), x_axis);
+                k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[1]), y_axis);
+                k3m4_Mul(rot_mat, mat, rot_mat);
+                k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[2]), z_axis);
+                k3m4_Mul(rot_mat, mat, rot_mat);
+                k3m4_MatToQuat(mesh_impl->_bones[bone_id].rot_quat, rot_mat);
+            } else {
+                mesh_impl->_bones[bone_id].parent = ~0x0;
+                mesh_impl->_bones[bone_id].rot_quat[0] = 0.0f;
+                mesh_impl->_bones[bone_id].rot_quat[1] = 0.0f;
+                mesh_impl->_bones[bone_id].rot_quat[2] = 0.0f;
+                mesh_impl->_bones[bone_id].rot_quat[3] = 1.0f;
+            }
+        }
+        // Normalize skin weights
+        uint32_t v_id;
+        for (v_id = 0; v_id < num_verts; v_id++) {
+            k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
+        }
+
+        // load animations
+        mesh_impl->_num_anims = fbx.num_anim_layers;
+        if (mesh_impl->_num_anims) {
+            mesh_impl->_anim = new k3anim[mesh_impl->_num_anims];
+            uint32_t anim_id, curve_node_index, curve_node_id, curve_id, axis;
+            uint32_t k, cur_time, cur_curve_index, dest_index, dest_stride;
+            uint64_t* curve_time_ptr;
+            float* dest;
+            for (anim_id = 0; anim_id < mesh_impl->_num_anims; anim_id++) {
+                mesh_impl->_anim[anim_id].num_keyframes = 0;
+                mesh_impl->_anim[anim_id].keyframe_delta_msec = 0;
+                for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
+                    curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
+                    for (axis = 0; axis < 3; axis++) {
+                        curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
+                        if (fbx.anim_curve[curve_id].num_key_frames >= mesh_impl->_anim[anim_id].num_keyframes) {
+                            mesh_impl->_anim[anim_id].num_keyframes = fbx.anim_curve[curve_id].num_key_frames;
+                            uint64_t* end_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start + fbx.anim_curve[curve_id].num_key_frames - 1;
+                            mesh_impl->_anim[anim_id].keyframe_delta_msec = (uint32_t)(*end_time_ptr / K3_FBX_TICKS_PER_MSEC);
+                        }
+                    }
+                }
+                if (mesh_impl->_anim[anim_id].num_keyframes == 0) mesh_impl->_anim[anim_id].num_keyframes = 1;
+                mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
+                strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[anim_id].name, K3_FBX_MAX_ANIM_NAME_LENGTH);
+                mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones];
+                dest_stride = (sizeof(k3boneData) / sizeof(float)) * mesh_impl->_num_bones;
+                for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
+                    curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
+                    dest_index = fbx.anim_curve_node[curve_node_id].limb_node;
+                    if ((fbx.anim_curve_node[curve_node_id].curve_type != k3fbxAnimCurveType::None) && (dest_index < fbx.num_models)) {
+                        dest_index = fbx.model[dest_index].index.limb_node.cluster_index;
+                        switch (fbx.anim_curve_node[curve_node_id].curve_type) {
+                        case k3fbxAnimCurveType::Translation: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].position; break;
+                        case k3fbxAnimCurveType::Scaling: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].scaling; break;
+                        case k3fbxAnimCurveType::Rotation: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].rot_quat; break;
+                        }
+                        for (axis = 0; axis < 3; axis++) {
+                            curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
+                            cur_time = 0;
+                            cur_curve_index = 0;
+                            curve_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start;
+                            for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
+                                *(dest + dest_stride * k) = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start + cur_curve_index];
+                                if (cur_curve_index < fbx.anim_curve[curve_id].num_key_frames - 1) {
+                                    // TODO: check if an increment is needed
+                                    cur_curve_index++;
+                                }
+                                cur_time += mesh_impl->_anim[anim_id].keyframe_delta_msec;
+                            }
+                            dest++;
+                        }
+                    }
+                }
+                // convert rotations from euler angles to quaternions
+                for (k = 0; k < (mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones); k++) {
+                    dest = mesh_impl->_anim[anim_id].bone_data[k].rot_quat;
+                    dest[0] = deg2rad(dest[0]);
+                    dest[1] = deg2rad(dest[1]);
+                    dest[2] = deg2rad(dest[2]);
+                    k3v4_SetQuatEuler(dest, dest);
+                }
+            }
+        }
+    }
+
     float* fbx_verts = (float*)fbx.vertices;
     float* fbx_normals = (float*)fbx.normals;
     float* fbx_uvs = (float*)fbx.uvs;
@@ -2145,7 +2868,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     float bitangent[3];
     o = 0;
     if(use_ib) {
-        uint32_t* indices = (uint32_t*)(verts + 11 * num_verts);
+        uint32_t* indices = (uint32_t*)(verts + vert_size * num_verts);
         poly_start = ipos;
         for (i = 0; i < num_verts; i++) {
             verts[3 * i + 0] = fbx_verts[3 * i + 0];
@@ -2215,6 +2938,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 0] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 1] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 2] = fbx_verts[3 * v_index + 2];
+            if (use_skin) {
+                memcpy(skin_f + 8 * (3 * i + 0), alloc_skin_f + 8 * v_index, 8 * sizeof(float));
+            }
             switch (fbx.mesh[o].normal_mapping) {
             case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
@@ -2255,6 +2981,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 3] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 4] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 5] = fbx_verts[3 * v_index + 2];
+            if (use_skin) {
+                memcpy(skin_f + 8 * (3 * i + 1), alloc_skin_f + 8 * v_index, 8 * sizeof(float));
+            }
             switch (fbx.mesh[o].normal_mapping) {
             case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
@@ -2297,6 +3026,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             verts[9 * i + 6] = fbx_verts[3 * v_index + 0];
             verts[9 * i + 7] = fbx_verts[3 * v_index + 1];
             verts[9 * i + 8] = fbx_verts[3 * v_index + 2];
+            if (use_skin) {
+                memcpy(skin_f + 8 * (3 * i + 2), alloc_skin_f + 8 * v_index, 8 * sizeof(float));
+            }
             switch (fbx.mesh[o].normal_mapping) {
             case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
@@ -2384,6 +3116,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
     desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
     desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    if (use_skin) {
+        buf_res = mesh_impl->_sb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
     if (lbuf_size) {
         buf_res = mesh_impl->_lb->GetResource();
         desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
@@ -2404,6 +3142,22 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.uv_indices) delete[] fbx.uv_indices;
     if (fbx.normal_indices) delete[] fbx.normal_indices;
     if (fbx.material_ids) delete[] fbx.material_ids;
+    if (fbx.skin) delete[] fbx.skin;
+    if (fbx.cluster) delete[] fbx.cluster;
+    if (fbx.cluster_indexes) delete[] fbx.cluster_indexes;
+    if (fbx.cluster_weights) delete[] fbx.cluster_weights;
+    if (!use_ib) delete[] alloc_skin_f;
+    if (fbx.anim_layer) {
+        uint32_t i;
+        for (i = 0; i < fbx.num_anim_layers; i++) {
+            if (fbx.anim_layer[i].anim_curve_node_id) delete[] fbx.anim_layer[i].anim_curve_node_id;
+        }
+        delete[] fbx.anim_layer;
+    }
+    if (fbx.anim_curve_node) delete[] fbx.anim_curve_node;
+    if (fbx.anim_curve) delete[] fbx.anim_curve;
+    if (fbx.anim_curve_time) delete[] fbx.anim_curve_time;
+    if (fbx.anim_curve_data) delete[] fbx.anim_curve_data;
     delete[] fbx.indices;
     delete[] fbx.normals;
     delete[] fbx.uvs;

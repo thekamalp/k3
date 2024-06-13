@@ -283,7 +283,11 @@ K3API float* k3m4_SetLookAt(float* d, const float* eye, const float* at, const f
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2);
 
 /* shortcuts to normalize vector */
-inline float* k3v_Normalize(uint32_t l, float* d) { return k3sv_Mul((l), (d), 1.0f / k3v_Length((l), (d)), (d)); }
+inline float* k3v_Normalize(uint32_t l, float* d) {
+    float f = k3v_Length((l), (d));
+    f = (f == 0.0f) ? 0.0f : (1.0f / f);
+    return k3sv_Mul((l), (d), f, (d));
+}
 
 /* shortcuts for vector to scalar operations */
 inline float* k3vs_Add(uint32_t l, float* d, const float* s1, float s2) { return k3sv_Add((l), (d), (s2), (s1)); }
@@ -501,6 +505,19 @@ inline float* k3vm4_Mul(float* d, const float* s1, const float* s2) { return k3m
 inline float* k3mv2_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 2, 2, 1, (d), (s1), (s2) ); }
 inline float* k3mv3_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 3, 3, 1, (d), (s1), (s2) ); }
 inline float* k3mv4_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 4, 4, 1, (d), (s1), (s2) ); }
+
+/* Quaternion converstion functions */
+K3API float* k3m_QuatToMat(uint32_t cols, float* d, const float* s);
+K3API float* k3m_MatToQuat(uint32_t cols, float* d, const float* s);
+K3API float* k3v4_SetQuatRotation(float* d, float angle, const float* axis);
+K3API float k3v3_GetQuatRotation(float* axis, float* angle, const float* quat);
+K3API float* k3v4_SetQuatEuler(float* d, const float* angles);
+K3API float* k3v3_GetQuatEuler(float* d, const float* quat);
+
+inline float* k3m3_QuatToMat(float* d, const float* s) { return k3m_QuatToMat(3, d, s); }
+inline float* k3m4_QuatToMat(float* d, const float* s) { return k3m_QuatToMat(4, d, s); }
+inline float* k3m3_MatToQuat(float* d, const float* s) { return k3m_MatToQuat(3, d, s); }
+inline float* k3m4_MatToQuat(float* d, const float* s) { return k3m_MatToQuat(4, d, s); }
 
 // ------------------------------------------------------------
 // k3 image classes
@@ -1675,6 +1692,8 @@ public:
     K3API uint32_t getNumTextures();
     K3API uint32_t getNumMeshes();
     K3API uint32_t getNumCameras();
+    K3API uint32_t getNumBones();
+    K3API uint32_t getNumAnims();
     K3API k3surf getTexture(uint32_t tex);
     K3API uint32_t getMeshStartPrim(uint32_t mesh);
     K3API uint32_t getMeshNumPrims(uint32_t mesh);
@@ -1696,11 +1715,15 @@ public:
     K3API void setCameraResolution(uint32_t camera, uint32_t width, uint32_t height);
     K3API void setCameraNearPlane(uint32_t camera, float near);
     K3API void setCameraFarPlane(uint32_t camera, float far);
+    K3API void genBoneMatrices(float* mat, bool gen_inv);
+    K3API uint32_t findAnim(const char* name);
+    K3API void setAnimation(uint32_t anim_index, uint32_t time_msec);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
     K3API k3buffer getAttribBuffer();
     K3API k3buffer getLightBuffer();
+    K3API k3buffer getSkinBuffer();
 };
 
 class k3cmdBufObj : public k3obj
