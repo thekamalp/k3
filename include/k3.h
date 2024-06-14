@@ -1352,7 +1352,7 @@ struct k3viewDesc {
     k3depthSelect read_only;
     bool is_cube;
     bool is_array;
-    float clear_value;
+    float clear_value[4];
 };
 
 struct k3samplerDesc {

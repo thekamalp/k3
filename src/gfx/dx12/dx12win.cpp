@@ -3212,11 +3212,9 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     k3resourceImpl* resource_impl = resource->getImpl();
     bool is_array = false;
     bool is_cube = false;
-    float clear_value = 0.0f;
     if (rtv_desc) {
         is_array = is_array || rtv_desc->is_array;
         is_cube = is_cube || rtv_desc->is_cube;
-        clear_value = rtv_desc->clear_value;
     }
     if (srv_desc) {
         is_array = is_array || srv_desc->is_array;
@@ -3243,13 +3241,24 @@ K3API k3surf k3gfxObj::CreateSurface(k3resourceDesc* rdesc, k3viewDesc* rtv_desc
     dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
     D3D12_CLEAR_VALUE dx12_clear;
     dx12_clear.Format = dx12_resource_desc.Format;
-    dx12_clear.Color[0] = clear_value;
-    dx12_clear.Color[1] = clear_value;
-    dx12_clear.Color[2] = clear_value;
-    dx12_clear.Color[3] = 1.0f;
-    if (is_depth) {
-        dx12_clear.DepthStencil.Depth = clear_value;
-        dx12_clear.DepthStencil.Stencil = 0;
+    if (rtv_desc) {
+        dx12_clear.Color[0] = rtv_desc->clear_value[0];
+        dx12_clear.Color[1] = rtv_desc->clear_value[1];
+        dx12_clear.Color[2] = rtv_desc->clear_value[2];
+        dx12_clear.Color[3] = rtv_desc->clear_value[3];
+        if (is_depth) {
+            dx12_clear.DepthStencil.Depth = rtv_desc->clear_value[0];
+            dx12_clear.DepthStencil.Stencil = (uint8_t)rtv_desc->clear_value[1];
+        }
+    } else {
+        dx12_clear.Color[0] = 0.0f;
+        dx12_clear.Color[1] = 0.0f;
+        dx12_clear.Color[2] = 0.0f;
+        dx12_clear.Color[3] = 0.0f;
+        if (is_depth) {
+            dx12_clear.DepthStencil.Depth = 0.0f;
+            dx12_clear.DepthStencil.Stencil = 0;
+        }
     }
     D3D12_CLEAR_VALUE* dx12_clear_ptr = NULL;
     if (rtv_desc) {
