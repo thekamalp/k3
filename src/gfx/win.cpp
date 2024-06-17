@@ -1501,6 +1501,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "ReferenceInformationType", 25)) node_type = k3fbxNodeType::REFERENCE_TYPE;
             else if (!strncmp(str, "Normals", 8)) node_type = k3fbxNodeType::NORMALS;
             else if (!strncmp(str, "NormalIndex", 12)) node_type = k3fbxNodeType::NORMAL_INDEX;
+            else if (!strncmp(str, "NormalsIndex", 13)) node_type = k3fbxNodeType::NORMAL_INDEX;
             else if (!strncmp(str, "UVIndex", 8)) node_type = k3fbxNodeType::UV_INDEX;
             else if (!strncmp(str, "UV", 3)) node_type = k3fbxNodeType::UV;
             else if (!strncmp(str, "Model", 6)) node_type = k3fbxNodeType::MODEL;
