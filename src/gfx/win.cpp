@@ -3034,7 +3034,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             case k3fbxMapping::None: n_index = 0; break;
             case k3fbxMapping::ByPoly: n_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: n_index = local_ipos + 2; break;
-            case k3fbxMapping::ByVert: n_index = fbx.indices[ipos + 2]; break;
+            case k3fbxMapping::ByVert: n_index = (end_poly) ? ~fbx.indices[ipos + 2] : fbx.indices[ipos + 2]; break;
             case k3fbxMapping::AllSame: n_index = 0; break;
             }
             if (fbx.mesh[o].normal_reference == k3fbxReference::ByIndex) {
@@ -3050,7 +3050,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
             case k3fbxMapping::ByPolyVert: uv_index = local_ipos + 2; break;
-            case k3fbxMapping::ByVert: uv_index = fbx.indices[ipos + 2]; break;
+            case k3fbxMapping::ByVert: uv_index = (end_poly) ? ~fbx.indices[ipos + 2] : fbx.indices[ipos + 2]; break;
             case k3fbxMapping::AllSame: uv_index = 0; break;
             }
             if (fbx.mesh[o].uv_reference == k3fbxReference::ByIndex) {
