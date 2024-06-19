@@ -880,12 +880,15 @@ enum class k3fbxNodeType {
     VERTICES,
     POLYGON_VERT_INDEX,
     LAYER_ELEMENT_NORMAL,
+    LAYER_ELEMENT_TANGENT,
     LAYER_ELEMENT_UV,
     LAYER_ELEMENT_MATERIAL,
     MAPPING_TYPE,
     REFERENCE_TYPE,
     NORMALS,
     NORMAL_INDEX,
+    TANGENTS,
+    TANGENT_INDEX,
     UV,
     UV_INDEX,
     MATERIAL_IDS,
@@ -984,13 +987,17 @@ struct k3fbxMeshData {
     uint32_t vert_offset;
     uint32_t normal_offset;
     uint32_t normal_index_offset;
+    uint32_t tangent_offset;
+    uint32_t tangent_index_offset;
     uint32_t uv_offset;
     uint32_t uv_index_offset;
     uint32_t material_offset;
     k3fbxMapping normal_mapping;
+    k3fbxMapping tangent_mapping;
     k3fbxMapping uv_mapping;
     k3fbxMapping material_mapping;
     k3fbxReference normal_reference;
+    k3fbxReference tangent_reference;
     k3fbxReference uv_reference;
 };
 
@@ -1112,9 +1119,12 @@ struct k3fbxData {
     uint32_t num_vertex_bytes;
     uint32_t num_indices;
     uint32_t num_normal_indices;
+    uint32_t num_tangent_indices;
     uint32_t num_uv_indices;
     uint32_t num_normals;
     uint32_t num_normal_bytes;
+    uint32_t num_tangents;
+    uint32_t num_tangent_bytes;
     uint32_t num_uvs;
     uint32_t num_uv_bytes;
     uint32_t num_material_ids;
@@ -1133,6 +1143,7 @@ struct k3fbxData {
     uint32_t num_anim_curve_data_elements;
     k3fbxDeformer deformer_type;
     k3fbxReference last_normal_reference;
+    k3fbxReference last_tangent_reference;
     k3fbxReference last_uv_reference;
     k3fbxMeshData* mesh;
     k3fbxModelData* model;
@@ -1142,6 +1153,7 @@ struct k3fbxData {
     k3fbxLightNode* light_node;
     uint32_t* indices;
     uint32_t* normal_indices;
+    uint32_t* tangent_indices;
     uint32_t* uv_indices;
     uint32_t* material_ids;
     k3fbxObjType node_attrib_obj;
@@ -1153,6 +1165,7 @@ struct k3fbxData {
     k3fbxAnimCurve* anim_curve;
     void* vertices;
     void* normals;
+    void* tangents;
     void* uvs;
     uint32_t* cluster_indexes;
     void* cluster_weights;
@@ -1160,6 +1173,7 @@ struct k3fbxData {
     float* anim_curve_data;
     char vert_type;
     char norm_type;
+    char tang_type;
     char uv_type;
 };
 
@@ -1435,9 +1449,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_vertex_bytes = 0;
         fbx->num_indices = 0;
         fbx->num_normal_indices = 0;
+        fbx->num_tangent_indices = 0;
         fbx->num_uv_indices = 0;
         fbx->num_normals = 0;
         fbx->num_normal_bytes = 0;
+        fbx->num_tangents = 0;
+        fbx->num_tangent_bytes = 0;
         fbx->num_uvs = 0;
         fbx->num_uv_bytes = 0;
         fbx->num_material_ids = 0;
@@ -1496,12 +1513,16 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "Vertices", 9)) node_type = k3fbxNodeType::VERTICES;
             else if (!strncmp(str, "PolygonVertexIndex", 19)) node_type = k3fbxNodeType::POLYGON_VERT_INDEX;
             else if (!strncmp(str, "LayerElementNormal", 19)) node_type = k3fbxNodeType::LAYER_ELEMENT_NORMAL;
+            else if (!strncmp(str, "LayerElementTangent", 20)) node_type = k3fbxNodeType::LAYER_ELEMENT_TANGENT;
             else if (!strncmp(str, "LayerElementUV", 15) && first_uv) { node_type = k3fbxNodeType::LAYER_ELEMENT_UV; first_uv = false; } else if (!strncmp(str, "LayerElementMaterial", 21)) node_type = k3fbxNodeType::LAYER_ELEMENT_MATERIAL;
             else if (!strncmp(str, "MappingInformationType", 23)) node_type = k3fbxNodeType::MAPPING_TYPE;
             else if (!strncmp(str, "ReferenceInformationType", 25)) node_type = k3fbxNodeType::REFERENCE_TYPE;
             else if (!strncmp(str, "Normals", 8)) node_type = k3fbxNodeType::NORMALS;
             else if (!strncmp(str, "NormalIndex", 12)) node_type = k3fbxNodeType::NORMAL_INDEX;
             else if (!strncmp(str, "NormalsIndex", 13)) node_type = k3fbxNodeType::NORMAL_INDEX;
+            else if (!strncmp(str, "Tangents", 9)) node_type = k3fbxNodeType::TANGENTS;
+            else if (!strncmp(str, "TangentIndex", 13)) node_type = k3fbxNodeType::TANGENT_INDEX;
+            else if (!strncmp(str, "TangentsIndex", 14)) node_type = k3fbxNodeType::TANGENT_INDEX;
             else if (!strncmp(str, "UVIndex", 8)) node_type = k3fbxNodeType::UV_INDEX;
             else if (!strncmp(str, "UV", 3)) node_type = k3fbxNodeType::UV;
             else if (!strncmp(str, "Model", 6)) node_type = k3fbxNodeType::MODEL;
@@ -1554,13 +1575,17 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->mesh[fbx->num_meshes].vert_offset = fbx->num_vertices;
                 fbx->mesh[fbx->num_meshes].normal_offset = fbx->num_normals;
                 fbx->mesh[fbx->num_meshes].normal_index_offset = fbx->num_normal_indices;
+                fbx->mesh[fbx->num_meshes].tangent_offset = fbx->num_tangents;
+                fbx->mesh[fbx->num_meshes].tangent_index_offset = fbx->num_tangent_indices;
                 fbx->mesh[fbx->num_meshes].uv_offset = fbx->num_uvs;
                 fbx->mesh[fbx->num_meshes].uv_index_offset = fbx->num_uv_indices;
                 fbx->mesh[fbx->num_meshes].material_offset = fbx->num_material_ids;
                 fbx->mesh[fbx->num_meshes].normal_mapping = k3fbxMapping::None;
+                fbx->mesh[fbx->num_meshes].tangent_mapping = k3fbxMapping::None;
                 fbx->mesh[fbx->num_meshes].uv_mapping = k3fbxMapping::None;
                 fbx->mesh[fbx->num_meshes].material_mapping = k3fbxMapping::None;
                 fbx->mesh[fbx->num_meshes].normal_reference = k3fbxReference::None;
+                fbx->mesh[fbx->num_meshes].tangent_reference = k3fbxReference::None;
                 fbx->mesh[fbx->num_meshes].uv_reference = k3fbxReference::None;
             }
             fbx->num_meshes++;
@@ -2060,6 +2085,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         fbx->num_normal_indices += arr_prop.array_length;
                     }
                     break;
+                case k3fbxNodeType::TANGENT_INDEX:
+                    if (fbx->last_tangent_reference == k3fbxReference::ByIndex) {
+                        if (fbx->tangent_indices) data_arr = fbx->tangent_indices + fbx->num_tangent_indices;
+                        fbx->num_tangent_indices += arr_prop.array_length;
+                    }
+                    break;
                 case k3fbxNodeType::UV_INDEX:
                     if (fbx->last_uv_reference == k3fbxReference::ByIndex) {
                         if (fbx->uv_indices) data_arr = fbx->uv_indices + fbx->num_uv_indices;
@@ -2071,6 +2102,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     if (fbx->normals) data_arr = (char*)fbx->normals + fbx->num_normal_bytes;
                     fbx->num_normal_bytes += ((typecode == 'd') ? 8 : 4) * arr_prop.array_length;
                     fbx->num_normals += (arr_prop.array_length) / 3;
+                    break;
+                case k3fbxNodeType::TANGENTS:
+                    fbx->tang_type = typecode;
+                    if (fbx->tangents) data_arr = (char*)fbx->tangents + fbx->num_tangent_bytes;
+                    fbx->num_tangent_bytes += ((typecode == 'd') ? 8 : 4) * arr_prop.array_length;
+                    fbx->num_tangents += (arr_prop.array_length) / 3;
                     break;
                 case k3fbxNodeType::UV:
                     fbx->uv_type = typecode;
@@ -2173,10 +2210,13 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     if (!strncmp(str, "ByPolygon", 10)) mapping = k3fbxMapping::ByPoly;
                     else if (!strncmp(str, "ByPolygonVertex", 16)) mapping = k3fbxMapping::ByPolyVert;
                     else if (!strncmp(str, "ByVertex", 9)) mapping = k3fbxMapping::ByVert;
+                    else if (!strncmp(str, "ByVertice", 10)) mapping = k3fbxMapping::ByVert;
                     else if (!strncmp(str, "ByEdge", 7)) mapping = k3fbxMapping::ByEdge;
                     else if (!strncmp(str, "AllSame", 8)) mapping = k3fbxMapping::AllSame;
                     if (parent_node == k3fbxNodeType::LAYER_ELEMENT_NORMAL) {
-                        if(fbx->mesh) fbx->mesh[fbx->num_meshes -1].normal_mapping = mapping;
+                        if (fbx->mesh) fbx->mesh[fbx->num_meshes - 1].normal_mapping = mapping;
+                    } else if (parent_node == k3fbxNodeType::LAYER_ELEMENT_TANGENT) {
+                        if (fbx->mesh) fbx->mesh[fbx->num_meshes - 1].tangent_mapping = mapping;
                     } else if (parent_node == k3fbxNodeType::LAYER_ELEMENT_UV) {
                         if(fbx->mesh) fbx->mesh[fbx->num_meshes - 1].uv_mapping = mapping;
                     } else if (parent_node == k3fbxNodeType::LAYER_ELEMENT_MATERIAL) {
@@ -2189,6 +2229,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     if (parent_node == k3fbxNodeType::LAYER_ELEMENT_NORMAL) {
                         fbx->last_normal_reference = reference;
                         if (fbx->num_meshes && fbx->mesh) fbx->mesh[fbx->num_meshes - 1].normal_reference = reference;
+                    } else if(parent_node == k3fbxNodeType::LAYER_ELEMENT_TANGENT) {
+                        fbx->last_tangent_reference = reference;
+                        if (fbx->num_meshes && fbx->mesh) fbx->mesh[fbx->num_meshes - 1].tangent_reference = reference;
                     } else if (parent_node == k3fbxNodeType::LAYER_ELEMENT_UV) {
                         fbx->last_uv_reference = reference;
                         if (fbx->num_meshes && fbx->mesh) fbx->mesh[fbx->num_meshes - 1].uv_reference = reference;
@@ -2421,6 +2464,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     fbx.vertices = new char[fbx.num_vertex_bytes];
     fbx.indices = new uint32_t[fbx.num_indices];
     if (fbx.num_normal_indices) fbx.normal_indices = new uint32_t[fbx.num_normal_indices];
+    if (fbx.num_tangent_indices) fbx.tangent_indices = new uint32_t[fbx.num_tangent_indices];
     if (fbx.num_uv_indices) fbx.uv_indices = new uint32_t[fbx.num_uv_indices];
     if (fbx.num_material_ids) fbx.material_ids = new uint32_t[fbx.num_material_ids];
     if (fbx.num_cameras) fbx.camera = new k3fbxCamera[fbx.num_cameras];
@@ -2440,6 +2484,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_anim_curves) fbx.anim_curve = new k3fbxAnimCurve[fbx.num_anim_curves];
     if (fbx.num_anim_curve_time_elements) fbx.anim_curve_time = new uint64_t[fbx.num_anim_curve_time_elements];
     if (fbx.num_anim_curve_data_elements) fbx.anim_curve_data = new float[fbx.num_anim_curve_data_elements];
+    if (fbx.num_tangent_bytes) fbx.tangents = new char[fbx.num_tangent_bytes];
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
@@ -2452,6 +2497,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         doubleToFloatArray(fbx.vertices, num_verts);
     }
     if (fbx.norm_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) doubleToFloatArray(fbx.normals, fbx.num_normal_bytes / sizeof(double));
+    if (fbx.tangents && fbx.tang_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) doubleToFloatArray(fbx.tangents, fbx.num_tangent_bytes / sizeof(double));
     if (fbx.uv_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) doubleToFloatArray(fbx.uvs, fbx.num_uv_bytes / sizeof(double));
 
     k3mesh mesh = new k3meshObj;
@@ -2633,9 +2679,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
-    bool use_ib = (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
+    bool use_ib = (fbx.num_tangent_indices == 0) && (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
     for (i = 0; i < fbx.num_meshes; i++) {
         use_ib = use_ib && (fbx.mesh[i].normal_mapping == k3fbxMapping::ByVert);
+        use_ib = use_ib && (fbx.mesh[i].tangent_mapping == k3fbxMapping::ByVert);
         use_ib = use_ib && (fbx.mesh[i].uv_mapping == k3fbxMapping::ByVert);
         use_ib = use_ib && (fbx.mesh[i].material_mapping == k3fbxMapping::AllSame);
     }
@@ -2857,13 +2904,14 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     float* fbx_verts = (float*)fbx.vertices;
     float* fbx_normals = (float*)fbx.normals;
+    float* fbx_tangents = (float*)fbx.tangents;
     float* fbx_uvs = (float*)fbx.uvs;
     uint32_t ipos = 0, poly_start;
     uint32_t poly = 0;
     // these restart per object
     uint32_t local_ipos = 0, local_poly_start;
     uint32_t local_poly = 0;
-    uint32_t v_index, n_index, uv_index;
+    uint32_t v_index, n_index, t_index, uv_index;
     bool end_poly;
     uint32_t i0, i1, i2, j;
     float bitangent[3];
@@ -2880,10 +2928,15 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[8 * i + 2] = fbx_normals[3 * i + 2];
             attrs[8 * i + 3] = fbx_uvs[2 * i + 0];
             attrs[8 * i + 4] = 1.0f - fbx_uvs[2 * i + 1];
-            // TODO: compute tangents
-            attrs[8 * i + 5] = 1.0f;
-            attrs[8 * i + 6] = 0.0f;
-            attrs[8 * i + 7] = 0.0f;
+            if (fbx.tangents) {
+                attrs[8 * i + 5] = fbx_tangents[3 * i + 0];
+                attrs[8 * i + 6] = fbx_tangents[3 * i + 1];
+                attrs[8 * i + 7] = fbx_tangents[3 * i + 0];
+            } else {
+                attrs[8 * i + 5] = 1.0f;
+                attrs[8 * i + 6] = 0.0f;
+                attrs[8 * i + 7] = 0.0f;
+            }
         }
         for (i = 0; i < num_tris; i++) {
             if (o + 1 < fbx.num_meshes && i >= mesh_impl->_mesh_start[o + 1]) o++;
@@ -2900,24 +2953,27 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             indices[3 * i + 0] += fbx.mesh[o].vert_offset;
             indices[3 * i + 1] += fbx.mesh[o].vert_offset;
             indices[3 * i + 2] += fbx.mesh[o].vert_offset;
-            i0 = indices[3 * i + 0];
-            i1 = indices[3 * i + 1];
-            i2 = indices[3 * i + 2];
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
-            k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i0 + 5);
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i1, verts + 3 * i2, verts + 3 * i0, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3);
-            k3v3_Cross(attrs + 8 * i1 + 5, attrs + 8 * i1 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i1 + 5);
-            k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i2, verts + 3 * i0, verts + 3 * i1, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3);
-            k3v3_Cross(attrs + 8 * i2 + 5, attrs + 8 * i2 + 0, bitangent);
-            k3v3_Normalize(attrs + 8 * i2 + 5);
+            if (fbx.tangents == NULL) {
+                i0 = indices[3 * i + 0];
+                i1 = indices[3 * i + 1];
+                i2 = indices[3 * i + 2];
+                k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
+                k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
+                k3v3_Normalize(attrs + 8 * i0 + 5);
+                k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i1, verts + 3 * i2, verts + 3 * i0, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3);
+                k3v3_Cross(attrs + 8 * i1 + 5, attrs + 8 * i1 + 0, bitangent);
+                k3v3_Normalize(attrs + 8 * i1 + 5);
+                k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i2, verts + 3 * i0, verts + 3 * i1, attrs + 8 * i2 + 3, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3);
+                k3v3_Cross(attrs + 8 * i2 + 5, attrs + 8 * i2 + 0, bitangent);
+                k3v3_Normalize(attrs + 8 * i2 + 5);
+            }
         }
     } else {
         poly_start = ipos;
         local_poly_start = local_ipos;
         uint32_t obj_v_index[3];
         uint32_t obj_n_index[3];
+        uint32_t obj_t_index[3];
         uint32_t obj_uv_index[3];
         k3fbxAttrLinkList** attr_ll = new k3fbxAttrLinkList*[3 * max_mesh_prims];
         k3fbxAttrLinkList* attr_nodes = new k3fbxAttrLinkList[3 * max_mesh_prims];
@@ -2958,6 +3014,28 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 0] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 1] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 2] = fbx_normals[3 * n_index + 2];
+            if (fbx.tangents) {
+                switch (fbx.mesh[o].tangent_mapping) {
+                case k3fbxMapping::None: t_index = 0; break;
+                case k3fbxMapping::ByPoly: t_index = local_poly; break;
+                case k3fbxMapping::ByPolyVert: t_index = local_poly_start; break;
+                case k3fbxMapping::ByVert: t_index = fbx.indices[poly_start]; break;
+                case k3fbxMapping::AllSame: t_index = 0; break;
+                }
+                if (fbx.mesh[o].tangent_reference == k3fbxReference::ByIndex) {
+                    t_index += fbx.mesh[o].tangent_index_offset;
+                    t_index = fbx.tangent_indices[t_index];
+                }
+                obj_t_index[0] = t_index;
+                t_index += fbx.mesh[o].tangent_offset;
+                attrs[24 * i + 5] = fbx_tangents[3 * t_index + 0];
+                attrs[24 * i + 6] = fbx_tangents[3 * t_index + 1];
+                attrs[24 * i + 7] = fbx_tangents[3 * t_index + 2];
+            } else {
+                attrs[24 * i + 5] = 1.0f;
+                attrs[24 * i + 6] = 0.0f;
+                attrs[24 * i + 7] = 0.0f;
+            }
             switch (fbx.mesh[o].uv_mapping) {
             case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
@@ -2973,9 +3051,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 3] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 4] = 1.0f - fbx_uvs[2 * uv_index + 1];
-            attrs[24 * i + 5] = 1.0f;
-            attrs[24 * i + 6] = 0.0f;
-            attrs[24 * i + 7] = 0.0f;
             v_index = fbx.indices[ipos + 1];
             obj_v_index[1] = v_index;
             v_index += fbx.mesh[o].vert_offset;
@@ -3001,6 +3076,28 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 8] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 9] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 10] = fbx_normals[3 * n_index + 2];
+            if (fbx.tangents) {
+                switch (fbx.mesh[o].tangent_mapping) {
+                case k3fbxMapping::None: t_index = 0; break;
+                case k3fbxMapping::ByPoly: t_index = local_poly; break;
+                case k3fbxMapping::ByPolyVert: t_index = local_ipos + 1; break;
+                case k3fbxMapping::ByVert: t_index = fbx.indices[ipos + 1]; break;
+                case k3fbxMapping::AllSame: t_index = 0; break;
+                }
+                if (fbx.mesh[o].tangent_reference == k3fbxReference::ByIndex) {
+                    t_index += fbx.mesh[o].tangent_index_offset;
+                    t_index = fbx.tangent_indices[t_index];
+                }
+                obj_t_index[1] = t_index;
+                t_index += fbx.mesh[o].tangent_offset;
+                attrs[24 * i + 13] = fbx_tangents[3 * t_index + 0];
+                attrs[24 * i + 14] = fbx_tangents[3 * t_index + 1];
+                attrs[24 * i + 15] = fbx_tangents[3 * t_index + 2];
+            } else {
+                attrs[24 * i + 13] = 1.0f;
+                attrs[24 * i + 14] = 0.0f;
+                attrs[24 * i + 15] = 0.0f;
+            }
             switch (fbx.mesh[o].uv_mapping) {
             case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
@@ -3016,9 +3113,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 11] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 12] = 1.0f - fbx_uvs[2 * uv_index + 1];
-            attrs[24 * i + 13] = 1.0f;
-            attrs[24 * i + 14] = 0.0f;
-            attrs[24 * i + 15] = 0.0f;
             v_index = fbx.indices[ipos + 2];
             end_poly = (v_index & 0x80000000) ? true : false;
             if (end_poly) v_index = ~v_index;
@@ -3046,6 +3140,28 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             attrs[24 * i + 16] = fbx_normals[3 * n_index + 0];
             attrs[24 * i + 17] = fbx_normals[3 * n_index + 1];
             attrs[24 * i + 18] = fbx_normals[3 * n_index + 2];
+            if (fbx.tangents) {
+                switch (fbx.mesh[o].tangent_mapping) {
+                case k3fbxMapping::None: t_index = 0; break;
+                case k3fbxMapping::ByPoly: t_index = local_poly; break;
+                case k3fbxMapping::ByPolyVert: t_index = local_ipos + 2; break;
+                case k3fbxMapping::ByVert: t_index = (end_poly) ? ~fbx.indices[ipos + 2] : fbx.indices[ipos + 2]; break;
+                case k3fbxMapping::AllSame: t_index = 0; break;
+                }
+                if (fbx.mesh[o].tangent_reference == k3fbxReference::ByIndex) {
+                    t_index += fbx.mesh[o].tangent_index_offset;
+                    t_index = fbx.tangent_indices[t_index];
+                }
+                obj_t_index[2] = t_index;
+                t_index += fbx.mesh[o].tangent_offset;
+                attrs[24 * i + 21] = fbx_tangents[3 * t_index + 0];
+                attrs[24 * i + 22] = fbx_tangents[3 * t_index + 1];
+                attrs[24 * i + 23] = fbx_tangents[3 * t_index + 2];
+            } else {
+                attrs[24 * i + 21] = 1.0f;
+                attrs[24 * i + 22] = 0.0f;
+                attrs[24 * i + 23] = 0.0f;
+            }
             switch (fbx.mesh[o].uv_mapping) {
             case k3fbxMapping::None: uv_index = 0; break;
             case k3fbxMapping::ByPoly: uv_index = local_poly; break;
@@ -3061,9 +3177,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uv_index += fbx.mesh[o].uv_offset;
             attrs[24 * i + 19] = fbx_uvs[2 * uv_index + 0];
             attrs[24 * i + 20] = 1.0f - fbx_uvs[2 * uv_index + 1];
-            attrs[24 * i + 21] = 1.0f;
-            attrs[24 * i + 22] = 0.0f;
-            attrs[24 * i + 23] = 0.0f;
             if (end_poly) {
                 ipos += 3;
                 local_ipos += 3;
@@ -3076,27 +3189,29 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 local_ipos++;
             }
             
-            for (j = 0; j < 3; j++) {
-                for (cur_attr_node = attr_ll[obj_v_index[j]]; cur_attr_node != NULL; cur_attr_node = cur_attr_node->next) {
-                    if (cur_attr_node->n_index == obj_n_index[j] && cur_attr_node->uv_index == obj_uv_index[j]) {
-                        break;
+            if (fbx.tangents == NULL) {
+                for (j = 0; j < 3; j++) {
+                    for (cur_attr_node = attr_ll[obj_v_index[j]]; cur_attr_node != NULL; cur_attr_node = cur_attr_node->next) {
+                        if (cur_attr_node->n_index == obj_n_index[j] && cur_attr_node->uv_index == obj_uv_index[j]) {
+                            break;
+                        }
                     }
-                }
-                if (cur_attr_node) {
-                    memcpy(attrs + 8 * (3 * i + j) + 5, cur_attr_node->attr, 3 * sizeof(float));
-                } else {
-                    i0 = 3 * i + j;
-                    i1 = 3 * i + ((j > 1) ? j - 2 : j + 1);
-                    i2 = 3 * i + ((j > 0) ? j - 1 : j + 2);
-                    k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
-                    k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
-                    k3v3_Normalize(attrs + 8 * i0 + 5);
-                    alloc_attr_node->n_index = obj_n_index[j];
-                    alloc_attr_node->uv_index = obj_uv_index[j];
-                    alloc_attr_node->attr = attrs + 8 * i0 + 5;
-                    alloc_attr_node->next = attr_ll[obj_v_index[j]];
-                    attr_ll[obj_v_index[j]] = alloc_attr_node;
-                    alloc_attr_node++;
+                    if (cur_attr_node) {
+                        memcpy(attrs + 8 * (3 * i + j) + 5, cur_attr_node->attr, 3 * sizeof(float));
+                    } else {
+                        i0 = 3 * i + j;
+                        i1 = 3 * i + ((j > 1) ? j - 2 : j + 1);
+                        i2 = 3 * i + ((j > 0) ? j - 1 : j + 2);
+                        k3v3_SetTangentBitangent(NULL, bitangent, verts + 3 * i0, verts + 3 * i1, verts + 3 * i2, attrs + 8 * i0 + 3, attrs + 8 * i1 + 3, attrs + 8 * i2 + 3);
+                        k3v3_Cross(attrs + 8 * i0 + 5, attrs + 8 * i0 + 0, bitangent);
+                        k3v3_Normalize(attrs + 8 * i0 + 5);
+                        alloc_attr_node->n_index = obj_n_index[j];
+                        alloc_attr_node->uv_index = obj_uv_index[j];
+                        alloc_attr_node->attr = attrs + 8 * i0 + 5;
+                        alloc_attr_node->next = attr_ll[obj_v_index[j]];
+                        attr_ll[obj_v_index[j]] = alloc_attr_node;
+                        alloc_attr_node++;
+                    }
                 }
             }
 
@@ -3141,6 +3256,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.content_data) delete[] fbx.content_data;
     delete[] fbx.vertices;
     if (fbx.uv_indices) delete[] fbx.uv_indices;
+    if (fbx.tangent_indices) delete[] fbx.tangent_indices;
     if (fbx.normal_indices) delete[] fbx.normal_indices;
     if (fbx.material_ids) delete[] fbx.material_ids;
     if (fbx.skin) delete[] fbx.skin;
@@ -3159,6 +3275,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.anim_curve) delete[] fbx.anim_curve;
     if (fbx.anim_curve_time) delete[] fbx.anim_curve_time;
     if (fbx.anim_curve_data) delete[] fbx.anim_curve_data;
+    if (fbx.tangents) delete[] fbx.tangents;
     delete[] fbx.indices;
     delete[] fbx.normals;
     delete[] fbx.uvs;
