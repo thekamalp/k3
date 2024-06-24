@@ -843,10 +843,14 @@ K3API float* k3m_MatToQuat(uint32_t cols, float* d, const float* s)
     float r31 = s[2 * cols + 0];
     float r32 = s[2 * cols + 1];
     float r33 = s[2 * cols + 2];
-    d[0] = sqrtf((1 + r11 - r22 - r33) / 4.0f);
-    d[1] = sqrtf((1 - r11 + r22 - r33) / 4.0f);
-    d[2] = sqrtf((1 - r11 - r22 + r33) / 4.0f);
-    d[3] = sqrtf((1 + r11 + r22 + r33) / 4.0f);
+    d[0] = (1 + r11 - r22 - r33) / 4.0f;
+    d[1] = (1 - r11 + r22 - r33) / 4.0f;
+    d[2] = (1 - r11 - r22 + r33) / 4.0f;
+    d[3] = (1 + r11 + r22 + r33) / 4.0f;
+    d[0] = (d[0] < 0.0f) ? 0.0f : sqrtf(d[0]);
+    d[1] = (d[1] < 0.0f) ? 0.0f : sqrtf(d[1]);
+    d[2] = (d[2] < 0.0f) ? 0.0f : sqrtf(d[2]);
+    d[3] = (d[3] < 0.0f) ? 0.0f : sqrtf(d[3]);
     if (d[3] >= d[2] && d[3] >= d[1] && d[3] >= d[0]) {
         d[0] = (r32 - r23) / (4.0f * d[3]);
         d[1] = (r13 - r31) / (4.0f * d[3]);

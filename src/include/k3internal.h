@@ -112,6 +112,7 @@ struct k3bone {
     float rot_quat[4];  // quaternion representation of bone rotation
     float scaling[3];   // bone scaling
     float position[3];  // bone location
+    float inv_bind_pose[16];  // inverse of the global bind pose
 };
 
 struct k3boneData {

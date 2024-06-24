@@ -768,24 +768,20 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
     float* cur_mat = mat;
     float* parent_mat = NULL;
     float xlat_mat[16];
+    float rot_xlat_mat[16];
     for (bone_id = 0; bone_id < _data->_num_bones; bone_id++, cur_mat += mat_stride) {
+        k3m4_QuatToMat(rot_xlat_mat, _data->_bones[bone_id].rot_quat);
+        k3m4_SetIdentity(xlat_mat);
+        xlat_mat[3] = _data->_bones[bone_id].position[0];
+        xlat_mat[7] = _data->_bones[bone_id].position[1];
+        xlat_mat[11] = _data->_bones[bone_id].position[2];
+        k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
         k3m4_SetIdentity(xlat_mat);
         xlat_mat[0] = _data->_bones[bone_id].scaling[0];
         xlat_mat[5] = _data->_bones[bone_id].scaling[1];
         xlat_mat[10] = _data->_bones[bone_id].scaling[2];
-
-        xlat_mat[3] = -xlat_mat[0] * (_data->_bones[bone_id].position[0]);
-        xlat_mat[7] = -xlat_mat[5] * (_data->_bones[bone_id].position[1]);
-        xlat_mat[11] = -xlat_mat[10] * (_data->_bones[bone_id].position[2]);
-        k3m4_QuatToMat(cur_mat, _data->_bones[bone_id].rot_quat);
-        k3m4_Mul(cur_mat, cur_mat, xlat_mat);
-        xlat_mat[3] = -xlat_mat[3] / xlat_mat[0];
-        xlat_mat[7] = -xlat_mat[7] / xlat_mat[5];
-        xlat_mat[11] = -xlat_mat[11] / xlat_mat[10];
-        xlat_mat[0] = 1.0f;
-        xlat_mat[5] = 1.0f;
-        xlat_mat[10] = 1.0f;
-        k3m4_Mul(cur_mat, xlat_mat, cur_mat);
+        k3m4_Mul(cur_mat, rot_xlat_mat, xlat_mat);
+        //k3m4_Mul(cur_mat, cur_mat, _data->_bones[bone_id].inv_bind_pose);
         parent_bone_id = _data->_bones[bone_id].parent;
         if (parent_bone_id < _data->_num_bones) {
             parent_mat = mat + mat_stride * parent_bone_id;
@@ -793,28 +789,77 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
         }
         if (gen_inv) {
             // inverse of transform without scaling factored
-            float inv_quat[4] = { -_data->_bones[bone_id].rot_quat[0],
-                                  -_data->_bones[bone_id].rot_quat[1],
-                                  -_data->_bones[bone_id].rot_quat[2],
-                                   _data->_bones[bone_id].rot_quat[3] };
-            k3m4_SetIdentity(xlat_mat);
-            xlat_mat[3] = (_data->_bones[bone_id].position[0]);
-            xlat_mat[7] = (_data->_bones[bone_id].position[1]);
-            xlat_mat[11] = (_data->_bones[bone_id].position[2]);
-            k3m4_QuatToMat(cur_mat + 16, inv_quat);
-            k3m4_Mul(cur_mat + 16, cur_mat + 16, xlat_mat);
-            xlat_mat[3] = -xlat_mat[3];
-            xlat_mat[7] = -xlat_mat[7];
-            xlat_mat[11] = -xlat_mat[11];
-            k3m4_Mul(cur_mat + 16, xlat_mat, cur_mat + 16);
             if (parent_bone_id < _data->_num_bones) {
                 parent_mat = mat + mat_stride * parent_bone_id + 16;
-                k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
+                k3m4_Mul(cur_mat + 16, parent_mat, rot_xlat_mat);
+            } else {
+                memcpy(cur_mat + 16, rot_xlat_mat, 16 * sizeof(float));
             }
 
-            //uint32_t i;
-            //for (i = 0; i < 16; i++) *(cur_mat + 16 + i) = *(cur_mat + i);
+
+            //k3m4_Mul(cur_mat + 16, rot_xlat_mat, _data->_bones[bone_id].inv_bind_pose);
             //k3m4_Inverse(cur_mat + 16);
+            //if (parent_bone_id < _data->_num_bones) {
+            //    parent_mat = mat + mat_stride * parent_bone_id + 16;
+            //    k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
+            //}
+        }
+ 
+        //k3m4_SetIdentity(xlat_mat);
+        //xlat_mat[0] = _data->_bones[bone_id].scaling[0];
+        //xlat_mat[5] = _data->_bones[bone_id].scaling[1];
+        //xlat_mat[10] = _data->_bones[bone_id].scaling[2];
+        //
+        //xlat_mat[3] = -xlat_mat[0] * (_data->_bones[bone_id].position[0]);
+        //xlat_mat[7] = -xlat_mat[5] * (_data->_bones[bone_id].position[1]);
+        //xlat_mat[11] = -xlat_mat[10] * (_data->_bones[bone_id].position[2]);
+        //k3m4_QuatToMat(cur_mat, _data->_bones[bone_id].rot_quat);
+        //k3m4_Mul(cur_mat, cur_mat, xlat_mat);
+        //xlat_mat[3] = -xlat_mat[3] / xlat_mat[0];
+        //xlat_mat[7] = -xlat_mat[7] / xlat_mat[5];
+        //xlat_mat[11] = -xlat_mat[11] / xlat_mat[10];
+        //xlat_mat[0] = 1.0f;
+        //xlat_mat[5] = 1.0f;
+        //xlat_mat[10] = 1.0f;
+        //k3m4_Mul(cur_mat, xlat_mat, cur_mat);
+        //parent_bone_id = _data->_bones[bone_id].parent;
+        //if (parent_bone_id < _data->_num_bones) {
+        //    parent_mat = mat + mat_stride * parent_bone_id;
+        //    k3m4_Mul(cur_mat, parent_mat, cur_mat);
+        //}
+        //if (gen_inv) {
+        //    // inverse of transform without scaling factored
+        //    float inv_quat[4] = { -_data->_bones[bone_id].rot_quat[0],
+        //                          -_data->_bones[bone_id].rot_quat[1],
+        //                          -_data->_bones[bone_id].rot_quat[2],
+        //                           _data->_bones[bone_id].rot_quat[3] };
+        //    k3m4_SetIdentity(xlat_mat);
+        //    xlat_mat[3] = (_data->_bones[bone_id].position[0]);
+        //    xlat_mat[7] = (_data->_bones[bone_id].position[1]);
+        //    xlat_mat[11] = (_data->_bones[bone_id].position[2]);
+        //    k3m4_QuatToMat(cur_mat + 16, inv_quat);
+        //    k3m4_Mul(cur_mat + 16, cur_mat + 16, xlat_mat);
+        //    xlat_mat[3] = -xlat_mat[3];
+        //    xlat_mat[7] = -xlat_mat[7];
+        //    xlat_mat[11] = -xlat_mat[11];
+        //    k3m4_Mul(cur_mat + 16, xlat_mat, cur_mat + 16);
+        //    if (parent_bone_id < _data->_num_bones) {
+        //        parent_mat = mat + mat_stride * parent_bone_id + 16;
+        //        k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
+        //    }
+        //
+        //    //uint32_t i;
+        //    //for (i = 0; i < 16; i++) *(cur_mat + 16 + i) = *(cur_mat + i);
+        //    //k3m4_Inverse(cur_mat + 16);
+        //}
+    }
+
+    cur_mat = mat;
+    for (bone_id = 0; bone_id < _data->_num_bones; bone_id++, cur_mat += mat_stride) {
+        k3m4_Mul(cur_mat, cur_mat, _data->_bones[bone_id].inv_bind_pose);
+        if (gen_inv) {
+            k3m4_Mul(cur_mat + 16, cur_mat + 16, _data->_bones[bone_id].inv_bind_pose);
+            k3m4_Inverse(cur_mat + 16);
         }
     }
 }
@@ -855,9 +900,9 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
         src0_index = anim_frame * _data->_num_bones + bone_id;
         src1_index = src0_index + _data->_num_bones;
 
-        //k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
-        //k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
-        //k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
+        k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
+        k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
+        k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
 
         k3sv3_Mul(dest_scale_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].scaling);
         k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].scaling);
@@ -915,6 +960,10 @@ enum class k3fbxNodeType {
     TRANSFORM_LINK,
     TRANSFORM_ASSOCIATE_MODEL,
     POSE,
+    NB_POSE_NODES,
+    POSE_NODE,
+    NODE,
+    MATRIX,
     ANIMATION_STACK,
     ANIMATION_LAYER,
     ANIMATION_CURVE_NODE,
@@ -981,6 +1030,11 @@ enum class k3fbxAnimCurveType {
     Rotation
 };
 
+enum class k3fbxPoseType {
+    None,
+    BindPose
+};
+
 struct k3fbxMeshData {
     uint64_t id;
     uint32_t start;
@@ -1013,6 +1067,7 @@ struct k3fbxLightIndexData {
 struct k3fbxLimbNodeIndexData {
     uint32_t parent;
     uint32_t cluster_index;
+    uint32_t bind_pose_index;
 };
 
 union k3fbxModelIndex {
@@ -1109,6 +1164,11 @@ struct k3fbxAnimCurve {
     uint32_t data_start;
 };
 
+struct k3fbxPoseNode {
+    uint64_t model_id;
+    float xform[16];
+};
+
 struct k3fbxData {
     uint32_t num_meshes;
     uint32_t num_models;
@@ -1141,7 +1201,9 @@ struct k3fbxData {
     uint32_t num_anim_curves;
     uint32_t num_anim_curve_time_elements;
     uint32_t num_anim_curve_data_elements;
+    uint32_t num_bind_pose_nodes;
     k3fbxDeformer deformer_type;
+    k3fbxPoseType pose_type;
     k3fbxReference last_normal_reference;
     k3fbxReference last_tangent_reference;
     k3fbxReference last_uv_reference;
@@ -1163,6 +1225,7 @@ struct k3fbxData {
     k3fbxAnimLayer* anim_layer;
     k3fbxAnimCurveNode* anim_curve_node;
     k3fbxAnimCurve* anim_curve;
+    k3fbxPoseNode* bind_pose_node;
     void* vertices;
     void* normals;
     void* tangents;
@@ -1190,6 +1253,18 @@ static const uint64_t CONNECT_TYPE_NORMAL_MAP = 2;
 static const uint64_t CONNECT_TYPE_X_AXIS = 0x100;
 static const uint64_t CONNECT_TYPE_Y_AXIS = 0x101;
 static const uint64_t CONNECT_TYPE_Z_AXIS = 0x102;
+
+void doubleToFloatArray(void* arr, uint32_t size)
+{
+    double* d = (double*)arr;
+    float* f = (float*)arr;
+    uint32_t i;
+    for (i = 0; i < size; i++) {
+        *f = (float)*d;
+        f++;
+        d++;
+    }
+}
 
 uint32_t findFbxLightNode(k3fbxData* fbx, uint64_t id)
 {
@@ -1468,6 +1543,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_cluster_weights = 0;
         fbx->num_cluster_weight_bytes = 0;
         fbx->deformer_type = k3fbxDeformer::None;
+        fbx->pose_type = k3fbxPoseType::None;
         if (fbx->anim_layer) {
             uint32_t i;
             for (i = 0; i < fbx->num_anim_layers; i++) {
@@ -1479,6 +1555,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_anim_curves = 0;
         fbx->num_anim_curve_time_elements = 0;
         fbx->num_anim_curve_data_elements = 0;
+        fbx->num_bind_pose_nodes = 0;
         if(K3_FBX_DEBUG) printf("----------starting fbx parse ---------------\n");
     }
 
@@ -1500,6 +1577,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint64_t node_attrib_id;
     uint32_t str_file_pos;
     bool first_uv = true;
+    double mat_d[16];
 
     while (1) {
         fread(&node, K3_FBX_NODE_RECORD_LENGTH, 1, in_file);
@@ -1549,6 +1627,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             else if (!strncmp(str, "TransformLink", 14)) node_type = k3fbxNodeType::TRANSFORM_LINK;
             else if (!strncmp(str, "TransformAssociateModel", 24)) node_type = k3fbxNodeType::TRANSFORM_ASSOCIATE_MODEL;
             else if (!strncmp(str, "Pose", 5)) node_type = k3fbxNodeType::POSE;
+            else if (!strncmp(str, "NbPoseNodes", 12)) node_type = k3fbxNodeType::NB_POSE_NODES;
+            else if (!strncmp(str, "PoseNode", 9)) node_type = k3fbxNodeType::POSE_NODE;
+            else if (!strncmp(str, "Node", 5)) node_type = k3fbxNodeType::NODE;
+            else if (!strncmp(str, "Matrix", 7)) node_type = k3fbxNodeType::MATRIX;
             else if (!strncmp(str, "AnimationStack", 15)) node_type = k3fbxNodeType::ANIMATION_STACK;
             else if (!strncmp(str, "AnimationLayer", 15)) node_type = k3fbxNodeType::ANIMATION_LAYER;
             else if (!strncmp(str, "AnimationCurveNode", 19)) node_type = k3fbxNodeType::ANIMATION_CURVE_NODE;
@@ -1695,6 +1777,23 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->anim_curve[fbx->num_anim_curves].data_start = ~0x0;
             }
             fbx->num_anim_curves++;
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::POSE) {
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::POSE_NODE && parent_node == k3fbxNodeType::POSE && fbx->pose_type == k3fbxPoseType::BindPose) {
+            if (fbx->bind_pose_node) {
+                fbx->bind_pose_node[fbx->num_bind_pose_nodes].model_id = 0;
+                k3m4_SetIdentity(fbx->bind_pose_node[fbx->num_bind_pose_nodes].xform);
+            }
+            fbx->num_bind_pose_nodes++;
+            fbx_node_argument = 0;
+        }
+
+        if (node_type == k3fbxNodeType::NODE) {
             fbx_node_argument = 0;
         }
 
@@ -2039,6 +2138,16 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         fbx_node_argument++;
                     }
                     break;
+                case k3fbxNodeType::POSE:
+                    if (fbx_node_argument == 0) {
+                        fbx_node_argument++;
+                    }
+                    break;
+                case k3fbxNodeType::NODE:
+                    if (fbx_node_argument == 0 && parent_node == k3fbxNodeType::POSE_NODE && fbx->pose_type == k3fbxPoseType::BindPose) {
+                        if (fbx->bind_pose_node) fbx->bind_pose_node[fbx->num_bind_pose_nodes - 1].model_id = *i64_arr;
+                        fbx_node_argument++;
+                    }
                 }
                 break;
             case K3_FBX_TYPECODE_FLOAT_ARRAY:
@@ -2160,6 +2269,20 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         fbx->num_anim_curve_data_elements += arr_prop.array_length;
                     }
                     break;
+                case k3fbxNodeType::MATRIX:
+                    if (parent_node == k3fbxNodeType::POSE_NODE && fbx->pose_type == k3fbxPoseType::BindPose) {
+                        if (fbx->bind_pose_node) {
+                            if (typecode == 'd') {
+                                data_arr = mat_d;
+                            } else {
+                                data_arr = fbx->bind_pose_node[fbx->num_bind_pose_nodes - 1].xform;
+                            }
+                        }
+                        if (arr_prop.array_length > 16) {
+                            k3error::Handler("Matrix length too long", "readFbxNode");
+                        }
+                    }
+                    break;
                 }
                 if (data_arr == NULL) {
                     fseek(in_file, bytes_remaining, SEEK_CUR);
@@ -2183,6 +2306,14 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     //fseek(in_file, end_comp_block, SEEK_SET);
                 } else {
                     fread(data_arr, 1, bytes_remaining, in_file);
+                }
+                // if a matrix is a double, convert to float, and copy it to the destination
+                if (node_type == k3fbxNodeType::MATRIX &&
+                    parent_node == k3fbxNodeType::POSE_NODE &&
+                    fbx->pose_type == k3fbxPoseType::BindPose &&
+                    fbx->bind_pose_node && typecode == 'd') {
+                    doubleToFloatArray(mat_d, arr_prop.array_length);
+                    memcpy(fbx->bind_pose_node[fbx->num_bind_pose_nodes - 1].xform, mat_d, 16 * sizeof(float));
                 }
                 break;
             case K3_FBX_TYPECODE_STRING:
@@ -2361,6 +2492,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                                 fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::LIMB_NODE;
                                 fbx->model[fbx->num_models - 1].index.limb_node.parent = ~0x0;  // initialize parent to all 1's, indicating the root
                                 fbx->model[fbx->num_models - 1].index.limb_node.cluster_index = ~0x0;
+                                fbx->model[fbx->num_models - 1].index.limb_node.bind_pose_index = ~0x0;
                             }
                         } else {
                             if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::NONE;
@@ -2376,7 +2508,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             }
                             fbx->num_clusters++;
                             fbx->deformer_type = k3fbxDeformer::Cluster;
-                        } else if(!strncmp(str, "Skin", 5)) {
+                        } else if (!strncmp(str, "Skin", 5)) {
                             if (fbx->skin) {
                                 fbx->skin[fbx->num_skins].id = node_attrib_id;
                                 fbx->skin[fbx->num_skins].mesh_index = ~0;
@@ -2385,6 +2517,14 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx->deformer_type = k3fbxDeformer::Skin;
                         } else {
                             fbx->deformer_type = k3fbxDeformer::None;
+                        }
+                    }
+                } else if (node_type == k3fbxNodeType::POSE) {
+                    if (fbx_node_argument == 2) {
+                        if (!strncmp(str, "BindPose", 9)) {
+                            fbx->pose_type = k3fbxPoseType::BindPose;
+                        } else {
+                            fbx->pose_type = k3fbxPoseType::None;
                         }
                     }
                 } else if (node_type == k3fbxNodeType::ANIMATION_LAYER) {
@@ -2416,17 +2556,16 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             fseek(in_file, node.end_offset, SEEK_SET);
         }
     }
-}
-
-void doubleToFloatArray(void* arr, uint32_t size)
-{
-    double* d = (double*)arr;
-    float* f = (float*)arr;
-    uint32_t i;
-    for (i = 0; i < size; i++) {
-        *f = (float)*d;
-        f++;
-        d++;
+    if (parent_node == k3fbxNodeType::UNKNOWN) {
+        uint32_t model_index;
+        if (fbx->bind_pose_node) {
+            for (i = 0; i < fbx->num_bind_pose_nodes; i++) {
+                model_index = findFbxModelNode(fbx, fbx->bind_pose_node[i].model_id);
+                if (fbx->model[model_index].obj_type == k3fbxObjType::LIMB_NODE) {
+                    fbx->model[model_index].index.limb_node.bind_pose_index = i;
+                }
+            }
+        }
     }
 }
 
@@ -2485,6 +2624,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_anim_curve_time_elements) fbx.anim_curve_time = new uint64_t[fbx.num_anim_curve_time_elements];
     if (fbx.num_anim_curve_data_elements) fbx.anim_curve_data = new float[fbx.num_anim_curve_data_elements];
     if (fbx.num_tangent_bytes) fbx.tangents = new char[fbx.num_tangent_bytes];
+    if (fbx.num_bind_pose_nodes) fbx.bind_pose_node = new k3fbxPoseNode[fbx.num_bind_pose_nodes];
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
@@ -2799,21 +2939,35 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             // Find the bone model index
             uint32_t bone_model_index = fbx.cluster[bone_id].bone_index;
             uint32_t parent_bone_index = fbx.model[bone_model_index].index.limb_node.parent;
+            uint32_t bind_pose_index = fbx.model[bone_model_index].index.limb_node.bind_pose_index;
             mesh_impl->_bones[bone_id].position[0] = fbx.model[bone_model_index].translation[0];
             mesh_impl->_bones[bone_id].position[1] = fbx.model[bone_model_index].translation[1];
             mesh_impl->_bones[bone_id].position[2] = fbx.model[bone_model_index].translation[2];
             mesh_impl->_bones[bone_id].scaling[0] = fbx.model[bone_model_index].scaling[0];
             mesh_impl->_bones[bone_id].scaling[1] = fbx.model[bone_model_index].scaling[1];
             mesh_impl->_bones[bone_id].scaling[2] = fbx.model[bone_model_index].scaling[2];
+            if (bind_pose_index < fbx.num_bind_pose_nodes) {
+                memcpy(mesh_impl->_bones[bone_id].inv_bind_pose, fbx.bind_pose_node[bind_pose_index].xform, 16*sizeof(float));
+                // TODO: Shold copy and transpose in one step
+                k3m4_Transpose(mesh_impl->_bones[bone_id].inv_bind_pose);
+                k3m4_Inverse(mesh_impl->_bones[bone_id].inv_bind_pose);
+            } else {
+                // No bind pose found, so assume identity
+                k3m4_SetIdentity(mesh_impl->_bones[bone_id].inv_bind_pose);
+            }
             if (parent_bone_index < fbx.num_models) {
                 uint32_t parent_bone_id = fbx.model[parent_bone_index].index.limb_node.cluster_index;
                 mesh_impl->_bones[bone_id].parent = parent_bone_id;
                 if (mesh_impl->_bones[bone_id].parent > bone_id) {
                     k3error::Handler("Parent bone after child", "k3gfxObj::CreateMesh");
                 } else {
-                    mesh_impl->_bones[bone_id].position[0] += mesh_impl->_bones[parent_bone_id].position[0];
-                    mesh_impl->_bones[bone_id].position[1] += mesh_impl->_bones[parent_bone_id].position[1];
-                    mesh_impl->_bones[bone_id].position[2] += mesh_impl->_bones[parent_bone_id].position[2];
+                    //uint32_t parent_pose = fbx.model[parent_bone_index].index.limb_node.bind_pose_index;
+                    //if (parent_pose < fbx.num_bind_pose_nodes) {
+                    //    k3m4_Mul(mesh_impl->_bones[bone_id].inv_bind_pose, mesh_impl->_bones[bone_id].inv_bind_pose, fbx.bind_pose_node[parent_pose].xform);
+                    //}
+                    //mesh_impl->_bones[bone_id].position[0] += mesh_impl->_bones[parent_bone_id].position[0];
+                    //mesh_impl->_bones[bone_id].position[1] += mesh_impl->_bones[parent_bone_id].position[1];
+                    //mesh_impl->_bones[bone_id].position[2] += mesh_impl->_bones[parent_bone_id].position[2];
                 }
                 float rot_mat[16];
                 k3m4_SetRotation(rot_mat, -deg2rad(fbx.model[bone_model_index].rotation[0]), x_axis);
@@ -3276,6 +3430,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.anim_curve_time) delete[] fbx.anim_curve_time;
     if (fbx.anim_curve_data) delete[] fbx.anim_curve_data;
     if (fbx.tangents) delete[] fbx.tangents;
+    if (fbx.bind_pose_node) delete[] fbx.bind_pose_node;
     delete[] fbx.indices;
     delete[] fbx.normals;
     delete[] fbx.uvs;
