@@ -882,14 +882,15 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
     uint32_t num_frame_intervals = _data->_anim[anim_index].num_keyframes - 1;
     uint32_t delta_msec = _data->_anim[anim_index].keyframe_delta_msec;
     uint32_t total_anim_time_msec = num_frame_intervals * delta_msec;
-    uint32_t norm_time_msec = time_msec % total_anim_time_msec;
-    uint32_t anim_frame = norm_time_msec / delta_msec;
-    float anim_frame_frac = (norm_time_msec % delta_msec) / (float)delta_msec;
+    uint32_t norm_time_msec = (num_frame_intervals) ? time_msec % total_anim_time_msec : 0;
+    uint32_t anim_frame = (num_frame_intervals) ? norm_time_msec / delta_msec : 0;
+    float anim_frame_frac = (num_frame_intervals) ? ((norm_time_msec % delta_msec) / (float)delta_msec) : 0.0f;
     uint32_t bone_id;
     float* dest_pos_ptr;
     float* dest_scale_ptr;
     float* dest_quat_ptr;
-    uint32_t src0_index, src1_index;
+    uint32_t src0_index = anim_frame * _data->_num_bones;
+    uint32_t src1_index = src0_index + ((num_frame_intervals) ? _data->_num_bones : 0);
     float temp_vec[4];
     const k3boneData* bone_data = _data->_anim[anim_index].bone_data;
 
@@ -897,8 +898,6 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
         dest_pos_ptr = _data->_bones[bone_id].position;
         dest_scale_ptr = _data->_bones[bone_id].scaling;
         dest_quat_ptr = _data->_bones[bone_id].rot_quat;
-        src0_index = anim_frame * _data->_num_bones + bone_id;
-        src1_index = src0_index + _data->_num_bones;
 
         k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
         k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
@@ -912,6 +911,9 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
         k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
         k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
         k3v4_Normalize(dest_quat_ptr);
+
+        src0_index++;
+        src1_index++;
     }
 }
 
