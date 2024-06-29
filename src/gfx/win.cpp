@@ -781,7 +781,7 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
         xlat_mat[5] = _data->_bones[bone_id].scaling[1];
         xlat_mat[10] = _data->_bones[bone_id].scaling[2];
         k3m4_Mul(cur_mat, rot_xlat_mat, xlat_mat);
-        //k3m4_Mul(cur_mat, cur_mat, _data->_bones[bone_id].inv_bind_pose);
+
         parent_bone_id = _data->_bones[bone_id].parent;
         if (parent_bone_id < _data->_num_bones) {
             parent_mat = mat + mat_stride * parent_bone_id;
@@ -796,62 +796,8 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
                 memcpy(cur_mat + 16, rot_xlat_mat, 16 * sizeof(float));
             }
 
-
-            //k3m4_Mul(cur_mat + 16, rot_xlat_mat, _data->_bones[bone_id].inv_bind_pose);
-            //k3m4_Inverse(cur_mat + 16);
-            //if (parent_bone_id < _data->_num_bones) {
-            //    parent_mat = mat + mat_stride * parent_bone_id + 16;
-            //    k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
-            //}
         }
  
-        //k3m4_SetIdentity(xlat_mat);
-        //xlat_mat[0] = _data->_bones[bone_id].scaling[0];
-        //xlat_mat[5] = _data->_bones[bone_id].scaling[1];
-        //xlat_mat[10] = _data->_bones[bone_id].scaling[2];
-        //
-        //xlat_mat[3] = -xlat_mat[0] * (_data->_bones[bone_id].position[0]);
-        //xlat_mat[7] = -xlat_mat[5] * (_data->_bones[bone_id].position[1]);
-        //xlat_mat[11] = -xlat_mat[10] * (_data->_bones[bone_id].position[2]);
-        //k3m4_QuatToMat(cur_mat, _data->_bones[bone_id].rot_quat);
-        //k3m4_Mul(cur_mat, cur_mat, xlat_mat);
-        //xlat_mat[3] = -xlat_mat[3] / xlat_mat[0];
-        //xlat_mat[7] = -xlat_mat[7] / xlat_mat[5];
-        //xlat_mat[11] = -xlat_mat[11] / xlat_mat[10];
-        //xlat_mat[0] = 1.0f;
-        //xlat_mat[5] = 1.0f;
-        //xlat_mat[10] = 1.0f;
-        //k3m4_Mul(cur_mat, xlat_mat, cur_mat);
-        //parent_bone_id = _data->_bones[bone_id].parent;
-        //if (parent_bone_id < _data->_num_bones) {
-        //    parent_mat = mat + mat_stride * parent_bone_id;
-        //    k3m4_Mul(cur_mat, parent_mat, cur_mat);
-        //}
-        //if (gen_inv) {
-        //    // inverse of transform without scaling factored
-        //    float inv_quat[4] = { -_data->_bones[bone_id].rot_quat[0],
-        //                          -_data->_bones[bone_id].rot_quat[1],
-        //                          -_data->_bones[bone_id].rot_quat[2],
-        //                           _data->_bones[bone_id].rot_quat[3] };
-        //    k3m4_SetIdentity(xlat_mat);
-        //    xlat_mat[3] = (_data->_bones[bone_id].position[0]);
-        //    xlat_mat[7] = (_data->_bones[bone_id].position[1]);
-        //    xlat_mat[11] = (_data->_bones[bone_id].position[2]);
-        //    k3m4_QuatToMat(cur_mat + 16, inv_quat);
-        //    k3m4_Mul(cur_mat + 16, cur_mat + 16, xlat_mat);
-        //    xlat_mat[3] = -xlat_mat[3];
-        //    xlat_mat[7] = -xlat_mat[7];
-        //    xlat_mat[11] = -xlat_mat[11];
-        //    k3m4_Mul(cur_mat + 16, xlat_mat, cur_mat + 16);
-        //    if (parent_bone_id < _data->_num_bones) {
-        //        parent_mat = mat + mat_stride * parent_bone_id + 16;
-        //        k3m4_Mul(cur_mat + 16, cur_mat + 16, parent_mat);
-        //    }
-        //
-        //    //uint32_t i;
-        //    //for (i = 0; i < 16; i++) *(cur_mat + 16 + i) = *(cur_mat + i);
-        //    //k3m4_Inverse(cur_mat + 16);
-        //}
     }
 
     cur_mat = mat;
@@ -873,7 +819,17 @@ K3API uint32_t k3meshObj::findAnim(const char* name)
     return ~0x0;
 }
 
-K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
+K3API const char* k3meshObj::getAnimName(uint32_t a)
+{
+    if (a < _data->_num_anims) {
+        return _data->_anim[a].name;
+    }
+    k3error::Handler("Invalid animation value", "k3meshObj::getAnimName");
+    return NULL;
+}
+
+
+K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags)
 {
     if (anim_index >= _data->_num_anims) {
         k3error::Handler("Invalid animation index", "k3meshObj::setAnimation");
@@ -893,25 +849,29 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec)
     uint32_t src1_index = src0_index + ((num_frame_intervals) ? _data->_num_bones : 0);
     float temp_vec[4];
     const k3boneData* bone_data = _data->_anim[anim_index].bone_data;
+    const uint32_t* bone_flag = _data->_anim[anim_index].bone_flag;
+    bool force_anim = (flags & ANIM_FLAG_INCREMENTAL) ? false : true;
 
     for (bone_id = 0; bone_id < _data->_num_bones; bone_id++) {
         dest_pos_ptr = _data->_bones[bone_id].position;
         dest_scale_ptr = _data->_bones[bone_id].scaling;
         dest_quat_ptr = _data->_bones[bone_id].rot_quat;
 
-        k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
-        k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
-        k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
+        if ((bone_flag[bone_id] & K3_BONE_FLAG_MORPH) || force_anim) {
+            k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
+            k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
+            k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
 
-        k3sv3_Mul(dest_scale_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].scaling);
-        k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].scaling);
-        k3v3_Add(dest_scale_ptr, dest_scale_ptr, temp_vec);
+            k3sv3_Mul(dest_scale_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].scaling);
+            k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].scaling);
+            k3v3_Add(dest_scale_ptr, dest_scale_ptr, temp_vec);
 
-        k3sv4_Mul(dest_quat_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].rot_quat);
-        k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
-        k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
-        k3v4_Normalize(dest_quat_ptr);
-
+            k3sv4_Mul(dest_quat_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].rot_quat);
+            k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
+            k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
+            k3v4_Normalize(dest_quat_ptr);
+        }
+ 
         src0_index++;
         src1_index++;
     }
@@ -1001,7 +961,10 @@ enum class k3fbxProperty {
     INTENSITY,
     DECAY_TYPE,
     DECAY_START,
-    CAST_SHADOWS
+    CAST_SHADOWS,
+    D_X,
+    D_Y,
+    D_Z
 };
 
 enum class k3fbxMapping {
@@ -1157,6 +1120,7 @@ struct k3fbxAnimCurveNode {
     k3fbxAnimCurveType curve_type;
     uint32_t anim_curve[3];
     uint32_t limb_node;
+    float default_value[3];
 };
 
 struct k3fbxAnimCurve {
@@ -1766,6 +1730,9 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[1] = ~0x0;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[2] = ~0x0;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].limb_node = ~0x0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[0] = 0.0f;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[1] = 0.0f;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[2] = 0.0f;
             }
             fbx->num_anim_curve_nodes++;
             fbx_node_argument = 0;
@@ -1952,6 +1919,24 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::D_X:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[0] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::D_Y:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[1] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::D_Z:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[2] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     }
                     break;
                 }
@@ -2067,6 +2052,24 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::DECAY_START:
                         if (fbx->node_attrib_obj == k3fbxObjType::LIGHT && fbx->light_node && fbx_property_argument < 1) {
                             fbx->light_node[fbx->num_light_nodes - 1].decay_start = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::D_X:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[0] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::D_Y:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[1] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::D_Z:
+                        if (fbx->anim_curve_node && fbx_property_argument < 1) {
+                            fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[2] = (float)*d64_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -2413,6 +2416,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::DECAY_START;
                         } else if (!strncmp(str, "CastShadows", 12)) {
                             fbx_property = k3fbxProperty::CAST_SHADOWS;
+                        } else if (!strncmp(str, "d|X", 4)) {
+                            fbx_property = k3fbxProperty::D_X;
+                        } else if (!strncmp(str, "d|Y", 4)) {
+                            fbx_property = k3fbxProperty::D_Y;
+                        } else if (!strncmp(str, "d|Z", 4)) {
+                            fbx_property = k3fbxProperty::D_Z;
                         } else if (K3_FBX_DEBUG) {
                             printf("%s\n", str);
                         }
@@ -2962,29 +2971,17 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 mesh_impl->_bones[bone_id].parent = parent_bone_id;
                 if (mesh_impl->_bones[bone_id].parent > bone_id) {
                     k3error::Handler("Parent bone after child", "k3gfxObj::CreateMesh");
-                } else {
-                    //uint32_t parent_pose = fbx.model[parent_bone_index].index.limb_node.bind_pose_index;
-                    //if (parent_pose < fbx.num_bind_pose_nodes) {
-                    //    k3m4_Mul(mesh_impl->_bones[bone_id].inv_bind_pose, mesh_impl->_bones[bone_id].inv_bind_pose, fbx.bind_pose_node[parent_pose].xform);
-                    //}
-                    //mesh_impl->_bones[bone_id].position[0] += mesh_impl->_bones[parent_bone_id].position[0];
-                    //mesh_impl->_bones[bone_id].position[1] += mesh_impl->_bones[parent_bone_id].position[1];
-                    //mesh_impl->_bones[bone_id].position[2] += mesh_impl->_bones[parent_bone_id].position[2];
                 }
-                float rot_mat[16];
-                k3m4_SetRotation(rot_mat, -deg2rad(fbx.model[bone_model_index].rotation[0]), x_axis);
-                k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[1]), y_axis);
-                k3m4_Mul(rot_mat, mat, rot_mat);
-                k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[2]), z_axis);
-                k3m4_Mul(rot_mat, mat, rot_mat);
-                k3m4_MatToQuat(mesh_impl->_bones[bone_id].rot_quat, rot_mat);
             } else {
                 mesh_impl->_bones[bone_id].parent = ~0x0;
-                mesh_impl->_bones[bone_id].rot_quat[0] = 0.0f;
-                mesh_impl->_bones[bone_id].rot_quat[1] = 0.0f;
-                mesh_impl->_bones[bone_id].rot_quat[2] = 0.0f;
-                mesh_impl->_bones[bone_id].rot_quat[3] = 1.0f;
             }
+            float rot_mat[16];
+            k3m4_SetRotation(rot_mat, -deg2rad(fbx.model[bone_model_index].rotation[0]), x_axis);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[1]), y_axis);
+            k3m4_Mul(rot_mat, mat, rot_mat);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[2]), z_axis);
+            k3m4_Mul(rot_mat, mat, rot_mat);
+            k3m4_MatToQuat(mesh_impl->_bones[bone_id].rot_quat, rot_mat);
         }
         // Normalize skin weights
         uint32_t v_id;
@@ -2999,7 +2996,11 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uint32_t anim_id, curve_node_index, curve_node_id, curve_id, axis;
             uint32_t k, cur_time, cur_curve_index, dest_index, dest_stride;
             uint64_t* curve_time_ptr;
+            //uint32_t curve_time;
+            //uint32_t last_curve_time;
             float* dest;
+            float* default_value;
+            //float cur_value, interp, next_value;
             for (anim_id = 0; anim_id < mesh_impl->_num_anims; anim_id++) {
                 mesh_impl->_anim[anim_id].num_keyframes = 0;
                 mesh_impl->_anim[anim_id].keyframe_delta_msec = 0;
@@ -3007,7 +3008,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                     curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
                     for (axis = 0; axis < 3; axis++) {
                         curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
-                        if (fbx.anim_curve[curve_id].num_key_frames >= mesh_impl->_anim[anim_id].num_keyframes) {
+                        if (curve_id < fbx.num_anim_curves && fbx.anim_curve[curve_id].num_key_frames > mesh_impl->_anim[anim_id].num_keyframes) {
                             mesh_impl->_anim[anim_id].num_keyframes = fbx.anim_curve[curve_id].num_key_frames;
                             uint64_t* end_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start + fbx.anim_curve[curve_id].num_key_frames - 1;
                             mesh_impl->_anim[anim_id].keyframe_delta_msec = (uint32_t)(*end_time_ptr / K3_FBX_TICKS_PER_MSEC);
@@ -3018,29 +3019,81 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
                 strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[anim_id].name, K3_FBX_MAX_ANIM_NAME_LENGTH);
                 mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones];
+                mesh_impl->_anim[anim_id].bone_flag = new uint32_t[mesh_impl->_num_bones];
+                memset(mesh_impl->_anim[anim_id].bone_data, 0, mesh_impl->_anim[anim_id].num_keyframes* mesh_impl->_num_bones * sizeof(k3boneData));
+                memset(mesh_impl->_anim[anim_id].bone_flag, 0, mesh_impl->_num_bones * sizeof(uint32_t));
+                for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
+                    for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
+                        for (axis = 0; axis < 3; axis++) {
+                            // initialize scale to 1.0
+                            mesh_impl->_anim[anim_id].bone_data[k * mesh_impl->_num_bones + bone_id].scaling[axis] = 1.0f;
+                        }
+                    }
+                }
                 dest_stride = (sizeof(k3boneData) / sizeof(float)) * mesh_impl->_num_bones;
                 for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
                     curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
                     dest_index = fbx.anim_curve_node[curve_node_id].limb_node;
                     if ((fbx.anim_curve_node[curve_node_id].curve_type != k3fbxAnimCurveType::None) && (dest_index < fbx.num_models)) {
                         dest_index = fbx.model[dest_index].index.limb_node.cluster_index;
+                        default_value = fbx.anim_curve_node[curve_node_id].default_value;
                         switch (fbx.anim_curve_node[curve_node_id].curve_type) {
-                        case k3fbxAnimCurveType::Translation: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].position; break;
-                        case k3fbxAnimCurveType::Scaling: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].scaling; break;
-                        case k3fbxAnimCurveType::Rotation: dest = mesh_impl->_anim[anim_id].bone_data[dest_index].rot_quat; break;
+                        case k3fbxAnimCurveType::Translation:
+                            dest = mesh_impl->_anim[anim_id].bone_data[dest_index].position;
+                            break;
+                        case k3fbxAnimCurveType::Scaling:
+                            dest = mesh_impl->_anim[anim_id].bone_data[dest_index].scaling;
+                            break;
+                        case k3fbxAnimCurveType::Rotation:
+                            dest = mesh_impl->_anim[anim_id].bone_data[dest_index].rot_quat;
+                            break;
                         }
                         for (axis = 0; axis < 3; axis++) {
                             curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
-                            cur_time = 0;
-                            cur_curve_index = 0;
-                            curve_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start;
-                            for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
-                                *(dest + dest_stride * k) = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start + cur_curve_index];
-                                if (cur_curve_index < fbx.anim_curve[curve_id].num_key_frames - 1) {
-                                    // TODO: check if an increment is needed
-                                    cur_curve_index++;
+                            if (curve_id < fbx.num_anim_curves) {
+                                cur_time = 0;
+                                cur_curve_index = 0;
+                                curve_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start;
+
+                                //cur_value = (fbx.anim_curve_node[curve_node_id].curve_type == k3fbxAnimCurveType::Scaling) ? 1.0f : 0.0f;
+                                //next_value = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start];
+                                //curve_time = (uint32_t)(*curve_time_ptr / K3_FBX_TICKS_PER_MSEC);
+                                //last_curve_time = 0;
+                                //for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
+                                //    if (cur_time >= curve_time) {
+                                //        cur_value = next_value;
+                                //        cur_curve_index++;
+                                //        curve_time_ptr++;
+                                //        cur_time -= curve_time;
+                                //        last_curve_time = (uint32_t)(*(curve_time_ptr - 1) / K3_FBX_TICKS_PER_MSEC);
+                                //        if (cur_curve_index < fbx.anim_curve[curve_id].num_key_frames) {
+                                //            curve_time = (uint32_t)(*curve_time_ptr / K3_FBX_TICKS_PER_MSEC) - last_curve_time;
+                                //            next_value = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start + cur_curve_index];
+                                //        } else {
+                                //            curve_time = mesh_impl->_anim[anim_id].keyframe_delta_msec * mesh_impl->_anim[anim_id].num_keyframes - last_curve_time;
+                                //            next_value = (fbx.anim_curve_node[curve_node_id].curve_type == k3fbxAnimCurveType::Scaling) ? 1.0f : 0.0f;
+                                //        }
+                                //    }
+                                //    interp = cur_time / (float)curve_time;
+                                //    *(dest + dest_stride * k) = (1.0f - interp) * cur_value + interp * next_value;
+                                //
+                                //    cur_time += mesh_impl->_anim[anim_id].keyframe_delta_msec;
+                                //}
+
+                                for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
+                                    *(dest + dest_stride * k) = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start + cur_curve_index];
+
+                                    if ( fabsf(*(dest + dest_stride * k) - default_value[axis]) >= 0.001f) {
+                                        // if the curve has some non-zero motion, then set the bone to be morphed
+                                        mesh_impl->_anim[anim_id].bone_flag[dest_index] |= K3_BONE_FLAG_MORPH;
+                                    }
+
+                                    if (cur_curve_index < fbx.anim_curve[curve_id].num_key_frames - 1) {
+                                        // TODO: check if an increment is needed
+                                        cur_curve_index++;
+                                    }
+                                    cur_time += mesh_impl->_anim[anim_id].keyframe_delta_msec;
                                 }
-                                cur_time += mesh_impl->_anim[anim_id].keyframe_delta_msec;
                             }
                             dest++;
                         }

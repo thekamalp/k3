@@ -121,11 +121,15 @@ struct k3boneData {
     float position[3];  // bone location
 };
 
+static const uint32_t K3_BONE_FLAG_NONE = 0x0;
+static const uint32_t K3_BONE_FLAG_MORPH = 0x1;
+
 struct k3anim {
     char name[K3_FBX_MAX_ANIM_NAME_LENGTH];
     uint32_t num_keyframes;
     uint32_t keyframe_delta_msec;
     k3boneData* bone_data;  // array of num_bones * num_keyframes
+    uint32_t* bone_flag;  // per bone attributes
 };
 
 class k3meshImpl

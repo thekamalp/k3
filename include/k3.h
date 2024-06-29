@@ -1677,6 +1677,9 @@ private:
     k3meshImpl * _data;
 
 public:
+    static const uint32_t ANIM_FLAG_NONE = 0x0;
+    static const uint32_t ANIM_FLAG_INCREMENTAL = 0x1;
+
     k3meshObj();
     virtual ~k3meshObj();
     k3meshImpl* getImpl();
@@ -1717,7 +1720,8 @@ public:
     K3API void setCameraFarPlane(uint32_t camera, float far);
     K3API void genBoneMatrices(float* mat, bool gen_inv);
     K3API uint32_t findAnim(const char* name);
-    K3API void setAnimation(uint32_t anim_index, uint32_t time_msec);
+    K3API const char* getAnimName(uint32_t a);
+    K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();

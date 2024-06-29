@@ -335,7 +335,7 @@ void App::UpdateResources(uint32_t v)
     uint32_t num_bones = scene->getNumBones();
     if (num_bones) {
         uint32_t t = timer->GetTime();
-        scene->setAnimation(anim, t);
+        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_INCREMENTAL);
 
         float* bone_data = (float*)cb_bone_upload[v]->MapForWrite(num_bones * 32 * sizeof(float));
         scene->genBoneMatrices(bone_data, true);
@@ -387,6 +387,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             break;
         case k3key::SPACE:
             anim = !anim;
+            printf("Anim: %s\n", scene->getAnimName(anim));
             break;
         }
     }
