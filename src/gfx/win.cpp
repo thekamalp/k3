@@ -2580,6 +2580,30 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     }
 }
 
+void insertFbxBoneToSortedList(uint32_t bone_id, k3fbxData* fbx, uint32_t* sorted_bone_id)
+{
+    if (bone_id >= fbx->num_clusters) return;
+    if (sorted_bone_id[bone_id] != ~0x0) return;
+    uint32_t bone_model_index = fbx->cluster[bone_id].bone_index;
+    uint32_t parent_bone_index = fbx->model[bone_model_index].index.limb_node.parent;
+    if (parent_bone_index < fbx->num_models) {
+        uint32_t parent_bone_id = fbx->model[parent_bone_index].index.limb_node.cluster_index;
+        // Make sure parent has been sorted
+        insertFbxBoneToSortedList(parent_bone_id, fbx, sorted_bone_id);
+        // insert child just after parent
+        sorted_bone_id[bone_id] = sorted_bone_id[parent_bone_id] + 1;
+    } else {
+        // if there is no parent, insert to first location
+        sorted_bone_id[bone_id] = 0;
+    }
+    uint32_t b;
+    for (b = 0; b < fbx->num_clusters; b++) {
+        if (sorted_bone_id[b] != ~0x0 && sorted_bone_id[b] >= sorted_bone_id[bone_id] && b != bone_id) {
+            sorted_bone_id[b]++;
+        }
+    }
+}
+
 K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 {
     FILE* in_file;
@@ -2908,23 +2932,37 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
 
     if (use_skin) {
-        uint32_t bone_id;
+        uint32_t b, bone_id;
         mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
-        // Loop through all the bones
+
+        // Remap bone ids so that parents are always before child
+        uint32_t* sorted_bone_id = new uint32_t[mesh_impl->_num_bones];
+        // first initialize sorted list to ~0x0, which is the null value
         for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
+            sorted_bone_id[bone_id] = ~0x0;
+        }
+        // Then insert each bone, into the the sorted list, taking care that parents are before the children
+        for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
+            insertFbxBoneToSortedList(bone_id, &fbx, sorted_bone_id);
+        }
+
+        // Loop through all the bones
+        for (b = 0; b < mesh_impl->_num_bones; b++) {
+            bone_id = sorted_bone_id[b];
+
             // Find the skin it belongs to
-            uint32_t skin_id = fbx.cluster[bone_id].skin_index;
+            uint32_t skin_id = fbx.cluster[b].skin_index;
             if (skin_id < fbx.num_skins) {
                 // then find the corresponding mesh
-                uint32_t w_start = fbx.cluster[bone_id].weight_start;
-                uint32_t i_start = fbx.cluster[bone_id].index_start;
+                uint32_t w_start = fbx.cluster[b].weight_start;
+                uint32_t i_start = fbx.cluster[b].index_start;
                 float* weights = (float*)((char*)fbx.cluster_weights + w_start);
                 uint32_t* cl_indexes = fbx.cluster_indexes + i_start;
-                uint32_t num_cl_indexes = (bone_id == mesh_impl->_num_bones - 1) ? fbx.num_cluster_indexes : fbx.cluster[bone_id + 1].index_start;
+                uint32_t num_cl_indexes = (b == mesh_impl->_num_bones - 1) ? fbx.num_cluster_indexes : fbx.cluster[b + 1].index_start;
                 num_cl_indexes -= i_start;
-                if (fbx.cluster[bone_id].weight_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) {
+                if (fbx.cluster[b].weight_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) {
                     doubleToFloatArray(weights, num_cl_indexes);
-                    fbx.cluster[bone_id].weight_type = K3_FBX_TYPECODE_FLOAT_ARRAY;
+                    fbx.cluster[b].weight_type = K3_FBX_TYPECODE_FLOAT_ARRAY;
                 }
                 uint32_t mesh_id = fbx.skin[skin_id].mesh_index;
                 if (mesh_id < fbx.num_meshes) {
@@ -2948,7 +2986,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 }
             }
             // Find the bone model index
-            uint32_t bone_model_index = fbx.cluster[bone_id].bone_index;
+            uint32_t bone_model_index = fbx.cluster[b].bone_index;
             uint32_t parent_bone_index = fbx.model[bone_model_index].index.limb_node.parent;
             uint32_t bind_pose_index = fbx.model[bone_model_index].index.limb_node.bind_pose_index;
             mesh_impl->_bones[bone_id].position[0] = fbx.model[bone_model_index].translation[0];
@@ -2968,7 +3006,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             }
             if (parent_bone_index < fbx.num_models) {
                 uint32_t parent_bone_id = fbx.model[parent_bone_index].index.limb_node.cluster_index;
-                mesh_impl->_bones[bone_id].parent = parent_bone_id;
+                uint32_t sorted_parent_bone_id = sorted_bone_id[parent_bone_id];
+                mesh_impl->_bones[bone_id].parent = sorted_parent_bone_id;
                 if (mesh_impl->_bones[bone_id].parent > bone_id) {
                     k3error::Handler("Parent bone after child", "k3gfxObj::CreateMesh");
                 }
@@ -3036,6 +3075,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                     dest_index = fbx.anim_curve_node[curve_node_id].limb_node;
                     if ((fbx.anim_curve_node[curve_node_id].curve_type != k3fbxAnimCurveType::None) && (dest_index < fbx.num_models)) {
                         dest_index = fbx.model[dest_index].index.limb_node.cluster_index;
+                        dest_index = sorted_bone_id[dest_index];
                         default_value = fbx.anim_curve_node[curve_node_id].default_value;
                         switch (fbx.anim_curve_node[curve_node_id].curve_type) {
                         case k3fbxAnimCurveType::Translation:
@@ -3109,6 +3149,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 }
             }
         }
+
+        delete[] sorted_bone_id;
     }
 
     float* fbx_verts = (float*)fbx.vertices;
