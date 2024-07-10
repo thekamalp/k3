@@ -1724,6 +1724,7 @@ public:
     K3API void genBoneMatrices(float* mat, bool gen_inv);
     K3API uint32_t findAnim(const char* name);
     K3API const char* getAnimName(uint32_t a);
+    K3API uint32_t getAnimLength(uint32_t a);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
 
     K3API k3buffer getIndexBuffer();

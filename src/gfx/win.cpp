@@ -828,6 +828,18 @@ K3API const char* k3meshObj::getAnimName(uint32_t a)
     return NULL;
 }
 
+K3API uint32_t k3meshObj::getAnimLength(uint32_t a)
+{
+    if (a < _data->_num_anims) {
+        uint32_t num_frame_intervals = _data->_anim[a].num_keyframes - 1;
+        uint32_t delta_msec = _data->_anim[a].keyframe_delta_msec;
+        uint32_t total_anim_time_msec = num_frame_intervals * delta_msec;
+        return total_anim_time_msec;
+    }
+    k3error::Handler("Invalid animation value", "k3meshObj::getAnimLength");
+    return 0;
+}
+
 
 K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags)
 {
