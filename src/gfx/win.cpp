@@ -848,16 +848,18 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
     uint32_t src0_index = anim_frame * _data->_num_bones;
     uint32_t src1_index = src0_index + ((num_frame_intervals) ? _data->_num_bones : 0);
     float temp_vec[4];
+    float temp_vec2[4];
     const k3boneData* bone_data = _data->_anim[anim_index].bone_data;
     const uint32_t* bone_flag = _data->_anim[anim_index].bone_flag;
     bool force_anim = (flags & ANIM_FLAG_INCREMENTAL) ? false : true;
+    bool overwrite_morphed = (~flags & ANIM_FLAG_MORPHED) ? false : true;
 
     for (bone_id = 0; bone_id < _data->_num_bones; bone_id++) {
         dest_pos_ptr = _data->_bones[bone_id].position;
         dest_scale_ptr = _data->_bones[bone_id].scaling;
         dest_quat_ptr = _data->_bones[bone_id].rot_quat;
 
-        if ((bone_flag[bone_id] & K3_BONE_FLAG_MORPH) || force_anim) {
+        if (force_anim || ((bone_flag[bone_id] & K3_BONE_FLAG_MORPH) && overwrite_morphed)) {
             k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
             k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
             k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
@@ -869,6 +871,27 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
             k3sv4_Mul(dest_quat_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].rot_quat);
             k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
             k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
+            k3v4_Normalize(dest_quat_ptr);
+        } else if (bone_flag[bone_id] & K3_BONE_FLAG_MORPH) {
+            //k3sv3_Mul(temp_vec2, 1.0f - anim_frame_frac, bone_data[src0_index].position);
+            //k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
+            //k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
+            //k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec2);
+
+            k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
+            k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
+            k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
+
+            k3sv3_Mul(temp_vec2, 1.0f - anim_frame_frac, bone_data[src0_index].scaling);
+            k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].scaling);
+            k3v3_Add(temp_vec, temp_vec2, temp_vec);
+            k3v3_Mul(dest_scale_ptr, dest_scale_ptr, temp_vec);
+
+            k3sv4_Mul(temp_vec2, 1.0f - anim_frame_frac, bone_data[src0_index].rot_quat);
+            k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
+            k3v4_Add(temp_vec, temp_vec2, temp_vec);
+            k3v4_Normalize(temp_vec);
+            k3v4_QuatMul(dest_quat_ptr, dest_quat_ptr, temp_vec);
             k3v4_Normalize(dest_quat_ptr);
         }
  

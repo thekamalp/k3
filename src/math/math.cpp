@@ -927,3 +927,28 @@ K3API float* k3v3_GetQuatEuler(float* d, const float* quat)
 
     return d;
 }
+
+K3API float* k3v4_QuatConjugate(float* d)
+{
+    d[0] = -d[0];
+    d[1] = -d[1];
+    d[2] = -d[2];
+    return d;
+}
+
+K3API float* k3v4_QuatMul(float* d, const float* s1, const float* s2)
+{
+    float a[4];
+
+    a[3] = s1[3] * s2[3] - s1[0] * s2[0] - s1[1] * s2[1] - s1[2] * s2[2];
+    a[0] = s1[3] * s2[0] + s1[0] * s2[3] + s1[1] * s2[2] - s1[2] * s2[1];
+    a[1] = s1[3] * s2[1] + s1[1] * s2[3] - s1[0] * s2[2] + s1[2] * s2[0];
+    a[2] = s1[3] * s2[2] + s1[2] * s2[3] + s1[0] * s2[1] - s1[1] * s2[0];
+
+    d[0] = a[0];
+    d[1] = a[1];
+    d[2] = a[2];
+    d[3] = a[3];
+
+    return d;
+}

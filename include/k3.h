@@ -513,6 +513,8 @@ K3API float* k3v4_SetQuatRotation(float* d, float angle, const float* axis);
 K3API float k3v3_GetQuatRotation(float* axis, float* angle, const float* quat);
 K3API float* k3v4_SetQuatEuler(float* d, const float* angles);
 K3API float* k3v3_GetQuatEuler(float* d, const float* quat);
+K3API float* k3v4_QuatConjugate(float* d);
+K3API float* k3v4_QuatMul(float* d, const float* s1, const float* s2);
 
 inline float* k3m3_QuatToMat(float* d, const float* s) { return k3m_QuatToMat(3, d, s); }
 inline float* k3m4_QuatToMat(float* d, const float* s) { return k3m_QuatToMat(4, d, s); }
@@ -1677,8 +1679,9 @@ private:
     k3meshImpl * _data;
 
 public:
-    static const uint32_t ANIM_FLAG_NONE = 0x0;
-    static const uint32_t ANIM_FLAG_INCREMENTAL = 0x1;
+    static const uint32_t ANIM_FLAG_NONE = 0x0;        // animate all bones, replacing all tranformations
+    static const uint32_t ANIM_FLAG_INCREMENTAL = 0x1; // animate only morphed bones with incremental roation and scaling
+    static const uint32_t ANIM_FLAG_MORPHED = 0x3;     // animate only morphed bones, replacing all prior transformations
 
     k3meshObj();
     virtual ~k3meshObj();

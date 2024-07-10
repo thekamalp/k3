@@ -335,7 +335,7 @@ void App::UpdateResources(uint32_t v)
     uint32_t num_bones = scene->getNumBones();
     if (num_bones) {
         uint32_t t = timer->GetTime();
-        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_INCREMENTAL);
+        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
 
         float* bone_data = (float*)cb_bone_upload[v]->MapForWrite(num_bones * 32 * sizeof(float));
         scene->genBoneMatrices(bone_data, true);
