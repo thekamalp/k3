@@ -279,6 +279,12 @@ void App::Setup()
     mouse_button = 0x0;
     anim = 0;
 
+    k3AABB scene_aabb;
+    scene->getAABB(&scene_aabb, 0, ~0x0);
+    printf("Scene AABB: (%.4f, %.4f, %.4f) - (%.4f, %.4f, %.4f)\n",
+        scene_aabb.min[0], scene_aabb.min[1], scene_aabb.min[2],
+        scene_aabb.max[0], scene_aabb.max[1], scene_aabb.max[2]);
+
     gfx->WaitGpuIdle();
 
     win->SetDataPtr(this);

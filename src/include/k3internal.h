@@ -77,6 +77,7 @@ struct k3fontCBuffer {
 };
 
 struct k3meshModel {
+    char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t mesh_index;
     uint32_t prim_start;
     uint32_t num_prims;
@@ -87,6 +88,7 @@ struct k3meshModel {
 };
 
 struct k3camera {
+    char name[K3_FBX_MAX_NAME_LENGTH];
     float translation[3];
     float look_at[3];
     float up[3];
@@ -98,6 +100,7 @@ struct k3camera {
 };
 
 struct k3light {
+    char name[K3_FBX_MAX_NAME_LENGTH];
     float position[4];
     float color[3];
     float intensity;
@@ -109,6 +112,7 @@ struct k3light {
 
 struct k3bone {
     uint32_t parent;    // parent bone id, or ~0x0 if root
+    char name[K3_FBX_MAX_NAME_LENGTH];
     float rot_quat[4];  // quaternion representation of bone rotation
     float scaling[3];   // bone scaling
     float position[3];  // bone location
@@ -125,7 +129,7 @@ static const uint32_t K3_BONE_FLAG_NONE = 0x0;
 static const uint32_t K3_BONE_FLAG_MORPH = 0x1;
 
 struct k3anim {
-    char name[K3_FBX_MAX_ANIM_NAME_LENGTH];
+    char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t num_keyframes;
     uint32_t keyframe_delta_msec;
     k3boneData* bone_data;  // array of num_bones * num_keyframes
@@ -140,11 +144,13 @@ public:
     uint32_t _num_meshes;
     uint32_t _num_models;
     uint32_t _num_tris;
+    uint32_t _num_verts;
     uint32_t _num_textures;
     uint32_t _num_cameras;
     uint32_t _num_lights;
     uint32_t _num_bones;
     uint32_t _num_anims;
+    float* _geom_data;
     uint32_t* _mesh_start;
     k3meshModel* _model;
     k3surf* _textures;

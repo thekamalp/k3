@@ -1673,6 +1673,11 @@ struct k3meshDesc {
     k3uploadBuffer up_buf;
 };
 
+struct k3AABB {
+    float min[3];
+    float max[3];
+};
+
 class k3meshObj : public k3obj
 {
 private:
@@ -1722,10 +1727,15 @@ public:
     K3API void setCameraNearPlane(uint32_t camera, float near);
     K3API void setCameraFarPlane(uint32_t camera, float far);
     K3API void genBoneMatrices(float* mat, bool gen_inv);
+    K3API uint32_t findModel(const char* name);
+    K3API uint32_t findLight(const char* name);
+    K3API uint32_t findCamera(const char* name);
+    K3API uint32_t findBone(const char* name);
     K3API uint32_t findAnim(const char* name);
     K3API const char* getAnimName(uint32_t a);
     K3API uint32_t getAnimLength(uint32_t a);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
+    K3API void getAABB(k3AABB* aabb, uint32_t model, uint32_t bone);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();

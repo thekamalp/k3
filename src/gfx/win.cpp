@@ -464,6 +464,7 @@ k3meshImpl::k3meshImpl()
     _num_lights = 0;
     _num_bones = 0;
     _num_anims = 0;
+    _geom_data = NULL;
     _mesh_start = NULL;
     _model = NULL;
     _textures = NULL;
@@ -480,6 +481,10 @@ k3meshImpl::k3meshImpl()
 
 k3meshImpl::~k3meshImpl()
 {
+    if (_geom_data) {
+        delete[] _geom_data;
+        _geom_data = NULL;
+    }
     if (_mesh_start) {
         delete[] _mesh_start;
         _mesh_start = NULL;
@@ -810,11 +815,47 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
     }
 }
 
+K3API uint32_t k3meshObj::findModel(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_models; i++) {
+        if (!strncmp(name, _data->_model[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
+K3API uint32_t k3meshObj::findLight(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_lights; i++) {
+        if (!strncmp(name, _data->_lights[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
+K3API uint32_t k3meshObj::findCamera(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_cameras; i++) {
+        if (!strncmp(name, _data->_cameras[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
+K3API uint32_t k3meshObj::findBone(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_bones; i++) {
+        if (!strncmp(name, _data->_bones[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
 K3API uint32_t k3meshObj::findAnim(const char* name)
 {
     uint32_t i;
     for (i = 0; i < _data->_num_anims; i++) {
-        if (!strncmp(name, _data->_anim[i].name, K3_FBX_MAX_ANIM_NAME_LENGTH)) return i;
+        if (!strncmp(name, _data->_anim[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
     }
     return ~0x0;
 }
@@ -910,6 +951,103 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
         src0_index++;
         src1_index++;
     }
+}
+
+K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
+{
+    uint32_t v_start, v_end;
+    float model_xform[16];
+    if (model >= _data->_num_models) {
+        // Get AABB of all meshes
+        v_start = 0;
+        v_end = _data->_num_verts;
+        k3m4_SetIdentity(model_xform);
+    } else {
+        uint32_t mesh = _data->_model[model].mesh_index;
+        memcpy(model_xform, _data->_model[model].world_xform, 16 * sizeof(float));
+
+        v_start = _data->_mesh_start[mesh];
+        v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+        v_start *= 3;
+        v_end *= 3;
+
+        if (_data->_ib != NULL) {
+            uint32_t i, i_start = v_start, i_end = v_end;
+            uint32_t vert_size = (_data->_num_bones > 0) ? 19 : 11;
+            uint32_t* indices = (uint32_t*)(_data->_geom_data + vert_size * _data->_num_verts);
+            v_start = _data->_num_verts;
+            v_end = 0;
+            for (i = i_start; i < i_end; i++) {
+                v_start = (indices[i] < v_start) ? indices[i] : v_start;
+                v_end = (indices[i] > v_end) ? indices[i] : v_end;
+            }
+        }
+    }
+
+
+    aabb->min[0] = INFINITY;
+    aabb->min[1] = INFINITY;
+    aabb->min[2] = INFINITY;
+    aabb->max[0] = -INFINITY;
+    aabb->max[1] = -INFINITY;
+    aabb->max[2] = -INFINITY;
+
+    uint32_t v, b;
+    const float* verts = _data->_geom_data;
+    const float* attrs = verts + 3 * _data->_num_verts;
+    const float* skin_f = verts + 11 * _data->_num_verts;
+    const uint32_t* skin_i = (const uint32_t*)(skin_f);
+    skin_f += 4;
+    float* bone_mat = new float[16 * _data->_num_bones];
+    genBoneMatrices(bone_mat, false);
+
+    float xform_vert[4];
+    float temp_vec1[4];
+    float temp_vec2[4];
+    bool include_bone = true;
+    for (v = v_start; v < v_end; v++) {
+        xform_vert[3] = 1.0f;
+        if (_data->_num_bones > 0) {
+            xform_vert[0] = 0.0f;
+            xform_vert[1] = 0.0f;
+            xform_vert[2] = 0.0f;
+            temp_vec1[0] = verts[0];
+            temp_vec1[1] = verts[1];
+            temp_vec1[2] = verts[2];
+            temp_vec1[3] = 1.0f;
+            include_bone = false;
+            for (b = 0; b < 4; b++) {
+                if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
+                // Transform vertex with this bone matrix
+                k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
+                // scale by weight
+                k3sv3_Mul(temp_vec2, skin_f[b], temp_vec2);
+                // Add in the weighted position to transformed vertex
+                k3v3_Add(xform_vert, xform_vert, temp_vec2);
+            }
+        } else {
+            xform_vert[0] = verts[0];
+            xform_vert[1] = verts[2];
+            xform_vert[2] = verts[2];
+        }
+        k3m4_Mul(xform_vert, model_xform, xform_vert);
+
+        if (include_bone) {
+            aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
+            aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
+            aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
+            aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
+            aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
+            aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
+        }
+
+        verts += 3;
+        attrs += 8;
+        skin_f += 8;
+        skin_i += 8;
+    }
+
+    delete[] bone_mat;
 }
 
 
@@ -1080,6 +1218,7 @@ struct k3fbxModelData {
     uint64_t id;
     k3fbxObjType obj_type;
     k3fbxModelIndex index;
+    char name[K3_FBX_MAX_NAME_LENGTH];
     float translation[3];
     float rotation[3];
     float scaling[3];
@@ -1108,6 +1247,7 @@ struct k3fbxContentData {
 
 struct k3fbxCamera {
     uint64_t id;
+    char name[K3_FBX_MAX_NAME_LENGTH];
     float translation[3];
     float look_at[3];
     float up[3];
@@ -1120,6 +1260,7 @@ struct k3fbxCamera {
 
 struct k3fbxLightNode {
     uint64_t id;
+    char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t light_type;
     float color[3];
     float intensity;
@@ -1146,7 +1287,7 @@ static const uint32_t K3_FBX_BONE_TO_ANIM_MULTIPLIER = 4;
 struct k3fbxAnimLayer {
     uint64_t id;
     uint32_t num_anim_curve_nodes;
-    char name[K3_FBX_MAX_ANIM_NAME_LENGTH];
+    char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t* anim_curve_node_id;
 };
 
@@ -1579,6 +1720,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint32_t str_file_pos;
     bool first_uv = true;
     double mat_d[16];
+    char node_attr_name[K3_FBX_MAX_NAME_LENGTH];
 
     while (1) {
         fread(&node, K3_FBX_NODE_RECORD_LENGTH, 1, in_file);
@@ -1681,6 +1823,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->model[fbx->num_models].obj_type = k3fbxObjType::NONE;
                 fbx->model[fbx->num_models].index.model.mesh = ~0;
                 fbx->model[fbx->num_models].index.model.material = ~0;
+                fbx->model[fbx->num_models].name[0] = '\0';
                 fbx->model[fbx->num_models].translation[0] = 0.0f;
                 fbx->model[fbx->num_models].translation[1] = 0.0f;
                 fbx->model[fbx->num_models].translation[2] = 0.0f;
@@ -2482,11 +2625,14 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         if (connect_index == connect_params) connectFbxNode(fbx, connect_id);
                     }
                 } else if(node_type == k3fbxNodeType::NODE_ATTRIBUTE) {
-                    if (fbx_node_argument == 2) {
+                    if (fbx_node_argument == 1) {
+                        strncpy(node_attr_name, str, K3_FBX_MAX_NAME_LENGTH);
+                    } else if (fbx_node_argument == 2) {
                         // third argument is the type
                         if (!strncmp(str, "Camera", 7)) {
                             if (fbx->camera) {
                                 fbx->camera[fbx->num_cameras].id = node_attrib_id;
+                                strncpy(fbx->camera[fbx->num_cameras].name, node_attr_name, K3_FBX_MAX_NAME_LENGTH);
                                 fbx->camera[fbx->num_cameras].translation[0] = 1.0f;
                                 fbx->camera[fbx->num_cameras].translation[1] = 1.0f;
                                 fbx->camera[fbx->num_cameras].translation[2] = 1.0f;
@@ -2507,6 +2653,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         } else if (!strncmp(str, "Light", 6)) {
                             if (fbx->light_node) {
                                 fbx->light_node[fbx->num_light_nodes].id = node_attrib_id;
+                                strncpy(fbx->light_node[fbx->num_light_nodes].name, node_attr_name, K3_FBX_MAX_NAME_LENGTH);
                                 fbx->light_node[fbx->num_light_nodes].color[0] = 1.0f;
                                 fbx->light_node[fbx->num_light_nodes].color[1] = 1.0f;
                                 fbx->light_node[fbx->num_light_nodes].color[2] = 1.0f;
@@ -2525,7 +2672,11 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         fbx->content_data[fbx->num_content_data - 1].file_pos = str_file_pos;
                     }
                 } else if (node_type == k3fbxNodeType::MODEL) {
-                    if (fbx_node_argument == 2) {
+                    if (fbx_node_argument == 1) {
+                        if (fbx->model) {
+                            strncpy(fbx->model[fbx->num_models - 1].name, str, K3_FBX_MAX_NAME_LENGTH);
+                        }
+                    } else if (fbx_node_argument == 2) {
                         if (!strncmp(str, "Light", 6)) {
                             fbx->num_lights++;
                             if (fbx->model) fbx->model[fbx->num_models - 1].obj_type = k3fbxObjType::LIGHT;
@@ -2579,7 +2730,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         char* anim_name = strrchr(str, '|');
                         // if found, use the characters following it; otherwise, sue the whole name
                         anim_name = (anim_name) ? (anim_name + 1) : str;
-                        strncpy(fbx->anim_layer[fbx->num_anim_layers - 1].name, anim_name, K3_FBX_MAX_ANIM_NAME_LENGTH);
+                        strncpy(fbx->anim_layer[fbx->num_anim_layers - 1].name, anim_name, K3_FBX_MAX_NAME_LENGTH);
                     }
                 } else if (node_type == k3fbxNodeType::ANIMATION_CURVE_NODE) {
                     if (fbx_node_argument == 1 && fbx->anim_curve_node) {
@@ -2782,6 +2933,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uint32_t light_node_index = fbx.model[i].index.light.light_node;
             if (light_node_index != ~0x0) {
                 k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
+                strncpy(mesh_impl->_lights[mesh_impl->_num_lights].name, light_node->name, K3_FBX_MAX_NAME_LENGTH);
                 mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
                 mesh_impl->_lights[mesh_impl->_num_lights].position[1] = fbx.model[i].translation[1];
                 mesh_impl->_lights[mesh_impl->_num_lights].position[2] = fbx.model[i].translation[2];
@@ -2802,6 +2954,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     mesh_impl->_num_cameras = fbx.num_cameras;
     mesh_impl->_cameras = new k3camera[mesh_impl->_num_cameras];
     for (i = 0; i < mesh_impl->_num_cameras; i++) {
+        strncpy(mesh_impl->_cameras[i].name, fbx.camera[i].name, K3_FBX_MAX_NAME_LENGTH);
         mesh_impl->_cameras[i].translation[0] = fbx.camera[i].translation[0];
         mesh_impl->_cameras[i].translation[1] = fbx.camera[i].translation[1];
         mesh_impl->_cameras[i].translation[2] = fbx.camera[i].translation[2];
@@ -2847,6 +3000,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             num_mesh_prims = (mesh_index < mesh_impl->_num_meshes - 1) ? mesh_impl->_mesh_start[mesh_index + 1] : num_tris;
             num_mesh_prims -= mesh_start;
             if (num_mesh_prims > max_mesh_prims) max_mesh_prims = num_mesh_prims;
+            strncpy(mesh_impl->_model[mesh_impl->_num_models].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
             mesh_impl->_model[mesh_impl->_num_models].mesh_index = mesh_index;
             mesh_impl->_model[mesh_impl->_num_models].prim_start = mesh_start;
             mesh_impl->_model[mesh_impl->_num_models].num_prims = num_mesh_prims;
@@ -2913,6 +3067,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     float* alloc_skin_f = (use_ib) ? skin_f : new float[8 * num_verts];
     uint32_t* alloc_skin_i = (uint32_t*)alloc_skin_f;
+
+    mesh_impl->_num_verts = num_verts;
+    mesh_impl->_geom_data = new float[geom_size];
 
     k3bufferDesc bdesc = { 0 };
     bdesc.size = 3 * num_verts * sizeof(float);
@@ -3024,6 +3181,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             uint32_t bone_model_index = fbx.cluster[b].bone_index;
             uint32_t parent_bone_index = fbx.model[bone_model_index].index.limb_node.parent;
             uint32_t bind_pose_index = fbx.model[bone_model_index].index.limb_node.bind_pose_index;
+            strncpy(mesh_impl->_bones[bone_id].name, fbx.model[bone_model_index].name, K3_FBX_MAX_NAME_LENGTH);
             mesh_impl->_bones[bone_id].position[0] = fbx.model[bone_model_index].translation[0];
             mesh_impl->_bones[bone_id].position[1] = fbx.model[bone_model_index].translation[1];
             mesh_impl->_bones[bone_id].position[2] = fbx.model[bone_model_index].translation[2];
@@ -3091,7 +3249,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 }
                 if (mesh_impl->_anim[anim_id].num_keyframes == 0) mesh_impl->_anim[anim_id].num_keyframes = 1;
                 mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
-                strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[anim_id].name, K3_FBX_MAX_ANIM_NAME_LENGTH);
+                strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[anim_id].name, K3_FBX_MAX_NAME_LENGTH);
                 mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones];
                 mesh_impl->_anim[anim_id].bone_flag = new uint32_t[mesh_impl->_num_bones];
                 memset(mesh_impl->_anim[anim_id].bone_data, 0, mesh_impl->_anim[anim_id].num_keyframes* mesh_impl->_num_bones * sizeof(k3boneData));
@@ -3505,6 +3663,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         delete[] attr_ll;
         delete[] attr_nodes;
     }
+
+    memcpy(mesh_impl->_geom_data, verts, geom_size);
 
     desc->up_buf->Unmap();
 
