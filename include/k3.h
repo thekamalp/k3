@@ -208,6 +208,12 @@ private:
 
 typedef k3ptr<k3obj> k3objPtr;
 
+union k3flint32 {
+    int32_t i;
+    uint32_t ui;
+    float f;
+};
+
 // ------------------------------------------------------------
 // k3 error handling
 typedef void (K3CALLBACK* k3error_handler_ptr) (const char* error_msg, const char* title);
@@ -1671,6 +1677,8 @@ struct k3meshDesc {
     const char* name;
     k3cmdBuf cmd_buf;
     k3uploadBuffer up_buf;
+    uint32_t num_custom_model_props;
+    const char** custom_model_prop_name;
 };
 
 struct k3AABB {
@@ -1717,6 +1725,7 @@ public:
     K3API float* getDiffuseColor(uint32_t obj);
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
     K3API uint32_t getNormalMapIndex(uint32_t obj);
+    K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
     K3API float* getCameraPerspective(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
     K3API float* getCameraView(float* d, uint32_t camera, bool left_handed = false);
     K3API float* getCameraPosition(uint32_t camera);

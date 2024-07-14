@@ -86,11 +86,14 @@ void App::Setup()
     uint32_t view_index = 0;
 
     _chdir("..\\test\\assets");
+    const char* custom_prop_names[] = { "Solid" };
     k3meshDesc mdesc = {};
     mdesc.view_index = view_index;
     mdesc.cmd_buf = cmd_buf;
     mdesc.up_buf = gfx->CreateUploadBuffer();
     mdesc.name = "anim_cyl.fbx";
+    mdesc.num_custom_model_props = 1;
+    mdesc.custom_model_prop_name = custom_prop_names;
     scene = gfx->CreateMesh(&mdesc);
     view_index = mdesc.view_index;
     _chdir("..\\..\\bin");

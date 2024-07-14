@@ -468,6 +468,7 @@ bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
 k3meshImpl::k3meshImpl()
 {
     _num_meshes = 0;
+    _num_model_custom_props = 0;
     _num_models = 0;
     _num_tris = 0;
     _num_textures = 0;
@@ -478,6 +479,7 @@ k3meshImpl::k3meshImpl()
     _geom_data = NULL;
     _mesh_start = NULL;
     _model = NULL;
+    _model_custom_props = NULL;
     _textures = NULL;
     _cameras = NULL;
     _lights = NULL;
@@ -503,6 +505,10 @@ k3meshImpl::~k3meshImpl()
     if (_model) {
         delete[] _model;
         _model = NULL;
+    }
+    if (_model_custom_props) {
+        delete[] _model_custom_props;
+        _model_custom_props = NULL;
     }
     if (_textures) {
         delete[] _textures;
@@ -674,6 +680,18 @@ K3API uint32_t k3meshObj::getNormalMapIndex(uint32_t obj)
         return NULL;
     }
 }
+
+K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_index)
+{
+    if (obj < _data->_num_models && custom_prop_index < _data->_num_model_custom_props) {
+        return _data->_model_custom_props[obj * _data->_num_model_custom_props + custom_prop_index];
+    } else {
+        k3flint32 n;
+        n.i = 0;
+        return n;
+    }
+}
+
 
 K3API k3buffer k3meshObj::getIndexBuffer()
 {
@@ -1148,7 +1166,8 @@ enum class k3fbxProperty {
     CAST_SHADOWS,
     D_X,
     D_Y,
-    D_Z
+    D_Z,
+    CUSTOM_PROP
 };
 
 enum class k3fbxMapping {
@@ -1322,6 +1341,11 @@ struct k3fbxPoseNode {
     float xform[16];
 };
 
+struct k3fbxCustomPropDesc {
+    uint32_t num_model_custom_props;
+    const char** model_custom_prop_name;
+};
+
 struct k3fbxData {
     uint32_t num_meshes;
     uint32_t num_models;
@@ -1362,6 +1386,7 @@ struct k3fbxData {
     k3fbxReference last_uv_reference;
     k3fbxMeshData* mesh;
     k3fbxModelData* model;
+    k3flint32* model_custom_prop;
     k3fbxMaterialData* material;
     k3fbxTextureData* texture;
     k3fbxContentData* content_data;
@@ -1655,7 +1680,7 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
     }
 }
 
-void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE* in_file)
+void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE* in_file, k3fbxCustomPropDesc* custom_props)
 {
     static char buffer[512] = { 0 };
     static char* str = buffer;
@@ -1725,6 +1750,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint32_t connect_params;
     uint64_t connect_id[3];
     k3fbxProperty fbx_property = k3fbxProperty::NONE;
+    uint32_t fbx_custom_prop_index = 0;
     uint32_t fbx_property_argument = 0;
     uint32_t fbx_node_argument = 0;
     uint64_t node_attrib_id;
@@ -1990,6 +2016,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::CUSTOM_PROP:
+                        if (fbx->model && fbx_property_argument < 1) {
+                            fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].i = *i32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     }
                     break;
                 }
@@ -2123,6 +2155,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::D_Z:
                         if (fbx->anim_curve_node && fbx_property_argument < 1) {
                             fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[2] = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::CUSTOM_PROP:
+                        if (fbx->model && fbx_property_argument < 1) {
+                            fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].f = *f32_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -2611,8 +2649,18 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::D_Y;
                         } else if (!strncmp(str, "d|Z", 4)) {
                             fbx_property = k3fbxProperty::D_Z;
-                        } else if (K3_FBX_DEBUG) {
-                            printf("%s\n", str);
+                        } else {
+                            uint32_t i;
+                            fbx_property = k3fbxProperty::NONE;
+                            for (i = 0; i < custom_props->num_model_custom_props && fbx_property != k3fbxProperty::CUSTOM_PROP; i++) {
+                                if (!strncmp(str, custom_props->model_custom_prop_name[i], K3_FBX_MAX_NAME_LENGTH)) {
+                                    fbx_property = k3fbxProperty::CUSTOM_PROP;
+                                    fbx_custom_prop_index = i;
+                                }
+                            }
+                            if (K3_FBX_DEBUG) {
+                                printf("%s\n", str);
+                            }
                         }
                     }
                 } else if (node_type == k3fbxNodeType::CONNECT) {
@@ -2760,7 +2808,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
 
         uint32_t byte_pos = ftell(in_file);
         if (node.end_offset - byte_pos > 0) {
-            readFbxNode(fbx, node_type, level + 1, in_file);
+            readFbxNode(fbx, node_type, level + 1, in_file, custom_props);
             fseek(in_file, node.end_offset, SEEK_SET);
         }
     }
@@ -2826,9 +2874,16 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     k3fbxData fbx = { 0 };
     uint32_t node_start = ftell(in_file);
-    readFbxNode(&fbx, k3fbxNodeType::UNKNOWN, 0, in_file);
+    k3fbxCustomPropDesc custom_props;
+    custom_props.num_model_custom_props = desc->num_custom_model_props;
+    custom_props.model_custom_prop_name = desc->custom_model_prop_name;
+    readFbxNode(&fbx, k3fbxNodeType::UNKNOWN, 0, in_file, &custom_props);
     fbx.mesh = new k3fbxMeshData[fbx.num_meshes];
     fbx.model = new k3fbxModelData[fbx.num_models];
+    if (custom_props.num_model_custom_props) {
+        fbx.model_custom_prop = new k3flint32[fbx.num_models * custom_props.num_model_custom_props];
+        memset(fbx.model_custom_prop, 0, fbx.num_models * custom_props.num_model_custom_props * sizeof(k3flint32));
+    }
     if (fbx.num_materials) fbx.material = new k3fbxMaterialData[fbx.num_materials];
     if (fbx.num_textures) fbx.texture = new k3fbxTextureData[fbx.num_textures];
     if (fbx.num_content_data) fbx.content_data = new k3fbxContentData[fbx.num_content_data];
@@ -2860,7 +2915,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
-    readFbxNode(&fbx, k3fbxNodeType::UNKNOWN, 0, in_file);
+    readFbxNode(&fbx, k3fbxNodeType::UNKNOWN, 0, in_file, &custom_props);
 
     // convert all double arrays to float arrays
     uint32_t num_verts = fbx.num_vertex_bytes / sizeof(float);
@@ -3052,6 +3107,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             }
             mesh_impl->_num_models++;
         }
+    }
+    mesh_impl->_num_model_custom_props = custom_props.num_model_custom_props;
+    if (mesh_impl->_num_model_custom_props) {
+        mesh_impl->_model_custom_props = fbx.model_custom_prop;
+    } else {
+        mesh_impl->_model_custom_props = NULL;
     }
 
     bool use_ib = (fbx.num_tangent_indices == 0) && (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
@@ -3708,6 +3769,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     delete[] fbx.mesh;
     delete[] fbx.model;
+    // Don't delete custom prop - it's directly transferred to the mesh_impl object
+    //if (fbx.model_custom_prop) delete[] fbx.model_custom_prop;
     if (fbx.light_node) delete[] fbx.light_node;
     if (fbx.camera) delete[] fbx.camera;
     if (fbx.material) delete[] fbx.material;
