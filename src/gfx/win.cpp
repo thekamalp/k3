@@ -452,6 +452,17 @@ K3API void k3cmdBufObj::DrawText(const char* text, k3font font, const float fg_c
 }
 
 // ------------------------------------------------------------
+// BVH functions
+
+bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
+{
+    bool x_collision = (s1->max[0] >= s2->min[0]) && (s2->max[0] >= s1->min[0]);
+    bool y_collision = (s1->max[1] >= s2->min[1]) && (s2->max[1] >= s1->min[1]);
+    bool z_collision = (s1->max[2] >= s2->min[2]) && (s2->max[2] >= s1->min[2]);
+    return x_collision && y_collision && z_collision;
+}
+
+// ------------------------------------------------------------
 // mesh class
 
 k3meshImpl::k3meshImpl()
@@ -993,9 +1004,9 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
     aabb->max[2] = -INFINITY;
 
     uint32_t v, b;
-    const float* verts = _data->_geom_data;
-    const float* attrs = verts + 3 * _data->_num_verts;
-    const float* skin_f = verts + 11 * _data->_num_verts;
+    const float* verts = _data->_geom_data + 3 * v_start;
+    const float* attrs = _data->_geom_data + 3 * _data->_num_verts + 8 * v_start;
+    const float* skin_f = _data->_geom_data + 11 * _data->_num_verts + 8 * v_start;
     const uint32_t* skin_i = (const uint32_t*)(skin_f);
     skin_f += 4;
     float* bone_mat = new float[16 * _data->_num_bones];
@@ -1007,7 +1018,7 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
     bool include_bone = true;
     for (v = v_start; v < v_end; v++) {
         xform_vert[3] = 1.0f;
-        if (_data->_num_bones > 0) {
+        if (_data->_num_bones > 0 && skin_f[0] >= 0.1f) {
             xform_vert[0] = 0.0f;
             xform_vert[1] = 0.0f;
             xform_vert[2] = 0.0f;
@@ -1030,7 +1041,7 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
             xform_vert[1] = verts[2];
             xform_vert[2] = verts[2];
         }
-        k3m4_Mul(xform_vert, model_xform, xform_vert);
+        k3mv4_Mul(xform_vert, model_xform, xform_vert);
 
         if (include_bone) {
             aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
@@ -3218,7 +3229,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         // Normalize skin weights
         uint32_t v_id;
         for (v_id = 0; v_id < num_verts; v_id++) {
-            k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
+            if (*(alloc_skin_f + 8 * v_id + 4) >= 0.1f) {
+                k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
+            }
         }
 
         // load animations

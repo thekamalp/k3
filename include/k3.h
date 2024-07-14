@@ -1678,6 +1678,8 @@ struct k3AABB {
     float max[3];
 };
 
+bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
+
 class k3meshObj : public k3obj
 {
 private:
