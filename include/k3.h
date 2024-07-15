@@ -1725,6 +1725,7 @@ public:
     K3API float* getDiffuseColor(uint32_t obj);
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
     K3API uint32_t getNormalMapIndex(uint32_t obj);
+    K3API float getVisibility(uint32_t obj);
     K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
     K3API float* getCameraPerspective(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
     K3API float* getCameraView(float* d, uint32_t camera, bool left_handed = false);

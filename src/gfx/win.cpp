@@ -680,6 +680,14 @@ K3API uint32_t k3meshObj::getNormalMapIndex(uint32_t obj)
         return NULL;
     }
 }
+K3API float k3meshObj::getVisibility(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        return _data->_model[obj].visibility;
+    } else {
+        return 0.0f;
+    }
+}
 
 K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_index)
 {
@@ -1167,6 +1175,7 @@ enum class k3fbxProperty {
     D_X,
     D_Y,
     D_Z,
+    VISIBILITY,
     CUSTOM_PROP
 };
 
@@ -1252,6 +1261,7 @@ struct k3fbxModelData {
     float translation[3];
     float rotation[3];
     float scaling[3];
+    float visibility;
 };
 
 struct k3fbxMaterialData {
@@ -1870,6 +1880,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->model[fbx->num_models].scaling[0] = 1.0f;
                 fbx->model[fbx->num_models].scaling[1] = 1.0f;
                 fbx->model[fbx->num_models].scaling[2] = 1.0f;
+                fbx->model[fbx->num_models].visibility = 1.0f;
             }
             fbx->num_models++;
             fbx_node_argument = 0;
@@ -2016,6 +2027,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::VISIBILITY:
+                        if (fbx->model && fbx_property_argument < 1) {
+                            fbx->model[fbx->num_models - 1].visibility = *i32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     case k3fbxProperty::CUSTOM_PROP:
                         if (fbx->model && fbx_property_argument < 1) {
                             fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].i = *i32_arr;
@@ -2158,6 +2175,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::VISIBILITY:
+                        if (fbx->model && fbx_property_argument < 1) {
+                            fbx->model[fbx->num_models - 1].visibility = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     case k3fbxProperty::CUSTOM_PROP:
                         if (fbx->model && fbx_property_argument < 1) {
                             fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].f = *f32_arr;
@@ -2297,6 +2320,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::D_Z:
                         if (fbx->anim_curve_node && fbx_property_argument < 1) {
                             fbx->anim_curve_node[fbx->num_anim_curve_nodes - 1].default_value[2] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::VISIBILITY:
+                        if (fbx->model && fbx_property_argument < 1) {
+                            fbx->model[fbx->num_models - 1].visibility = (float)*d64_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -2649,6 +2678,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::D_Y;
                         } else if (!strncmp(str, "d|Z", 4)) {
                             fbx_property = k3fbxProperty::D_Z;
+                        } else if (!strncmp(str, "Visibility", 11)) {
+                            fbx_property = k3fbxProperty::VISIBILITY;
                         } else {
                             uint32_t i;
                             fbx_property = k3fbxProperty::NONE;
@@ -3075,6 +3106,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = 1.0f;
             mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = ~0;
             mesh_impl->_model[mesh_impl->_num_models].normal_map_index = ~0;
+            mesh_impl->_model[mesh_impl->_num_models].visibility = fbx.model[i].visibility;
             // Set initial model rotation and position
             k3m4_SetIdentity(mesh_impl->_model[mesh_impl->_num_models].world_xform);
             mesh_impl->_model[mesh_impl->_num_models].world_xform[0] = fbx.model[i].scaling[0];

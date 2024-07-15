@@ -78,17 +78,19 @@ VS2PS vs_main(VS_IN i)
     float3 light_dir = normalize(light[0].position);
     light_dir = mul(obj_prop[obj_id].iworld, float4(light_dir, 0.0f)).xyz;
 
-    float4 accum_world_pos = float4(0.0, 0.0, 0.0, 0.0);
-    float3 accum_light_dir = float3(0.0, 0.0, 0.0);
-    uint l;
-    for (l = 0; l < 4; l = l + 1) {
-        accum_light_dir += i.bone_weight[l] * mul(bone[i.bone_id[l]].ibone_mat, light_dir);
-        accum_world_pos += i.bone_weight[l] * mul(bone[i.bone_id[l]].bone_mat, world_pos);
+    if (i.bone_weight[0] >= 0.1) {
+        float4 accum_world_pos = float4(0.0, 0.0, 0.0, 0.0);
+        float3 accum_light_dir = float3(0.0, 0.0, 0.0);
+        uint l;
+        for (l = 0; l < 4; l = l + 1) {
+            accum_light_dir += i.bone_weight[l] * mul(bone[i.bone_id[l]].ibone_mat, light_dir);
+            accum_world_pos += i.bone_weight[l] * mul(bone[i.bone_id[l]].bone_mat, world_pos);
+        }
+        light_dir = accum_light_dir;
+        world_pos = accum_world_pos;
+        //light_dir = mul(bone[0].ibone_mat, float4(light_dir, 0.0f)).xyz;
+        //world_pos = mul(bone[0].bone_mat, world_pos);
     }
-    light_dir = accum_light_dir;
-    world_pos = accum_world_pos;
-    //light_dir = mul(bone[0].ibone_mat, float4(light_dir, 0.0f)).xyz;
-    //world_pos = mul(bone[0].bone_mat, world_pos);
 
     world_pos = mul(obj_prop[obj_id].world, world_pos);
 

@@ -439,8 +439,10 @@ void App::Display()
     cmd_buf->SetRenderTargets(&rt);
     uint32_t i;
     for (i = 0; i < scene->getNumObjects(); i++) {
-        cmd_buf->SetConstant(3, i);
-        cmd_buf->Draw(3 * scene->getNumPrims(i), 3 * scene->getStartPrim(i));
+        if (scene->getVisibility(i) > 0.5f) {
+            cmd_buf->SetConstant(3, i);
+            cmd_buf->Draw(3 * scene->getNumPrims(i), 3 * scene->getStartPrim(i));
+        }
     }
 
     cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::COMMON);
