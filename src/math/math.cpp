@@ -696,7 +696,7 @@ K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float zn
     return d;
 }
 
-K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style)
+K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z)
 {
     d[0] = 2.0f / (right - left);
     d[1] = 0.0f;
@@ -711,11 +711,21 @@ K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bot
     d[8] = 0.0f;
     d[9] = 0.0f;
     if (dx_style) {
-        d[10] = 1.0f / (znear - zfar);
-        d[11] = znear / (znear - zfar);
+        if (reverse_z) {
+            d[10] = 1.0f / (zfar - znear);
+            d[11] = zfar / (zfar - znear);
+        } else {
+            d[10] = 1.0f / (znear - zfar);
+            d[11] = znear / (znear - zfar);
+        }
     } else {
-        d[10] = 2.0f / (znear - zfar);
-        d[11] = (znear + zfar) / (znear - zfar);
+        if (reverse_z) {
+            d[10] = 2.0f / (zfar - znear);
+            d[11] = (znear + zfar) / (zfar - znear);
+        } else {
+            d[10] = 2.0f / (znear - zfar);
+            d[11] = (znear + zfar) / (znear - zfar);
+        }
     }
 
     d[12] = 0.0f;

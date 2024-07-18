@@ -174,7 +174,10 @@ enum class k3objType {
     GFX,
     WIN,
     MESH,
-    DOWNLOAD_IMAGE
+    DOWNLOAD_IMAGE,
+    BIT_TRACKER,
+    LLIST,
+    LLIST_NODE
 };
 
 class k3obj
@@ -282,7 +285,7 @@ K3API float* k3m_SetRotation(uint32_t rows, float* d, float angle, const float* 
 /* operations on a single 4x4 matrix */
 K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
 K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
-K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style);
+K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
 K3API float* k3m4_SetLookAt(float* d, const float* eye, const float* at, const float* up_dir, bool left_handed);
 
 /* operations on 2 matrices */
@@ -458,10 +461,14 @@ inline float* k3m4_SetPerspectiveRevZLH(float* d, float w, float h, float n, flo
 inline float* k3m4_SetPerspectiveRevZRH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetPerspectiveOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, (s), true); }
 inline float* k3m4_SetPerspectiveFovRevZLH(float* d, float fy, float a, float n, float f, bool s) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), true, (s), true); }
 inline float* k3m4_SetPerspectiveFovRevZRH(float* d, float fy, float a, float n, float f, bool s) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), false, (s), true); }
-inline float* k3m4_SetOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), true, (s)  ); }
-inline float* k3m4_SetOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, (s) ); }
-inline float* k3m4_SetOrthLH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, (s)  ); }
-inline float* k3m4_SetOrthRH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, (s) ); }
+inline float* k3m4_SetOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), true, (s), false); }
+inline float* k3m4_SetOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, (s), false ); }
+inline float* k3m4_SetOrthLH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, (s), false ); }
+inline float* k3m4_SetOrthRH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, (s), false ); }
+inline float* k3m4_SetOrthoOffCenterRevZLH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), true, (s), true); }
+inline float* k3m4_SetOrthoOffCenterRevZRH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), false, (s), true); }
+inline float* k3m4_SetOrthRevZLH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), true, (s), true); }
+inline float* k3m4_SetOrthRevZRH(float* d, float w, float h, float n, float f, bool s) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, (s), true); }
 
 inline float* k3m4_SetDXPerspectiveOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), true, true, false); }
 inline float* k3m4_SetDXPerspectiveOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), false, true, false); }
@@ -475,10 +482,14 @@ inline float* k3m4_SetDXPerspectiveRevZLH(float* d, float w, float h, float n, f
 inline float* k3m4_SetDXPerspectiveRevZRH(float* d, float w, float h, float n, float f) { return k3m4_SetPerspectiveOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, true, true); }
 inline float* k3m4_SetDXPerspectiveFovRevZLH(float* d, float fy, float a, float n, float f) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), true, true, true); }
 inline float* k3m4_SetDXPerspectiveFovRevZRH(float* d, float fy, float a, float n, float f) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), false, true, true); }
-inline float* k3m4_SetDXOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), true, true  ); }
-inline float* k3m4_SetDXOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, true ); }
-inline float* k3m4_SetDXOrthLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, true  ); }
-inline float* k3m4_SetDXOrthRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, true ); }
+inline float* k3m4_SetDXOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), true, true, false); }
+inline float* k3m4_SetDXOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, true, false ); }
+inline float* k3m4_SetDXOrthoLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, true, false  ); }
+inline float* k3m4_SetDXOrthoRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, true, false ); }
+inline float* k3m4_SetDXOrthoOffCenterRevZLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), true, true, true); }
+inline float* k3m4_SetDXOrthoOffCenterRevZRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), false, true, true); }
+inline float* k3m4_SetDXOrthoRevZLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), true, true, true); }
+inline float* k3m4_SetDXOrthoRevZRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, true, true); }
 
 inline float* k3m4_SetGLPerspectiveOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), true, false, false); }
 inline float* k3m4_SetGLPerspectiveOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), false, false, false); }
@@ -492,10 +503,14 @@ inline float* k3m4_SetGLPerspectiveRevZLH(float* d, float w, float h, float n, f
 inline float* k3m4_SetGLPerspectiveRevZRH(float* d, float w, float h, float n, float f) { return k3m4_SetPerspectiveOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, false, true); }
 inline float* k3m4_SetGLPerspectiveFovRevZLH(float* d, float fy, float a, float n, float f) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), true, false, true); }
 inline float* k3m4_SetGLPerspectiveFovRevZRH(float* d, float fy, float a, float n, float f) { return k3m4_SetPerspectiveFov((d), (fy), (a), (n), (f), false, false, true); }
-inline float* k3m4_SetGLOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), true, false  ); }
-inline float* k3m4_SetGLOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, false ); }
-inline float* k3m4_SetGLOrthLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, false  ); }
-inline float* k3m4_SetGLOrthRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, false ); }
+inline float* k3m4_SetGLOrthoOffCenterLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), true, false, false  ); }
+inline float* k3m4_SetGLOrthoOffCenterRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter( (d), (l), (r), (b), (t), (n), (f), false, false, false ); }
+inline float* k3m4_SetGLOrthoLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), true, false, false  ); }
+inline float* k3m4_SetGLOrthoRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter( (d), -(w)/2.0f, (w)/2.0f, -(h)/2.0f, (h)/2.0f, (n), (f), false, false, false ); }
+inline float* k3m4_SetGLOrthoOffCenterRevZLH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), true, false, true); }
+inline float* k3m4_SetGLOrthoOffCenterRevZRH(float* d, float l, float r, float b, float t, float n, float f) { return k3m4_SetOrthoOffCenter((d), (l), (r), (b), (t), (n), (f), false, false, true); }
+inline float* k3m4_SetGLOrthoRevZLH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), true, false, true); }
+inline float* k3m4_SetGLOrthoRevZRH(float* d, float w, float h, float n, float f) { return k3m4_SetOrthoOffCenter((d), -(w) / 2.0f, (w) / 2.0f, -(h) / 2.0f, (h) / 2.0f, (n), (f), false, false, true); }
 
 inline float* k3m4_SetLookAtLH(float* d, const float* e, const float* a, const float* u) { return k3m4_SetLookAt( (d), (e), (a), (u), true  ); }
 inline float* k3m4_SetLookAtRH(float* d, const float* e, const float* a, const float* u) { return k3m4_SetLookAt( (d), (e), (a), (u), false ); }
@@ -1009,6 +1024,157 @@ struct k3joyInfo {
 struct k3joyState {
     uint32_t buttons_pressed;
     float axis[K3JOY_MAX_AXES];
+};
+
+// ------------------------------------------------------------
+// k3 bit tracker
+
+class k3bitTrackerImpl;
+class k3bitTrackerObj;
+typedef k3ptr<k3bitTrackerObj> k3bitTracker;
+
+class k3bitTrackerObj : public k3obj
+{
+private:
+    k3bitTrackerImpl* _data;
+
+public:
+    k3bitTrackerObj();
+    virtual ~k3bitTrackerObj();
+    k3bitTrackerImpl* getImpl();
+    const k3bitTrackerImpl* getImpl() const;
+
+    static K3API k3bitTracker Create(uint32_t size);
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::BIT_TRACKER;
+    }
+
+    K3API void Resize(uint32_t size);
+    K3API void ClearAll();
+    K3API void SetBit(uint32_t bit, bool value);
+    K3API bool GetBit(uint32_t bit);
+};
+
+// ------------------------------------------------------------
+// k3 linked list classes
+template <typename T> class k3llistNodeObj : public k3obj {
+public:
+    T data;
+    k3ptr<k3llistNodeObj<T>> next;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::LLIST_NODE;
+    }
+};
+
+template <typename T> class k3llist : public k3obj {
+public:
+    typedef k3ptr<k3llist<T>> list_t;
+    typedef k3ptr<k3llistNodeObj<T>> node_t;
+
+    k3llist() {
+        tail = NULL;
+        head = NULL;
+    }
+
+    virtual ~k3llist()
+    {
+        tail = NULL;
+        head = NULL;
+    }
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::LLIST;
+    }
+
+    static list_t Create()
+    {
+        list_t l = new k3llist<T>;
+        return l;
+    }
+
+    static list_t* CreateArray(uint32_t size)
+    {
+        list_t* a = new list_t[size];
+        uint32_t i;
+        for (i = 0; i < size; i++) {
+            a[i] = new k3llist<T>;
+        }
+        return a;
+    }
+
+    static void DestroyArray(list_t* a)
+    {
+        delete[] a;
+    }
+
+    void AddHead(T d)
+    {
+        node_t node = new k3llistNodeObj<T>;
+        node->data = d;
+        node->next = head;
+        head = node;
+        if (tail == NULL) tail = node;
+    }
+
+    void AddTail(T d)
+    {
+        node_t node = new k3llistNodeObj<T>;
+        node->data = d;
+        node->next = NULL;
+        if (tail == NULL) head = node;
+        else  tail->next = node;
+        tail = node;
+    }
+
+    void RemoveHead()
+    {
+        if (head != NULL) {
+            head = head->next;
+            if (head == NULL) tail = NULL;
+        }
+    }
+
+    void RemoveTail()
+    {
+        node_t prev_node = NULL;
+        node_t node = head;
+        if (node != NULL) {
+            while (node->next != NULL) {
+                prev_node = node;
+                node = node->next;
+            }
+            if (prev_node == NULL) head = NULL;
+            else {
+                prev_node->next = NULL;
+            }
+            tail = prev_node;
+        }
+    }
+
+    void RemoveAll()
+    {
+        tail = NULL;
+        head = NULL;
+    }
+
+    node_t GetHead()
+    {
+        return head;
+    }
+
+    node_t GetTail()
+    {
+        return tail;
+    }
+
+private:
+    node_t head;
+    node_t tail;
 };
 
 // ------------------------------------------------------------
@@ -1688,6 +1854,27 @@ struct k3AABB {
 
 bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
 
+struct k3meshPartions {
+    // Following arguments must be filled out when creating the partitions
+    // llists must be an array of x_parts*y_parts*z_parts, all clear
+    k3llist<uint32_t>::list_t* llists;
+    uint32_t x_parts;
+    uint32_t y_parts;
+    uint32_t z_parts;
+    // These can be filled to 0.0f when creating, in which case the creation function will compute these
+    float x_start;
+    float y_start;
+    float z_start;
+    float x_part_size;
+    float y_part_size;
+    float z_part_size;
+};
+
+enum class k3projType {
+    PERSPECTIVE,
+    ORTHOGRAPIC
+};
+
 class k3meshObj : public k3obj
 {
 private:
@@ -1727,7 +1914,8 @@ public:
     K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API float getVisibility(uint32_t obj);
     K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
-    K3API float* getCameraPerspective(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
+    K3API k3projType getCameraProjectionType(uint32_t camera);
+    K3API float* getCameraProjection(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
     K3API float* getCameraView(float* d, uint32_t camera, bool left_handed = false);
     K3API float* getCameraPosition(uint32_t camera);
     K3API float* getCameraLookAt(uint32_t camera);
@@ -1748,6 +1936,7 @@ public:
     K3API uint32_t getAnimLength(uint32_t a);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
     K3API void getAABB(k3AABB* aabb, uint32_t model, uint32_t bone);
+    K3API void createMeshPartitions(k3meshPartions* p);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
@@ -2382,7 +2571,7 @@ public:
     K3API void SetJoystickFunc(k3win_joystick_added_ptr JoystickAdded, k3win_joystick_removed_ptr JoystickRemoved, k3win_joystick_move_ptr JoystickMove, k3win_joystick_button_ptr JoystickButton);
     K3API void SetDestroyFunc(k3win_destroy_ptr Destroy);
 
-    K3API k3timer CreateTimer();
+    static K3API k3timer CreateTimer();
     K3API k3soundBuf CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples);
 
     K3API k3gfx GetGfx() const;

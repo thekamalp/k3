@@ -41,6 +41,15 @@ public:
     bool _is_paused;
 };
 
+class k3bitTrackerImpl
+{
+public:
+    k3bitTrackerImpl();
+    virtual ~k3bitTrackerImpl();
+    uint32_t _size;
+    uint64_t* _array;
+};
+
 class k3fontImpl
 {
 public:
@@ -93,9 +102,11 @@ struct k3camera {
     float translation[3];
     float look_at[3];
     float up[3];
+    k3projType proj_type;
     uint32_t res_x;
     uint32_t res_y;
     float fovy;
+    float ortho_scale;
     float near_plane;
     float far_plane;
 };

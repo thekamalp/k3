@@ -106,7 +106,9 @@ void App::Setup()
         win->SetSize(win_width, win_height);
         // set all cameras to have infinite far plane
         for (i = 0; i < scene->getNumCameras(); i++) {
-            scene->setCameraFarPlane(i, INFINITY);
+            if (scene->getCameraProjectionType(i) == k3projType::PERSPECTIVE) {
+                scene->setCameraFarPlane(i, INFINITY);
+            }
         }
     }
 
@@ -305,7 +307,7 @@ void App::UpdateResources(uint32_t v)
 
     if (scene->getNumCameras()) {
         scene->getCameraView(camera_data, 0);
-        scene->getCameraPerspective(mat_data, 0);
+        scene->getCameraProjection(mat_data, 0, false, true, true);
     } else {
         float y_axis[3] = { 0.0f, 1.0f, 0.0f };
         float z_axis[3] = { 0.0f, 0.0f, 1.0f };

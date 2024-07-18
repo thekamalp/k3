@@ -5,6 +5,98 @@
 #include "k3internal.h"
 
 // ------------------------------------------------------------
+// k3 bit tracker
+
+k3bitTrackerImpl::k3bitTrackerImpl()
+{
+    _size = 0;
+    _array = NULL;
+}
+
+k3bitTrackerImpl::~k3bitTrackerImpl()
+{
+    if (_array) {
+        delete[] _array;
+        _array = NULL;
+    }
+}
+
+k3bitTrackerObj::k3bitTrackerObj()
+{
+    _data = new k3bitTrackerImpl;
+}
+
+k3bitTrackerObj::~k3bitTrackerObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3bitTrackerImpl* k3bitTrackerObj::getImpl()
+{
+    return _data;
+}
+
+const k3bitTrackerImpl* k3bitTrackerObj::getImpl() const
+{
+    return _data;
+}
+
+K3API k3bitTracker k3bitTrackerObj::Create(uint32_t size)
+{
+    k3bitTracker bt = new k3bitTrackerObj;
+    bt->Resize(size);
+    return bt;
+}
+
+K3API void k3bitTrackerObj::Resize(uint32_t size)
+{
+    if (size > _data->_size && _data->_array != NULL) {
+        delete[] _data->_array;
+        _data->_array = new uint64_t[(size + 63) / 64];
+    }
+    _data->_size = size;
+    ClearAll();
+}
+
+K3API void k3bitTrackerObj::ClearAll()
+{
+    uint32_t elem_size = (_data->_size + 63) / 64;
+    uint32_t i;
+    for (i = 0; i < elem_size; i++) {
+        _data->_array[i] = 0;
+    }
+}
+
+K3API void k3bitTrackerObj::SetBit(uint32_t bit, bool value)
+{
+    if (bit >= _data->_size) {
+        k3error::Handler("Illegal bit", "k3bitTrackerObj::SetBit");
+        return;
+    }
+    uint32_t elem_index = (bit + 63) / 64;
+    uint64_t flag = 1 << (bit & 63);
+    if (value) {
+        _data->_array[elem_index] |= flag;
+    } else {
+        _data->_array[elem_index] &= ~flag;
+    }
+}
+
+K3API bool k3bitTrackerObj::GetBit(uint32_t bit)
+{
+    if (bit >= _data->_size) {
+        k3error::Handler("Illegal bit", "k3bitTrackerObj::GetBit");
+        return false;
+    }
+    uint32_t elem_index = (bit + 63) / 64;
+    uint64_t flag = 1 << (bit & 63);
+    return (_data->_array[elem_index] & flag) ? true : false;
+}
+
+// ------------------------------------------------------------
 // timer class
 
 k3timerImpl::k3timerImpl()
@@ -726,12 +818,28 @@ K3API k3buffer k3meshObj::getSkinBuffer()
     return _data->_sb;
 }
 
-K3API float* k3meshObj::getCameraPerspective(float* d, uint32_t camera, bool left_handed, bool dx_style, bool reverse_z)
+K3API k3projType k3meshObj::getCameraProjectionType(uint32_t camera)
 {
-    if (camera > _data->_num_cameras) return d;
+    if (camera >= _data->_num_cameras) return k3projType::PERSPECTIVE;
+    return _data->_cameras[camera].proj_type;
+}
+
+K3API float* k3meshObj::getCameraProjection(float* d, uint32_t camera, bool left_handed, bool dx_style, bool reverse_z)
+{
+    if (camera >= _data->_num_cameras) return d;
     k3camera* cam = _data->_cameras + camera;
-    float aspect = cam->res_x / (float)cam->res_y;
-    k3m4_SetPerspectiveFov(d, deg2rad(cam->fovy), aspect, cam->near_plane, cam->far_plane, left_handed, dx_style, reverse_z);
+    if (cam->proj_type == k3projType::ORTHOGRAPIC) {
+        float aspect = cam->res_y / (float)cam->res_x;
+        float ortho_scale = cam->ortho_scale;
+        float l = -ortho_scale * 0.5f;
+        float r = -l;
+        float b = -aspect * ortho_scale * 0.5f;
+        float t = -b;
+        k3m4_SetOrthoOffCenter(d, l, r, b, t, cam->near_plane, cam->far_plane, left_handed, dx_style, reverse_z);
+    } else {
+        float aspect = cam->res_x / (float)cam->res_y;
+        k3m4_SetPerspectiveFov(d, deg2rad(cam->fovy), aspect, cam->near_plane, cam->far_plane, left_handed, dx_style, reverse_z);
+    }
     return d;
 }
 
@@ -992,21 +1100,49 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
 
 K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
 {
+    uint32_t m, m_start, m_end;
     uint32_t v_start, v_end;
     float model_xform[16];
     if (model >= _data->_num_models) {
         // Get AABB of all meshes
-        v_start = 0;
-        v_end = _data->_num_verts;
-        k3m4_SetIdentity(model_xform);
+        m_start = 0;
+        m_end = _data->_num_models;
     } else {
-        uint32_t mesh = _data->_model[model].mesh_index;
-        memcpy(model_xform, _data->_model[model].world_xform, 16 * sizeof(float));
+        m_start = model;
+        m_end = model + 1;
+
+    }
+
+
+    aabb->min[0] = INFINITY;
+    aabb->min[1] = INFINITY;
+    aabb->min[2] = INFINITY;
+    aabb->max[0] = -INFINITY;
+    aabb->max[1] = -INFINITY;
+    aabb->max[2] = -INFINITY;
+
+    uint32_t v, b;
+    float* bone_mat = new float[16 * _data->_num_bones];
+    genBoneMatrices(bone_mat, false);
+
+    float xform_vert[4];
+    float temp_vec1[4];
+    float temp_vec2[4];
+    bool include_bone = true;
+    for (m = m_start; m < m_end; m++) {
+        uint32_t mesh = _data->_model[m].mesh_index;
+        memcpy(model_xform, _data->_model[m].world_xform, 16 * sizeof(float));
 
         v_start = _data->_mesh_start[mesh];
         v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
         v_start *= 3;
         v_end *= 3;
+
+        const float* verts = _data->_geom_data + 3 * v_start;
+        const float* attrs = _data->_geom_data + 3 * _data->_num_verts + 8 * v_start;
+        const float* skin_f = _data->_geom_data + 11 * _data->_num_verts + 8 * v_start;
+        const uint32_t* skin_i = (const uint32_t*)(skin_f);
+        skin_f += 4;
 
         if (_data->_ib != NULL) {
             uint32_t i, i_start = v_start, i_end = v_end;
@@ -1019,72 +1155,97 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
                 v_end = (indices[i] > v_end) ? indices[i] : v_end;
             }
         }
-    }
-
-
-    aabb->min[0] = INFINITY;
-    aabb->min[1] = INFINITY;
-    aabb->min[2] = INFINITY;
-    aabb->max[0] = -INFINITY;
-    aabb->max[1] = -INFINITY;
-    aabb->max[2] = -INFINITY;
-
-    uint32_t v, b;
-    const float* verts = _data->_geom_data + 3 * v_start;
-    const float* attrs = _data->_geom_data + 3 * _data->_num_verts + 8 * v_start;
-    const float* skin_f = _data->_geom_data + 11 * _data->_num_verts + 8 * v_start;
-    const uint32_t* skin_i = (const uint32_t*)(skin_f);
-    skin_f += 4;
-    float* bone_mat = new float[16 * _data->_num_bones];
-    genBoneMatrices(bone_mat, false);
-
-    float xform_vert[4];
-    float temp_vec1[4];
-    float temp_vec2[4];
-    bool include_bone = true;
-    for (v = v_start; v < v_end; v++) {
-        xform_vert[3] = 1.0f;
-        if (_data->_num_bones > 0 && skin_f[0] >= 0.1f) {
-            xform_vert[0] = 0.0f;
-            xform_vert[1] = 0.0f;
-            xform_vert[2] = 0.0f;
-            temp_vec1[0] = verts[0];
-            temp_vec1[1] = verts[1];
-            temp_vec1[2] = verts[2];
-            temp_vec1[3] = 1.0f;
-            include_bone = false;
-            for (b = 0; b < 4; b++) {
-                if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
-                // Transform vertex with this bone matrix
-                k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
-                // scale by weight
-                k3sv3_Mul(temp_vec2, skin_f[b], temp_vec2);
-                // Add in the weighted position to transformed vertex
-                k3v3_Add(xform_vert, xform_vert, temp_vec2);
+        for (v = v_start; v < v_end; v++) {
+            xform_vert[3] = 1.0f;
+            if (_data->_num_bones > 0 && skin_f[0] >= 0.1f) {
+                xform_vert[0] = 0.0f;
+                xform_vert[1] = 0.0f;
+                xform_vert[2] = 0.0f;
+                temp_vec1[0] = verts[0];
+                temp_vec1[1] = verts[1];
+                temp_vec1[2] = verts[2];
+                temp_vec1[3] = 1.0f;
+                include_bone = false;
+                for (b = 0; b < 4; b++) {
+                    if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
+                    // Transform vertex with this bone matrix
+                    k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
+                    // scale by weight
+                    k3sv3_Mul(temp_vec2, skin_f[b], temp_vec2);
+                    // Add in the weighted position to transformed vertex
+                    k3v3_Add(xform_vert, xform_vert, temp_vec2);
+                }
+            } else {
+                xform_vert[0] = verts[0];
+                xform_vert[1] = verts[2];
+                xform_vert[2] = verts[2];
             }
-        } else {
-            xform_vert[0] = verts[0];
-            xform_vert[1] = verts[2];
-            xform_vert[2] = verts[2];
-        }
-        k3mv4_Mul(xform_vert, model_xform, xform_vert);
+            k3mv4_Mul(xform_vert, model_xform, xform_vert);
 
-        if (include_bone) {
-            aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
-            aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
-            aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
-            aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
-            aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
-            aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
-        }
+            if (include_bone) {
+                aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
+                aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
+                aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
+                aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
+                aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
+                aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
+            }
 
-        verts += 3;
-        attrs += 8;
-        skin_f += 8;
-        skin_i += 8;
+            verts += 3;
+            attrs += 8;
+            skin_f += 8;
+            skin_i += 8;
+        }
     }
 
     delete[] bone_mat;
+}
+
+K3API void k3meshObj::createMeshPartitions(k3meshPartions* p)
+{
+    if (p == NULL) {
+        k3error::Handler("Bad input", "k3meshObj::createPartionList");
+        return;
+    }
+    if (p->x_part_size == 0.0f && p->y_part_size == 0.0f && p->z_part_size == 0.0f) {
+        // Generate AABB for entire mesh
+        k3AABB overall_aabb;
+        getAABB(&overall_aabb, ~0x0, ~0x0);
+        p->x_start = overall_aabb.min[0];
+        p->y_start = overall_aabb.min[1];
+        p->z_start = overall_aabb.min[2];
+        p->x_part_size = (overall_aabb.max[0] - overall_aabb.min[0]) / (float)p->x_parts;
+        p->y_part_size = (overall_aabb.max[1] - overall_aabb.min[1]) / (float)p->y_parts;
+        p->z_part_size = (overall_aabb.max[2] - overall_aabb.min[2]) / (float)p->z_parts;
+    }
+
+    uint32_t o, p_index = 0;
+    float x, y, z;
+    float x_end = p->x_start + (p->x_part_size * p->x_parts);
+    float y_end = p->y_start + (p->y_part_size * p->y_parts);
+    float z_end = p->z_start + (p->z_part_size * p->z_parts);
+    k3AABB obj_aabb, part_aabb;
+    for (o = 0; o < _data->_num_models; o++) {
+        getAABB(&obj_aabb, o, ~0x0);
+        p_index = 0;
+        for (z = p->z_start; z < z_end; z += p->z_part_size) {
+            part_aabb.min[2] = z;
+            part_aabb.max[2] = z + p->z_part_size;
+            for (y = p->y_start; y < y_end; y += p->y_part_size) {
+                part_aabb.min[1] = y;
+                part_aabb.max[1] = y + p->y_part_size;
+                for (x = p->x_start; x < x_end; x += p->x_part_size) {
+                    part_aabb.min[0] = x;
+                    part_aabb.max[0] = x + p->x_part_size;
+                    // Check if obj collides partition
+                    if (k3bvh_CheckCollision(&obj_aabb, &part_aabb)) {
+                        p->llists[p_index]->AddTail(o);
+                    }
+                    p_index++;
+                }
+            }
+        }
+    }
 }
 
 
@@ -1164,6 +1325,8 @@ enum class k3fbxProperty {
     ASPECT_WIDTH,
     ASPECT_HEIGHT,
     FOVX,
+    ORTHO_SCALE,
+    PROJ_TYPE,
     NEAR_PLANE,
     FAR_PLANE,
     LIGHT_TYPE,
@@ -1291,9 +1454,11 @@ struct k3fbxCamera {
     float translation[3];
     float look_at[3];
     float up[3];
+    uint32_t proj_type;
     uint32_t res_x;
     uint32_t res_y;
     float fovx;
+    float ortho_scale;
     float near_plane;
     float far_plane;
 };
@@ -2027,6 +2192,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::PROJ_TYPE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].proj_type = *i32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     case k3fbxProperty::VISIBILITY:
                         if (fbx->model && fbx_property_argument < 1) {
                             fbx->model[fbx->num_models - 1].visibility = *i32_arr;
@@ -2124,6 +2295,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::FOVX:
                         if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
                             fbx->camera[fbx->num_cameras - 1].fovx = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::ORTHO_SCALE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].ortho_scale = *f32_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -2272,6 +2449,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::FOVX:
                         if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
                             fbx->camera[fbx->num_cameras - 1].fovx = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::ORTHO_SCALE:
+                        if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 1) {
+                            fbx->camera[fbx->num_cameras - 1].ortho_scale = (float)*d64_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -2656,6 +2839,10 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::ASPECT_HEIGHT;
                         } else if (!strncmp(str, "FieldOfViewX", 13)) {
                             fbx_property = k3fbxProperty::FOVX;
+                        } else if (!strncmp(str, "CameraProjectionType", 21)) {
+                            fbx_property = k3fbxProperty::PROJ_TYPE;
+                        } else if (!strncmp(str, "OrthoZoom", 10)) {
+                            fbx_property = k3fbxProperty::ORTHO_SCALE;
                         } else if (!strncmp(str, "NearPlane", 10)) {
                             fbx_property = k3fbxProperty::NEAR_PLANE;
                         } else if (!strncmp(str, "FarPlane", 9)) {
@@ -2733,6 +2920,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                                 fbx->camera[fbx->num_cameras].up[1] = 0.0f;
                                 fbx->camera[fbx->num_cameras].up[2] = 1.0f;
                                 fbx->camera[fbx->num_cameras].fovx = 40.0f;
+                                fbx->camera[fbx->num_cameras].ortho_scale = 1.0f;
+                                fbx->camera[fbx->num_cameras].proj_type = K3_FBX_PROJECTION_PERSPECTIVE;
                                 fbx->camera[fbx->num_cameras].res_x = 640;
                                 fbx->camera[fbx->num_cameras].res_y = 480;
                                 fbx->camera[fbx->num_cameras].near_plane = 0.1f;
@@ -3067,10 +3256,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         k3v3_Cross(mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].up, mesh_impl->_cameras[i].look_at);
         k3v3_Add(mesh_impl->_cameras[i].look_at, mesh_impl->_cameras[i].translation, mesh_impl->_cameras[i].look_at);
 
+        mesh_impl->_cameras[i].proj_type = (fbx.camera[i].proj_type == K3_FBX_PROJECTION_ORTHOGRAPHIC) ? k3projType::ORTHOGRAPIC : k3projType::PERSPECTIVE;
         mesh_impl->_cameras[i].res_x = fbx.camera[i].res_x;
         mesh_impl->_cameras[i].res_y = fbx.camera[i].res_y;
         float aspect = fbx.camera[i].res_y / (float)fbx.camera[i].res_x;
         mesh_impl->_cameras[i].fovy = aspect * fbx.camera[i].fovx;
+        mesh_impl->_cameras[i].ortho_scale = fbx.camera[i].ortho_scale;
         mesh_impl->_cameras[i].near_plane = fbx.camera[i].near_plane;
         mesh_impl->_cameras[i].far_plane = fbx.camera[i].far_plane;
     }

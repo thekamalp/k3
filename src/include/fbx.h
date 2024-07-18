@@ -32,6 +32,9 @@ static const char K3_FBX_TYPECODE_RAW = 'R';
 static const uint64_t K3_FBX_TICKS_PER_MSEC = 46186158ULL;
 static const uint32_t K3_FBX_MAX_NAME_LENGTH = 64;
 
+static const uint32_t K3_FBX_PROJECTION_PERSPECTIVE = 0;
+static const uint32_t K3_FBX_PROJECTION_ORTHOGRAPHIC = 1;
+
 static const uint32_t K3_FBX_ARRAY_PROPERTY_LENGTH = 12;
 struct k3fbxArrayProperty {
     uint32_t array_length;

@@ -477,7 +477,7 @@ void App::UpdateResources(uint32_t v)
 
     if (cube_mesh->getNumCameras()) {
         cube_mesh->getCameraView(camera_data, 0);
-        cube_mesh->getCameraPerspective(mat_data, 0);
+        cube_mesh->getCameraProjection(mat_data, 0);
     } else {
         float y_axis[3] = { 0.0f, 1.0f, 0.0f };
         float z_axis[3] = { 0.0f, 0.0f, 1.0f };
