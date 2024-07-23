@@ -22,6 +22,8 @@
 #endif
 #define K3API K3DECLSPEC
 
+static const uint32_t K3_MAX_NAME_LENGTH = 64;
+
 // ------------------------------------------------------------
 // k3 smart pointer classes
 template <class T>
@@ -1899,6 +1901,8 @@ public:
     K3API uint32_t getNumObjects();
     K3API uint32_t getNumTextures();
     K3API uint32_t getNumMeshes();
+    K3API uint32_t getNumEmpties();
+    K3API uint32_t getNumLights();
     K3API uint32_t getNumCameras();
     K3API uint32_t getNumBones();
     K3API uint32_t getNumAnims();
@@ -1914,6 +1918,7 @@ public:
     K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API float getVisibility(uint32_t obj);
     K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
+    K3API float* getEmptyTransform(uint32_t empty);
     K3API k3projType getCameraProjectionType(uint32_t camera);
     K3API float* getCameraProjection(float* d, uint32_t camera, bool left_handed = false, bool dx_style = true, bool reverse_z = true);
     K3API float* getCameraView(float* d, uint32_t camera, bool left_handed = false);
@@ -1923,15 +1928,25 @@ public:
     K3API void getCameraResolution(uint32_t camera, uint32_t* width, uint32_t* height);
     K3API float getCameraNearPlane(uint32_t camera);
     K3API float getCameraFarPlane(uint32_t camera);
+    K3API float getCameraFovX(uint32_t camera);
+    K3API float getCameraFovY(uint32_t camera);
+    K3API float getCameraOrthoScaleX(uint32_t camera);
+    K3API float getCameraOrthoScaleY(uint32_t camera);
     K3API void setCameraResolution(uint32_t camera, uint32_t width, uint32_t height);
     K3API void setCameraNearPlane(uint32_t camera, float near);
     K3API void setCameraFarPlane(uint32_t camera, float far);
     K3API void genBoneMatrices(float* mat, bool gen_inv);
     K3API uint32_t findModel(const char* name);
+    K3API uint32_t findEmpty(const char* name);
     K3API uint32_t findLight(const char* name);
     K3API uint32_t findCamera(const char* name);
     K3API uint32_t findBone(const char* name);
     K3API uint32_t findAnim(const char* name);
+    K3API const char* getModelName(uint32_t i);
+    K3API const char* getEmptyName(uint32_t i);
+    K3API const char* getLightName(uint32_t i);
+    K3API const char* getCameraName(uint32_t i);
+    K3API const char* getBoneName(uint32_t i);
     K3API const char* getAnimName(uint32_t a);
     K3API uint32_t getAnimLength(uint32_t a);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
@@ -1943,6 +1958,15 @@ public:
     K3API k3buffer getAttribBuffer();
     K3API k3buffer getLightBuffer();
     K3API k3buffer getSkinBuffer();
+
+    inline float* getDXCameraProjectionLH(float* d, uint32_t camera) { return getCameraProjection(d, camera, true, true, false); }
+    inline float* getDXCameraProjectionRH(float* d, uint32_t camera) { return getCameraProjection(d, camera, false, true, false); }
+    inline float* getDXCameraProjectionRevZLH(float* d, uint32_t camera) { return getCameraProjection(d, camera, true, true, true); }
+    inline float* getDXCameraProjectionRevZRH(float* d, uint32_t camera) { return getCameraProjection(d, camera, false, true, true); }
+    inline float* getGLCameraProjectionLH(float* d, uint32_t camera) { return getCameraProjection(d, camera, true, false, false); }
+    inline float* getGLCameraProjectionRH(float* d, uint32_t camera) { return getCameraProjection(d, camera, false, false, false); }
+    inline float* getGLCameraProjectionRevZLH(float* d, uint32_t camera) { return getCameraProjection(d, camera, true, false, true); }
+    inline float* getGLCameraProjectionRevZRH(float* d, uint32_t camera) { return getCameraProjection(d, camera, false, false, true); }
 };
 
 class k3cmdBufObj : public k3obj

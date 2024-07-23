@@ -122,6 +122,11 @@ struct k3light {
     bool cast_shadows;
 };
 
+struct k3emptyModel {
+    char name[K3_FBX_MAX_NAME_LENGTH];
+    float world_xform[16];
+};
+
 struct k3bone {
     uint32_t parent;    // parent bone id, or ~0x0 if root
     char name[K3_FBX_MAX_NAME_LENGTH];
@@ -161,6 +166,7 @@ public:
     uint32_t _num_textures;
     uint32_t _num_cameras;
     uint32_t _num_lights;
+    uint32_t _num_empties;
     uint32_t _num_bones;
     uint32_t _num_anims;
     float* _geom_data;
@@ -170,6 +176,7 @@ public:
     k3surf* _textures;
     k3camera* _cameras;
     k3light* _lights;
+    k3emptyModel* _empties;
     k3bone* _bones;
     k3anim* _anim;
     k3buffer _ib;

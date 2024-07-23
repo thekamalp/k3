@@ -53,8 +53,8 @@ K3API k3bitTracker k3bitTrackerObj::Create(uint32_t size)
 
 K3API void k3bitTrackerObj::Resize(uint32_t size)
 {
-    if (size > _data->_size && _data->_array != NULL) {
-        delete[] _data->_array;
+    if (size > _data->_size) {
+        if(_data->_array) delete[] _data->_array;
         _data->_array = new uint64_t[(size + 63) / 64];
     }
     _data->_size = size;
@@ -76,7 +76,7 @@ K3API void k3bitTrackerObj::SetBit(uint32_t bit, bool value)
         k3error::Handler("Illegal bit", "k3bitTrackerObj::SetBit");
         return;
     }
-    uint32_t elem_index = (bit + 63) / 64;
+    uint32_t elem_index = bit / 64;
     uint64_t flag = 1 << (bit & 63);
     if (value) {
         _data->_array[elem_index] |= flag;
@@ -91,7 +91,7 @@ K3API bool k3bitTrackerObj::GetBit(uint32_t bit)
         k3error::Handler("Illegal bit", "k3bitTrackerObj::GetBit");
         return false;
     }
-    uint32_t elem_index = (bit + 63) / 64;
+    uint32_t elem_index = bit / 64;
     uint64_t flag = 1 << (bit & 63);
     return (_data->_array[elem_index] & flag) ? true : false;
 }
@@ -566,6 +566,7 @@ k3meshImpl::k3meshImpl()
     _num_textures = 0;
     _num_cameras = 0;
     _num_lights = 0;
+    _num_empties = 0;
     _num_bones = 0;
     _num_anims = 0;
     _geom_data = NULL;
@@ -575,6 +576,7 @@ k3meshImpl::k3meshImpl()
     _textures = NULL;
     _cameras = NULL;
     _lights = NULL;
+    _empties = NULL;
     _bones = NULL;
     _anim = NULL;
     _ib = NULL;
@@ -613,6 +615,10 @@ k3meshImpl::~k3meshImpl()
     if (_lights) {
         delete[] _lights;
         _lights = NULL;
+    }
+    if (_empties) {
+        delete[] _empties;
+        _empties = NULL;
     }
     if (_bones) {
         delete[] _bones;
@@ -664,6 +670,16 @@ K3API uint32_t k3meshObj::getNumTextures()
 K3API uint32_t k3meshObj::getNumMeshes()
 {
     return _data->_num_meshes;
+}
+
+K3API uint32_t k3meshObj::getNumEmpties()
+{
+    return _data->_num_empties;
+}
+
+K3API uint32_t k3meshObj::getNumLights()
+{
+    return _data->_num_lights;
 }
 
 K3API uint32_t k3meshObj::getNumCameras()
@@ -792,6 +808,15 @@ K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_inde
     }
 }
 
+K3API float* k3meshObj::getEmptyTransform(uint32_t empty)
+{
+    if (empty < _data->_num_empties) {
+        return _data->_empties[empty].world_xform;
+    } else {
+        return NULL;
+    }
+}
+
 
 K3API k3buffer k3meshObj::getIndexBuffer()
 {
@@ -889,6 +914,32 @@ K3API float k3meshObj::getCameraFarPlane(uint32_t camera)
     return _data->_cameras[camera].far_plane;
 }
 
+K3API float k3meshObj::getCameraFovX(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    float aspect = _data->_cameras[camera].res_x / (float)_data->_cameras[camera].res_y;
+    return aspect * _data->_cameras[camera].fovy;
+}
+
+K3API float k3meshObj::getCameraFovY(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    return _data->_cameras[camera].fovy;
+}
+
+K3API float k3meshObj::getCameraOrthoScaleX(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    return _data->_cameras[camera].ortho_scale;
+}
+
+K3API float k3meshObj::getCameraOrthoScaleY(uint32_t camera)
+{
+    if (camera > _data->_num_cameras) return 0.0f;
+    float aspect = _data->_cameras[camera].res_y / (float)_data->_cameras[camera].res_x;
+    return aspect * _data->_cameras[camera].ortho_scale;
+}
+
 K3API void k3meshObj::setCameraResolution(uint32_t camera, uint32_t width, uint32_t height)
 {
     if (camera > _data->_num_cameras) return;
@@ -969,6 +1020,15 @@ K3API uint32_t k3meshObj::findModel(const char* name)
     return ~0x0;
 }
 
+K3API uint32_t k3meshObj::findEmpty(const char* name)
+{
+    uint32_t i;
+    for (i = 0; i < _data->_num_empties; i++) {
+        if (!strncmp(name, _data->_empties[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
+    }
+    return ~0x0;
+}
+
 K3API uint32_t k3meshObj::findLight(const char* name)
 {
     uint32_t i;
@@ -1003,6 +1063,51 @@ K3API uint32_t k3meshObj::findAnim(const char* name)
         if (!strncmp(name, _data->_anim[i].name, K3_FBX_MAX_NAME_LENGTH)) return i;
     }
     return ~0x0;
+}
+
+K3API const char* k3meshObj::getModelName(uint32_t i)
+{
+    if (i < _data->_num_models) {
+        return _data->_model[i].name;
+    }
+    k3error::Handler("Invalid model", "k3meshObj::getModelName");
+    return NULL;
+}
+
+K3API const char* k3meshObj::getEmptyName(uint32_t i)
+{
+    if (i < _data->_num_empties) {
+        return _data->_empties[i].name;
+    }
+    k3error::Handler("Invalid empty", "k3meshObj::getEmptyName");
+    return NULL;
+}
+
+K3API const char* k3meshObj::getLightName(uint32_t i)
+{
+    if (i < _data->_num_lights) {
+        return _data->_lights[i].name;
+    }
+    k3error::Handler("Invalid light", "k3meshObj::getLightName");
+    return NULL;
+}
+
+K3API const char* k3meshObj::getCameraName(uint32_t i)
+{
+    if (i < _data->_num_cameras) {
+        return _data->_cameras[i].name;
+    }
+    k3error::Handler("Invalid camera", "k3meshObj::getCameraName");
+    return NULL;
+}
+
+K3API const char* k3meshObj::getBoneName(uint32_t i)
+{
+    if (i < _data->_num_bones) {
+        return _data->_bones[i].name;
+    }
+    k3error::Handler("Invalid bone", "k3meshObj::getBoneName");
+    return NULL;
 }
 
 K3API const char* k3meshObj::getAnimName(uint32_t a)
@@ -3267,9 +3372,11 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
 
     mesh_impl->_num_models = 0;  // determine which models have actual geometries...those are the only valid ones
+    mesh_impl->_num_empties = 0; // determine thte empties as well
     for (i = 0; i < fbx.num_models; i++) {
         uint32_t mesh_index = fbx.model[i].index.model.mesh;
         if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) mesh_impl->_num_models++;
+        if (fbx.model[i].obj_type == k3fbxObjType::NONE) mesh_impl->_num_empties++;
     }
 
     mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
@@ -3336,6 +3443,32 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         mesh_impl->_model_custom_props = fbx.model_custom_prop;
     } else {
         mesh_impl->_model_custom_props = NULL;
+    }
+
+    mesh_impl->_empties = new k3emptyModel[mesh_impl->_num_empties];
+    mesh_impl->_num_empties = 0;
+    for (i = 0; i < fbx.num_models; i++) {
+        if (fbx.model[i].obj_type == k3fbxObjType::NONE) {
+            strncpy(mesh_impl->_empties[mesh_impl->_num_empties].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
+            // Set initial model rotation and position
+            k3m4_SetIdentity(mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
+            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[0] = fbx.model[i].scaling[0];
+            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[5] = fbx.model[i].scaling[1];
+            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[10] = fbx.model[i].scaling[2];
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
+            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
+            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
+            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
+            k3m4_SetIdentity(mat);
+            mat[3] = fbx.model[i].translation[0];
+            mat[7] = fbx.model[i].translation[1];
+            mat[11] = fbx.model[i].translation[2];
+            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
+
+            mesh_impl->_num_empties++;
+        }
     }
 
     bool use_ib = (fbx.num_tangent_indices == 0) && (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
