@@ -554,6 +554,51 @@ bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
     return x_collision && y_collision && z_collision;
 }
 
+bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec)
+{
+    uint32_t axis;
+    bool collision = true;
+    float s1_pos;
+    float mod_vec[3] = {};
+    for (axis = 0; axis < 3; axis++) {
+        if (s1->min[axis] < s2->min[axis]) {
+            s1_pos = s1->max[axis] + vec[axis];
+            if (s1_pos >= s2->min[axis]) {
+                mod_vec[axis] = (s1_pos - s2->min[axis]);
+            } else {
+                collision = false;
+            }
+        } else {
+            s1_pos = s1->min[axis] + vec[axis];
+            if (s1_pos < s2->max[axis]) {
+                mod_vec[axis] = (s1_pos - s2->max[axis]);
+            } else {
+                collision = false;
+            }
+        }
+    }
+    if (collision) {
+        //if (vec[0]) vec[0] -= mod_vec[0].f;
+        //if (vec[1]) vec[1] -= mod_vec[1].f;
+        //if (vec[2]) vec[2] -= mod_vec[2].f;
+        // Find the axis with the smallest absolute delta, and modify that axis only
+        if (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) {
+            if (fabsf(mod_vec[0]) < fabsf(mod_vec[2])) {
+                vec[0] -= mod_vec[0];
+            } else {
+                vec[2] -= mod_vec[2];
+            }
+        } else {
+            if (fabsf(mod_vec[1]) < fabsf(mod_vec[2])) {
+                vec[1] -= mod_vec[1];
+            } else {
+                vec[2] -= mod_vec[2];
+            }
+        }
+    }
+    return collision;
+}
+
 // ------------------------------------------------------------
 // mesh class
 

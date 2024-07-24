@@ -1854,7 +1854,11 @@ struct k3AABB {
     float max[3];
 };
 
+// Checks if AABB's ovelap
 bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
+
+// Check if AABB's overlap if s1 moves in vec direction; if so, modifies direction vector so there would be no overlap
+bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec);
 
 struct k3meshPartions {
     // Following arguments must be filled out when creating the partitions
