@@ -285,7 +285,7 @@ void App::Setup()
     anim = 0;
 
     k3AABB scene_aabb;
-    scene->getAABB(&scene_aabb, 0, ~0x0);
+    scene->getAABB(&scene_aabb, 0, NULL);
     printf("Scene AABB: (%.4f, %.4f, %.4f) - (%.4f, %.4f, %.4f)\n",
         scene_aabb.min[0], scene_aabb.min[1], scene_aabb.min[2],
         scene_aabb.max[0], scene_aabb.max[1], scene_aabb.max[2]);

@@ -58,15 +58,15 @@ K3API void k3bitTrackerObj::Resize(uint32_t size)
         _data->_array = new uint64_t[(size + 63) / 64];
     }
     _data->_size = size;
-    ClearAll();
+    SetAll(false);
 }
 
-K3API void k3bitTrackerObj::ClearAll()
+K3API void k3bitTrackerObj::SetAll(bool value)
 {
     uint32_t elem_size = (_data->_size + 63) / 64;
     uint32_t i;
     for (i = 0; i < elem_size; i++) {
-        _data->_array[i] = 0;
+        _data->_array[i] = (value) ? 0xffffffffffffffffULL : 0x0;
     }
 }
 
@@ -598,6 +598,22 @@ bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec)
     }
     return collision;
 }
+
+void k3bvh_ScaleOffsetAABB(k3AABB* d, const float* scale, const float* offset)
+{
+    float center;
+    float delta;
+    uint32_t axis;
+    for (axis = 0; axis < 3; axis++) {
+        center= (d->max[axis] + d->min[axis]) * 0.5f;
+        delta = (d->max[axis] - d->min[axis]);
+        center += offset[axis] * delta;
+        delta *= scale[axis] * 0.5f;
+        d->min[axis] = center - delta;
+        d->max[axis] = center + delta;
+    }
+}
+
 
 // ------------------------------------------------------------
 // mesh class
@@ -1248,7 +1264,7 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
     }
 }
 
-K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
+K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_exclude_mask)
 {
     uint32_t m, m_start, m_end;
     uint32_t v_start, v_end;
@@ -1315,9 +1331,10 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, uint32_t bone)
                 temp_vec1[1] = verts[1];
                 temp_vec1[2] = verts[2];
                 temp_vec1[3] = 1.0f;
-                include_bone = false;
+                include_bone = true;
                 for (b = 0; b < 4; b++) {
-                    if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
+                    //if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
+                    if (bone_exclude_mask != NULL && bone_exclude_mask->GetBit(skin_i[b])) include_bone = false;
                     // Transform vertex with this bone matrix
                     k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
                     // scale by weight
@@ -1360,7 +1377,7 @@ K3API void k3meshObj::createMeshPartitions(k3meshPartions* p)
     if (p->x_part_size == 0.0f && p->y_part_size == 0.0f && p->z_part_size == 0.0f) {
         // Generate AABB for entire mesh
         k3AABB overall_aabb;
-        getAABB(&overall_aabb, ~0x0, ~0x0);
+        getAABB(&overall_aabb, ~0x0, NULL);
         p->x_start = overall_aabb.min[0];
         p->y_start = overall_aabb.min[1];
         p->z_start = overall_aabb.min[2];
@@ -1376,7 +1393,7 @@ K3API void k3meshObj::createMeshPartitions(k3meshPartions* p)
     float z_end = p->z_start + (p->z_part_size * p->z_parts);
     k3AABB obj_aabb, part_aabb;
     for (o = 0; o < _data->_num_models; o++) {
-        getAABB(&obj_aabb, o, ~0x0);
+        getAABB(&obj_aabb, o, NULL);
         p_index = 0;
         for (z = p->z_start; z < z_end; z += p->z_part_size) {
             part_aabb.min[2] = z;
@@ -1394,6 +1411,23 @@ K3API void k3meshObj::createMeshPartitions(k3meshPartions* p)
                     p_index++;
                 }
             }
+        }
+    }
+}
+
+K3API void k3meshObj::genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id)
+{
+    k3bitTracker bone_hier = k3bitTrackerObj::Create(_data->_num_bones);
+    bone_hier->SetAll(false);
+    bone_hier->SetBit(bone_id, true);
+    b->SetBit(bone_id, true);
+
+    uint32_t i, parent;
+    for (i = bone_id + 1; i < _data->_num_bones; i++) {
+        parent = _data->_bones[i].parent;
+        if (bone_hier->GetBit(parent)) {
+            bone_hier->SetBit(i, true);
+            b->SetBit(i, true);
         }
     }
 }
