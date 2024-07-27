@@ -86,6 +86,7 @@ struct k3fontCBuffer {
 };
 
 struct k3meshModel {
+    uint32_t parent;
     char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t mesh_index;
     uint32_t prim_start;

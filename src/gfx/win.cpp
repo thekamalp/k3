@@ -869,6 +869,29 @@ K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_inde
     }
 }
 
+K3API uint32_t k3meshObj::getParent(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        return _data->_model[obj].parent;
+    } else {
+        return ~0x0;
+    }
+}
+
+K3API uint32_t k3meshObj::getRootParent(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        uint32_t parent = _data->_model[obj].parent;
+        if (parent < _data->_num_models) {
+            return getRootParent(parent);
+        } else {
+            return obj;
+        }
+    } else {
+        return ~0x0;
+    }
+}
+
 K3API float* k3meshObj::getEmptyTransform(uint32_t empty)
 {
     if (empty < _data->_num_empties) {
@@ -1580,6 +1603,7 @@ struct k3fbxMeshData {
 };
 
 struct k3fbxModelIndexData {
+    uint32_t parent;
     uint32_t mesh;
     uint32_t material;
 };
@@ -1979,6 +2003,13 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
                 fbx->model[index0].index.limb_node.cluster_index = index1;
             }
         }
+        if (index0 != ~0x0 && fbx->model[index0].obj_type == k3fbxObjType::MESH) {
+            // id1 should be a model/mesh
+            index1 = findFbxModelNode(fbx, id[1]);
+            if (index1 != ~0x0 && fbx->model[index1].obj_type == k3fbxObjType::MESH) {
+                fbx->model[index0].index.model.parent = index1;
+            }
+        }
         // Check if id0 is a cluster
         index0 = findFbxCluster(fbx, id[0]);
         if (index0 != ~0x0) {
@@ -2217,6 +2248,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
             if (fbx->model) {
                 fbx->model[fbx->num_models].id = 0;
                 fbx->model[fbx->num_models].obj_type = k3fbxObjType::NONE;
+                fbx->model[fbx->num_models].index.model.parent = ~0;
                 fbx->model[fbx->num_models].index.model.mesh = ~0;
                 fbx->model[fbx->num_models].index.model.material = ~0;
                 fbx->model[fbx->num_models].name[0] = '\0';
@@ -3229,6 +3261,30 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     }
 }
 
+// Sort mesh models; list must be large enogh to contain all models
+void insertFbxModelToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sorted_model_id)
+{
+    if (model_id >= fbx->num_models) return;
+    if (sorted_model_id[model_id] != ~0x0) return;
+    if (fbx->model[model_id].obj_type != k3fbxObjType::MESH) return;
+    uint32_t parent_model_id = fbx->model[model_id].index.model.parent;
+    if (parent_model_id < fbx->num_models) {
+        // Make sure parent model has been sorted
+        insertFbxModelToSortedList(parent_model_id, fbx, sorted_model_id);
+        // insert child just after parent
+        sorted_model_id[model_id] = sorted_model_id[parent_model_id] + 1;
+    } else {
+        // if there is no parent, insert t first location
+        sorted_model_id[model_id] = 0;
+    }
+    uint32_t m;
+    for (m = 0; m < fbx->num_models; m++) {
+        if (sorted_model_id[m] != ~0x0 && sorted_model_id[m] >= sorted_model_id[model_id] && m != model_id) {
+            sorted_model_id[m]++;
+        }
+    }
+}
+
 void insertFbxBoneToSortedList(uint32_t bone_id, k3fbxData* fbx, uint32_t* sorted_bone_id)
 {
     if (bone_id >= fbx->num_clusters) return;
@@ -3458,6 +3514,13 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         if (fbx.model[i].obj_type == k3fbxObjType::NONE) mesh_impl->_num_empties++;
     }
 
+    uint32_t* sorted_model_id = new uint32_t[fbx.num_models];
+    for (i = 0; i < fbx.num_models; i++) {
+        sorted_model_id[i] = ~0x0;
+    }
+    for (i = 0; i < fbx.num_models; i++) {
+        insertFbxModelToSortedList(i, &fbx, sorted_model_id);
+    }
     mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
     mesh_impl->_num_models = 0;  // reset the count, and count again, but this time with allocated entries which are filled in
     float mat[16];
@@ -3469,49 +3532,55 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         uint32_t mesh_index = fbx.model[i].index.model.mesh;
         uint32_t mesh_start, num_mesh_prims;
         if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) {
+            uint32_t dest_index = sorted_model_id[i];
             // this is a valid model
             mesh_start = mesh_impl->_mesh_start[mesh_index];
             num_mesh_prims = (mesh_index < mesh_impl->_num_meshes - 1) ? mesh_impl->_mesh_start[mesh_index + 1] : num_tris;
             num_mesh_prims -= mesh_start;
             if (num_mesh_prims > max_mesh_prims) max_mesh_prims = num_mesh_prims;
-            strncpy(mesh_impl->_model[mesh_impl->_num_models].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
-            mesh_impl->_model[mesh_impl->_num_models].mesh_index = mesh_index;
-            mesh_impl->_model[mesh_impl->_num_models].prim_start = mesh_start;
-            mesh_impl->_model[mesh_impl->_num_models].num_prims = num_mesh_prims;
-            mesh_impl->_model[mesh_impl->_num_models].diffuse_color[0] = 1.0f;
-            mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = 1.0f;
-            mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = 1.0f;
-            mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = ~0;
-            mesh_impl->_model[mesh_impl->_num_models].normal_map_index = ~0;
-            mesh_impl->_model[mesh_impl->_num_models].visibility = fbx.model[i].visibility;
+            strncpy(mesh_impl->_model[dest_index].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
+            mesh_impl->_model[dest_index].mesh_index = mesh_index;
+            mesh_impl->_model[dest_index].prim_start = mesh_start;
+            mesh_impl->_model[dest_index].num_prims = num_mesh_prims;
+            mesh_impl->_model[dest_index].diffuse_color[0] = 1.0f;
+            mesh_impl->_model[dest_index].diffuse_color[1] = 1.0f;
+            mesh_impl->_model[dest_index].diffuse_color[2] = 1.0f;
+            mesh_impl->_model[dest_index].diffuse_map_index = ~0;
+            mesh_impl->_model[dest_index].normal_map_index = ~0;
+            mesh_impl->_model[dest_index].visibility = fbx.model[i].visibility;
             // Set initial model rotation and position
-            k3m4_SetIdentity(mesh_impl->_model[mesh_impl->_num_models].world_xform);
-            mesh_impl->_model[mesh_impl->_num_models].world_xform[0] = fbx.model[i].scaling[0];
-            mesh_impl->_model[mesh_impl->_num_models].world_xform[5] = fbx.model[i].scaling[1];
-            mesh_impl->_model[mesh_impl->_num_models].world_xform[10] = fbx.model[i].scaling[2];
+            k3m4_SetIdentity(mesh_impl->_model[dest_index].world_xform);
+            mesh_impl->_model[dest_index].world_xform[0] = fbx.model[i].scaling[0];
+            mesh_impl->_model[dest_index].world_xform[5] = fbx.model[i].scaling[1];
+            mesh_impl->_model[dest_index].world_xform[10] = fbx.model[i].scaling[2];
             k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
-            k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
             k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
-            k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
             k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
-            k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
             k3m4_SetIdentity(mat);
             mat[3] = fbx.model[i].translation[0];
             mat[7] = fbx.model[i].translation[1];
             mat[11] = fbx.model[i].translation[2];
-            k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, mat, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
+            if (fbx.model[i].index.model.parent < fbx.num_models) {
+                mesh_impl->_model[dest_index].parent = sorted_model_id[fbx.model[i].index.model.parent];
+            } else {
+                mesh_impl->_model[dest_index].parent = ~0x0;
+            }
             uint32_t material_index = fbx.model[i].index.model.material;
             if (material_index != ~0) {
-                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[0] = fbx.material[material_index].diffuse_color[0];
-                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = fbx.material[material_index].diffuse_color[1];
-                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = fbx.material[material_index].diffuse_color[2];
+                mesh_impl->_model[dest_index].diffuse_color[0] = fbx.material[material_index].diffuse_color[0];
+                mesh_impl->_model[dest_index].diffuse_color[1] = fbx.material[material_index].diffuse_color[1];
+                mesh_impl->_model[dest_index].diffuse_color[2] = fbx.material[material_index].diffuse_color[2];
                 uint32_t texture_index = fbx.material[material_index].diffuse_texture_index;
                 if (texture_index != ~0) {
-                    mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = texture_index;
+                    mesh_impl->_model[dest_index].diffuse_map_index = texture_index;
                 }
                 texture_index = fbx.material[material_index].normal_texture_index;
                 if (texture_index != ~0) {
-                    mesh_impl->_model[mesh_impl->_num_models].normal_map_index = texture_index;
+                    mesh_impl->_model[dest_index].normal_map_index = texture_index;
                 }
             }
             mesh_impl->_num_models++;
@@ -3522,6 +3591,14 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         mesh_impl->_model_custom_props = fbx.model_custom_prop;
     } else {
         mesh_impl->_model_custom_props = NULL;
+    }
+    delete[] sorted_model_id;
+    // Transform by the mdel parent, if there is any
+    for (i = 0; i < mesh_impl->_num_models; i++) {
+        uint32_t parent = mesh_impl->_model[i].parent;
+        if (parent < mesh_impl->_num_models) {
+            k3m4_Mul(mesh_impl->_model[i].world_xform, mesh_impl->_model[parent].world_xform, mesh_impl->_model[i].world_xform);
+        }
     }
 
     mesh_impl->_empties = new k3emptyModel[mesh_impl->_num_empties];
