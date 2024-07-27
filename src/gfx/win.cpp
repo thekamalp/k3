@@ -554,7 +554,7 @@ bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
     return x_collision && y_collision && z_collision;
 }
 
-bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec)
+bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds)
 {
     uint32_t axis;
     bool collision = true;
@@ -578,11 +578,27 @@ bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec)
         }
     }
     if (collision) {
-        //if (vec[0]) vec[0] -= mod_vec[0].f;
-        //if (vec[1]) vec[1] -= mod_vec[1].f;
-        //if (vec[2]) vec[2] -= mod_vec[2].f;
-        // Find the axis with the smallest absolute delta, and modify that axis only
-        if (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) {
+        bool slip_done[3] = { false, false, false };
+        if (slip_bounds) {
+            // Find an axis within the slip bounds
+            for (axis = 0; axis < 3; axis++) {
+                if (mod_vec[axis] > 0.0f && -mod_vec[axis] > slip_bounds->min[axis]) {
+                    slip_done[axis] = true;
+                }
+                if (mod_vec[axis] < 0.0f && -mod_vec[axis] < slip_bounds->max[axis]) {
+                    slip_done[axis] = true;
+                }
+            }
+        }
+        // Use an axis within the slip bounds, and if none exists, find the axis with 
+        // the smallest absolute delta, and modify that axis only
+        if (slip_done[0]) {
+            vec[0] -= mod_vec[0];
+        } else if (slip_done[1]) {
+            vec[1] -= mod_vec[1];
+        } else if (slip_done[2]) {
+            vec[2] -= mod_vec[2];
+        } else if (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) { 
             if (fabsf(mod_vec[0]) < fabsf(mod_vec[2])) {
                 vec[0] -= mod_vec[0];
             } else {
