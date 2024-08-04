@@ -554,7 +554,7 @@ bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
     return x_collision && y_collision && z_collision;
 }
 
-bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds)
+bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority)
 {
     uint32_t axis;
     bool collision = true;
@@ -590,14 +590,17 @@ bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* sl
                 }
             }
         }
-        // Use an axis within the slip bounds, and if none exists, find the axis with 
+        // Use an axis based on axis priority within the slip bounds, and if none exists, find the axis with 
         // the smallest absolute delta, and modify that axis only
-        if (slip_done[0]) {
-            vec[0] -= mod_vec[0];
-        } else if (slip_done[1]) {
-            vec[1] -= mod_vec[1];
-        } else if (slip_done[2]) {
-            vec[2] -= mod_vec[2];
+        uint32_t axis0 = (axis_priority >> 0) & 0x3;
+        uint32_t axis1 = (axis_priority >> 4) & 0x3;
+        uint32_t axis2 = (axis_priority >> 8) & 0x3;
+        if (slip_done[axis0]) {
+            vec[axis0] -= mod_vec[axis0];
+        } else if (slip_done[axis1]) {
+            vec[axis1] -= mod_vec[axis1];
+        } else if (slip_done[axis2]) {
+            vec[axis2] -= mod_vec[axis2];
         } else if (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) { 
             if (fabsf(mod_vec[0]) < fabsf(mod_vec[2])) {
                 vec[0] -= mod_vec[0];
