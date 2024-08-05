@@ -2725,7 +2725,7 @@ K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3
             dx12_desc_range[r].BaseShaderRegister = params[i].view_set_desc.reg;
             dx12_desc_range[r].RegisterSpace = params[i].view_set_desc.space;
             dx12_desc_range[r].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;// params[i].view_set_desc.offset;
-            dx12_desc_range[r].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
+            dx12_desc_range[r].Flags = (params[i].view_set_desc.num_views == UINT_MAX) ? D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE : D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
             r++;
             break;
         case k3bindingType::VIEW_SET_TABLE:
