@@ -582,10 +582,10 @@ bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* sl
         if (slip_bounds) {
             // Find an axis within the slip bounds
             for (axis = 0; axis < 3; axis++) {
-                if (mod_vec[axis] > 0.0f && -mod_vec[axis] > slip_bounds->min[axis]) {
+                if (mod_vec[axis] >= 0.0f && -mod_vec[axis] > slip_bounds->min[axis]) {
                     slip_done[axis] = true;
                 }
-                if (mod_vec[axis] < 0.0f && -mod_vec[axis] < slip_bounds->max[axis]) {
+                if (mod_vec[axis] <= 0.0f && -mod_vec[axis] < slip_bounds->max[axis]) {
                     slip_done[axis] = true;
                 }
             }
