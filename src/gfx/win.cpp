@@ -1456,14 +1456,14 @@ K3API void k3meshObj::sizePartitions(k3meshPartions* p, float overlap)
     // Generate AABB for entire mesh
     k3AABB overall_aabb;
     getAABB(&overall_aabb, ~0x0, NULL);
-    float mult, axis_length;
+    float overlap_pad, axis_length;
     uint32_t a;
     for (a = 0; a < 3; a++) {
         p->start[a] = overall_aabb.min[a];
         if (p->parts[a] == 0) p->parts[a] = 1;
-        mult = 1.0f + ((overlap * (p->parts[a] - 1)) / p->parts[a]);
+        overlap_pad = overlap * (p->parts[a] - 1);
         axis_length = overall_aabb.max[a] - overall_aabb.min[a];
-        p->part_size[a] = (axis_length * mult) / p->parts[a];
+        p->part_size[a] = (axis_length + overlap_pad) / p->parts[a];
         p->part_inc[a] = (p->parts[a] == 1) ? p->part_size[a] : ((axis_length - p->part_size[a]) / (p->parts[a] - 1));
     }
 }
