@@ -1410,50 +1410,82 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_ex
     delete[] bone_mat;
 }
 
-K3API void k3meshObj::createMeshPartitions(k3meshPartions* p)
+K3API k3meshPartions::k3meshPartions()
+{
+    llists = NULL;
+    parts[0] = 0;
+    parts[1] = 0;
+    parts[2] = 0;
+    start[0] = 0.0f;
+    start[1] = 0.0f;
+    start[2] = 0.0f;
+    part_inc[0] = 0.0f;
+    part_inc[1] = 0.0f;
+    part_inc[2] = 0.0f;
+    part_size[0] = 0.0f;
+    part_size[1] = 0.0f;
+    part_size[2] = 0.0f;
+}
+
+K3API void k3meshPartions::insertObject(uint32_t obj_index, k3AABB* obj_aabb)
+{
+    k3AABB part_aabb;
+    uint32_t p_index = 0;
+    uint32_t x, y, z;
+    for (z = 0; z < parts[2]; z++) {
+        part_aabb.min[2] = start[2] + z * part_inc[2];
+        part_aabb.max[2] = part_aabb.min[2] + part_size[2];
+        for (y = 0; y < parts[1]; y++) {
+            part_aabb.min[1] = start[1] + y * part_inc[1];
+            part_aabb.max[1] = part_aabb.min[1] + part_size[1];
+            for (x = 0; x < parts[0]; x++) {
+                part_aabb.min[0] = start[0] + x * part_inc[0];
+                part_aabb.max[0] = part_aabb.min[0] + part_size[0];
+                // Check if obj collides partition
+                if (k3bvh_CheckCollision(obj_aabb, &part_aabb)) {
+                    llists[p_index]->AddTail(obj_index);
+                }
+                p_index++;
+            }
+        }
+    }
+}
+
+K3API void k3meshObj::sizePartitions(k3meshPartions* p, float overlap)
+{
+    // Generate AABB for entire mesh
+    k3AABB overall_aabb;
+    getAABB(&overall_aabb, ~0x0, NULL);
+    float mult, axis_length;
+    uint32_t a;
+    for (a = 0; a < 3; a++) {
+        p->start[a] = overall_aabb.min[a];
+        if (p->parts[a] == 0) p->parts[a] = 1;
+        mult = 1.0f + ((overlap * (p->parts[a] - 1)) / p->parts[a]);
+        axis_length = overall_aabb.max[a] - overall_aabb.min[a];
+        p->part_size[a] = (axis_length * mult) / p->parts[a];
+        p->part_inc[a] = (p->parts[a] == 1) ? p->part_size[a] : ((axis_length - p->part_size[a]) / (p->parts[a] - 1));
+    }
+}
+
+K3API void k3meshObj::createMeshPartitions(k3meshPartions* p, float overlap)
 {
     if (p == NULL) {
         k3error::Handler("Bad input", "k3meshObj::createPartionList");
         return;
     }
-    if (p->x_part_size == 0.0f && p->y_part_size == 0.0f && p->z_part_size == 0.0f) {
-        // Generate AABB for entire mesh
-        k3AABB overall_aabb;
-        getAABB(&overall_aabb, ~0x0, NULL);
-        p->x_start = overall_aabb.min[0];
-        p->y_start = overall_aabb.min[1];
-        p->z_start = overall_aabb.min[2];
-        p->x_part_size = (overall_aabb.max[0] - overall_aabb.min[0]) / (float)p->x_parts;
-        p->y_part_size = (overall_aabb.max[1] - overall_aabb.min[1]) / (float)p->y_parts;
-        p->z_part_size = (overall_aabb.max[2] - overall_aabb.min[2]) / (float)p->z_parts;
-    }
+    if (p->part_size[0] == 0.0f && p->part_size[1] == 0.0f && p->part_size[2] == 0.0f) {
+        sizePartitions(p, overlap);
+    } 
+    if (p->part_inc[0] == 0.0f) p->part_inc[0] = p->part_size[0];
+    if (p->part_inc[1] == 0.0f) p->part_inc[1] = p->part_size[1];
+    if (p->part_inc[2] == 0.0f) p->part_inc[2] = p->part_size[2];
 
-    uint32_t o, p_index = 0;
-    float x, y, z;
-    float x_end = p->x_start + (p->x_part_size * p->x_parts);
-    float y_end = p->y_start + (p->y_part_size * p->y_parts);
-    float z_end = p->z_start + (p->z_part_size * p->z_parts);
-    k3AABB obj_aabb, part_aabb;
+    uint32_t o;
+    k3AABB obj_aabb;
     for (o = 0; o < _data->_num_models; o++) {
         getAABB(&obj_aabb, o, NULL);
-        p_index = 0;
-        for (z = p->z_start; z < z_end; z += p->z_part_size) {
-            part_aabb.min[2] = z;
-            part_aabb.max[2] = z + p->z_part_size;
-            for (y = p->y_start; y < y_end; y += p->y_part_size) {
-                part_aabb.min[1] = y;
-                part_aabb.max[1] = y + p->y_part_size;
-                for (x = p->x_start; x < x_end; x += p->x_part_size) {
-                    part_aabb.min[0] = x;
-                    part_aabb.max[0] = x + p->x_part_size;
-                    // Check if obj collides partition
-                    if (k3bvh_CheckCollision(&obj_aabb, &part_aabb)) {
-                        p->llists[p_index]->AddTail(o);
-                    }
-                    p_index++;
-                }
-            }
-        }
+        p->insertObject(o, &obj_aabb);
     }
 }
 
