@@ -1857,7 +1857,23 @@ struct k3AABB {
 // Checks if AABB's ovelap
 bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
 
+static const uint32_t K3_AXIS_DIR_POS_X = 0x00;
+static const uint32_t K3_AXIS_DIR_POS_Y = 0x01;
+static const uint32_t K3_AXIS_DIR_POS_Z = 0x02;
+static const uint32_t K3_AXIS_DIR_NEG_X = 0x03;
+static const uint32_t K3_AXIS_DIR_NEG_Y = 0x04;
+static const uint32_t K3_AXIS_DIR_NEG_Z = 0x05;
+
+static const uint32_t K3_AXIS_DIR_FLAG_NONE  = 0x00;
+static const uint32_t K3_AXIS_DIR_FLAG_POS_X = 0x01;
+static const uint32_t K3_AXIS_DIR_FLAG_POS_Y = 0x02;
+static const uint32_t K3_AXIS_DIR_FLAG_POS_Z = 0x04;
+static const uint32_t K3_AXIS_DIR_FLAG_NEG_X = 0x08;
+static const uint32_t K3_AXIS_DIR_FLAG_NEG_Y = 0x10;
+static const uint32_t K3_AXIS_DIR_FLAG_NEG_Z = 0x20;
+
 // Check if AABB's overlap if s1 moves in vec direction; if so, modifies direction vector so there would be no overlap
+// Returns the axis (positive or negative) in which the overlap occurs
 // if slip bounds is non-null, it defines the amount that s1 can move in each axis, in each direction (min or max) and still
 // not be considered a collision.  This amount is known as the slip amount.  A null parameter is the same of slip of all 0's
 // When multiple axes have slip, axis priority indicates which axis should take effect
@@ -1867,7 +1883,7 @@ static const uint32_t K3_AXIS_PRIORITY_YXZ = 0x201;
 static const uint32_t K3_AXIS_PRIORITY_YZX = 0x021;
 static const uint32_t K3_AXIS_PRIORITY_ZXY = 0x102;
 static const uint32_t K3_AXIS_PRIORITY_ZYX = 0x012;
-bool k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority);
+uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority);
 
 // Modify AABB by scaling and offsetting
 void k3bvh_ScaleOffsetAABB(k3AABB* d, const float* scale, const float* offset);
