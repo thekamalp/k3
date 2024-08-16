@@ -3584,6 +3584,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         insertFbxModelToSortedList(i, &fbx, sorted_model_id);
     }
     mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
+    mesh_impl->_num_model_custom_props = custom_props.num_model_custom_props;
+    if (mesh_impl->_num_model_custom_props) {
+        mesh_impl->_model_custom_props = new k3flint32[mesh_impl->_num_models * mesh_impl->_num_model_custom_props];
+    } else {
+        mesh_impl->_model_custom_props = NULL;
+    }
     mesh_impl->_num_models = 0;  // reset the count, and count again, but this time with allocated entries which are filled in
     float mat[16];
     float x_axis[3] = { 1.0f, 0.0f, 0.0f };
@@ -3645,14 +3651,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                     mesh_impl->_model[dest_index].normal_map_index = texture_index;
                 }
             }
+            // Copy custom props
+            memcpy(mesh_impl->_model_custom_props + dest_index * mesh_impl->_num_model_custom_props, fbx.model_custom_prop + i * custom_props.num_model_custom_props, custom_props.num_model_custom_props * sizeof(k3flint32));
             mesh_impl->_num_models++;
         }
-    }
-    mesh_impl->_num_model_custom_props = custom_props.num_model_custom_props;
-    if (mesh_impl->_num_model_custom_props) {
-        mesh_impl->_model_custom_props = fbx.model_custom_prop;
-    } else {
-        mesh_impl->_model_custom_props = NULL;
     }
     delete[] sorted_model_id;
     // Transform by the mdel parent, if there is any
@@ -4343,8 +4345,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     delete[] fbx.mesh;
     delete[] fbx.model;
-    // Don't delete custom prop - it's directly transferred to the mesh_impl object
-    //if (fbx.model_custom_prop) delete[] fbx.model_custom_prop;
+    if (fbx.model_custom_prop) delete[] fbx.model_custom_prop;
     if (fbx.light_node) delete[] fbx.light_node;
     if (fbx.camera) delete[] fbx.camera;
     if (fbx.material) delete[] fbx.material;
