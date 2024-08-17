@@ -1944,6 +1944,7 @@ public:
     K3API uint32_t getNumPrims(uint32_t obj);
     K3API float* getTransform(uint32_t obj);
     K3API float* getDiffuseColor(uint32_t obj);
+    K3API float getEmissiveFactor(uint32_t obj);
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
     K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API float getVisibility(uint32_t obj);

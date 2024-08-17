@@ -862,6 +862,16 @@ K3API float* k3meshObj::getDiffuseColor(uint32_t obj)
     }
 }
 
+K3API float k3meshObj::getEmissiveFactor(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        return _data->_model[obj].emissive_factor;
+    } else {
+        return 0.0f;
+    }
+}
+
+
 K3API uint32_t k3meshObj::getDiffuseMapIndex(uint32_t obj)
 {
     if (obj < _data->_num_models) {
@@ -1588,6 +1598,7 @@ enum class k3fbxProperty {
     LOCAL_ROTATION,
     LOCAL_SCALING,
     DIFFUSE_COLOR,
+    EMISSIVE_FACTOR,
     POSITION,
     UP_VECTOR,
     INTEREST_POSITION,
@@ -1701,6 +1712,7 @@ struct k3fbxModelData {
 struct k3fbxMaterialData {
     uint64_t id;
     float diffuse_color[3];
+    float emissive_factor;
     uint32_t diffuse_texture_index;
     uint32_t normal_texture_index;
 };
@@ -2336,6 +2348,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->material[fbx->num_materials].diffuse_color[0] = 1.0f;
                 fbx->material[fbx->num_materials].diffuse_color[1] = 1.0f;
                 fbx->material[fbx->num_materials].diffuse_color[2] = 1.0f;
+                fbx->material[fbx->num_materials].emissive_factor = 1.0f;
                 fbx->material[fbx->num_materials].diffuse_texture_index = ~0;
                 fbx->material[fbx->num_materials].normal_texture_index = ~0;
             }
@@ -2541,6 +2554,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property_argument++;
                         }
                         break;
+                    case k3fbxProperty::EMISSIVE_FACTOR:
+                        if (fbx->material && fbx_property_argument < 1) {
+                            fbx->material[fbx->num_materials - 1].emissive_factor = *f32_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
                     //case k3fbxProperty::POSITION:
                     //    if (fbx->node_attrib_obj == k3fbxObjType::CAMERA && fbx->camera && fbx_property_argument < 3) {
                     //        fbx->camera[fbx->num_cameras - 1].translation[fbx_property_argument] = *f32_arr;
@@ -2692,6 +2711,12 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                     case k3fbxProperty::DIFFUSE_COLOR:
                         if (fbx->material && fbx_property_argument < 3) {
                             fbx->material[fbx->num_materials - 1].diffuse_color[fbx_property_argument] = (float)*d64_arr;
+                            fbx_property_argument++;
+                        }
+                        break;
+                    case k3fbxProperty::EMISSIVE_FACTOR:
+                        if (fbx->material && fbx_property_argument < 1) {
+                            fbx->material[fbx->num_materials - 1].emissive_factor = (float)*d64_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -3106,6 +3131,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::LOCAL_SCALING;
                         } else if (!strncmp(str, "DiffuseColor", 13)) {
                             fbx_property = k3fbxProperty::DIFFUSE_COLOR;
+                        } else if (!strncmp(str, "EmissiveFactor", 15)) {
+                            fbx_property = k3fbxProperty::EMISSIVE_FACTOR;
                         } else if (!strncmp(str, "Position", 9)) {
                             fbx_property = k3fbxProperty::POSITION;
                         } else if (!strncmp(str, "UpVector", 9)) {
@@ -3616,6 +3643,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[dest_index].diffuse_color[0] = 1.0f;
             mesh_impl->_model[dest_index].diffuse_color[1] = 1.0f;
             mesh_impl->_model[dest_index].diffuse_color[2] = 1.0f;
+            mesh_impl->_model[dest_index].emissive_factor = 0.0f;
             mesh_impl->_model[dest_index].diffuse_map_index = ~0;
             mesh_impl->_model[dest_index].normal_map_index = ~0;
             mesh_impl->_model[dest_index].visibility = fbx.model[i].visibility;
@@ -3645,6 +3673,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 mesh_impl->_model[dest_index].diffuse_color[0] = fbx.material[material_index].diffuse_color[0];
                 mesh_impl->_model[dest_index].diffuse_color[1] = fbx.material[material_index].diffuse_color[1];
                 mesh_impl->_model[dest_index].diffuse_color[2] = fbx.material[material_index].diffuse_color[2];
+                mesh_impl->_model[dest_index].emissive_factor = fbx.material[material_index].emissive_factor;
                 uint32_t texture_index = fbx.material[material_index].diffuse_texture_index;
                 if (texture_index != ~0) {
                     mesh_impl->_model[dest_index].diffuse_map_index = texture_index;
