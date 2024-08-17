@@ -77,7 +77,8 @@ K3API void k3bitTrackerObj::SetBit(uint32_t bit, bool value)
         return;
     }
     uint32_t elem_index = bit / 64;
-    uint64_t flag = 1 << (bit & 63);
+    uint64_t flag = 1;
+    flag <<= (bit & 63);
     if (value) {
         _data->_array[elem_index] |= flag;
     } else {
@@ -92,7 +93,8 @@ K3API bool k3bitTrackerObj::GetBit(uint32_t bit)
         return false;
     }
     uint32_t elem_index = bit / 64;
-    uint64_t flag = 1 << (bit & 63);
+    uint64_t flag = 1;
+    flag <<= (bit & 63);
     return (_data->_array[elem_index] & flag) ? true : false;
 }
 
