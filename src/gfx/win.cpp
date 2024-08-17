@@ -1600,6 +1600,7 @@ enum class k3fbxProperty {
     FAR_PLANE,
     LIGHT_TYPE,
     COLOR,
+    SHADOW_COLOR,
     INTENSITY,
     DECAY_TYPE,
     DECAY_START,
@@ -3129,6 +3130,8 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             fbx_property = k3fbxProperty::LIGHT_TYPE;
                         } else if (!strncmp(str, "Color", 6)) {
                             fbx_property = k3fbxProperty::COLOR;
+                        } else if(!strncmp(str, "ShadowColor", 12)) {
+                            fbx_property = k3fbxProperty::SHADOW_COLOR;
                         } else if (!strncmp(str, "Intensity", 10)) {
                             fbx_property = k3fbxProperty::INTENSITY;
                         } else if (!strncmp(str, "DecayType", 10)) {
