@@ -1719,7 +1719,9 @@ D3D12_RESOURCE_STATES k3gfxImpl::ConvertToDx12ResourceState(k3resourceState stat
     case k3resourceState::RENDER_TARGET: dx12_state = (is_depth) ? D3D12_RESOURCE_STATE_DEPTH_WRITE : D3D12_RESOURCE_STATE_RENDER_TARGET; break;
     case k3resourceState::UAV: dx12_state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS; break;
     case k3resourceState::DEPTH_WRITE: dx12_state = D3D12_RESOURCE_STATE_DEPTH_WRITE; break;
-    case k3resourceState::DEPTH_READ: dx12_state = D3D12_RESOURCE_STATE_DEPTH_READ; break;
+    case k3resourceState::DEPTH_READ: dx12_state = D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE; break;
+    case k3resourceState::DEPTH_READ_FRONT_END_SHADER: dx12_state = D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE; break;
+    case k3resourceState::DEPTH_READ_PIXEL_SHADER: dx12_state = D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE; break;
     case k3resourceState::FRONT_END_SHADER_RESOURCE: dx12_state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE; break;
     case k3resourceState::PIXEL_SHADER_RESOURCE: dx12_state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE; break;
     case k3resourceState::SHADER_RESOURCE: dx12_state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE; break;
@@ -1984,6 +1986,22 @@ D3D12_DESCRIPTOR_RANGE_TYPE k3gfxImpl::ConvertToDx12ShaderBindType(k3shaderBindT
     case k3shaderBindType::SAMPLER: dx12_desc_range_type = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER; break;
     }
     return dx12_desc_range_type;
+}
+
+D3D12_SHADER_VISIBILITY k3gfxImpl::ConvertToDx12ShaderVisibility(k3shaderVisibility visibility)
+{
+    D3D12_SHADER_VISIBILITY dx12_shader_visibility = D3D12_SHADER_VISIBILITY_ALL;
+    switch (visibility) {
+    case k3shaderVisibility::ANY_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_ALL; break;
+    case k3shaderVisibility::VERTEX_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_VERTEX; break;
+    case k3shaderVisibility::HULL_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_HULL; break;
+    case k3shaderVisibility::DOMAIN_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_DOMAIN; break;
+    case k3shaderVisibility::GEOMETRY_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_GEOMETRY; break;
+    case k3shaderVisibility::PIXEL_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_PIXEL; break;
+    case k3shaderVisibility::AMPLIFICATION_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_AMPLIFICATION; break;
+    case k3shaderVisibility::MESH_SHADER: dx12_shader_visibility = D3D12_SHADER_VISIBILITY_MESH; break;
+    }
+    return dx12_shader_visibility;
 }
 
 D3D12_FILTER k3gfxImpl::ConvertToDx12Fitler(k3texFilter filter)
@@ -2703,7 +2721,7 @@ K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3
     uint32_t i, j;
     for (i = 0; i < num_params; i++) {
         dx12_params[i].ParameterType = k3gfxImpl::ConvertToDx12RootParameterType(params[i].type);
-        dx12_params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        dx12_params[i].ShaderVisibility = k3gfxImpl::ConvertToDx12ShaderVisibility(params[i].visibility);
         switch (params[i].type) {
         case k3bindingType::CONSTANT:
             dx12_params[i].Constants.ShaderRegister = params[i].constant.reg;

@@ -1419,6 +1419,8 @@ enum class k3resourceState
     UAV,
     DEPTH_WRITE,
     DEPTH_READ,
+    DEPTH_READ_FRONT_END_SHADER,
+    DEPTH_READ_PIXEL_SHADER,
     FRONT_END_SHADER_RESOURCE,
     PIXEL_SHADER_RESOURCE,
     SHADER_RESOURCE,
@@ -2069,6 +2071,17 @@ enum class k3bindingType {
     VIEW_SET_TABLE
 };
 
+enum class k3shaderVisibility {
+    ANY_SHADER,
+    VERTEX_SHADER,
+    HULL_SHADER,
+    DOMAIN_SHADER,
+    GEOMETRY_SHADER,
+    PIXEL_SHADER,
+    AMPLIFICATION_SHADER,
+    MESH_SHADER
+};
+
 struct k3bindingConst {
     uint32_t reg;
     uint32_t space;
@@ -2095,6 +2108,7 @@ struct k3bindingViewSetTable {
 
 struct k3bindingParam {
     k3bindingType type;
+    k3shaderVisibility visibility;
     union {
         k3bindingConst constant;
         k3bindingView view_desc;

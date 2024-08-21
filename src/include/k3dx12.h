@@ -252,6 +252,7 @@ public:
     static D3D12_PRIMITIVE_TOPOLOGY ConvertToDx12DrawPrimType(k3drawPrimType draw_prim);
     static D3D12_HEAP_TYPE ConvertToDx12MemType(k3memType mem_type);
     static D3D12_DESCRIPTOR_RANGE_TYPE ConvertToDx12ShaderBindType(k3shaderBindType type);
+    static D3D12_SHADER_VISIBILITY ConvertToDx12ShaderVisibility(k3shaderVisibility visibility);
     static D3D12_FILTER ConvertToDx12Fitler(k3texFilter filter);
     static D3D12_TEXTURE_ADDRESS_MODE ConvertToDx12AddrMode(k3texAddr addr_mode);
     static D3D12_HIT_GROUP_TYPE ConvertToDx12HitGroupType(k3rtHitGroupType hit_group_type);
