@@ -1825,8 +1825,8 @@ public:
 
 struct k3lightBufferData {
     static const uint32_t POINT = 0;
-    static const uint32_t SPOT = 1;
-    static const uint32_t DIRECTIONAL = 2;
+    static const uint32_t DIRECTIONAL= 1;
+    static const uint32_t SPOT = 2;
     static const uint32_t DECAY_NONE = 0;
     static const uint32_t DECAY_LINEAR = 1;
     static const uint32_t DECAY_QUADRATIC = 2;

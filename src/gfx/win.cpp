@@ -3554,9 +3554,24 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             if (light_node_index != ~0x0) {
                 k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
                 strncpy(mesh_impl->_lights[mesh_impl->_num_lights].name, light_node->name, K3_FBX_MAX_NAME_LENGTH);
-                mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
-                mesh_impl->_lights[mesh_impl->_num_lights].position[1] = fbx.model[i].translation[1];
-                mesh_impl->_lights[mesh_impl->_num_lights].position[2] = fbx.model[i].translation[2];
+                if (light_node->light_type == k3lightBufferData::DIRECTIONAL) {
+                    float mat[16];
+                    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+                    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+                    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+                    float* light_dir = mesh_impl->_lights[mesh_impl->_num_lights].position;
+                    light_dir[0] = 0.0f; light_dir[1] = 1.0f; light_dir[2] = 0.0f;
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                } else {
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[1] = fbx.model[i].translation[1];
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[2] = fbx.model[i].translation[2];
+                }
                 mesh_impl->_lights[mesh_impl->_num_lights].light_type = light_node->light_type;
                 mesh_impl->_lights[mesh_impl->_num_lights].color[0] = light_node->color[0];
                 mesh_impl->_lights[mesh_impl->_num_lights].color[1] = light_node->color[1];
