@@ -1433,7 +1433,41 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_ex
     delete[] bone_mat;
 }
 
-K3API k3meshPartions::k3meshPartions()
+K3API void k3meshObj::getLightAABB(k3AABB* aabb, uint32_t light)
+{
+    if (aabb == NULL) {
+        k3error::Handler("Invalid parameters", "k3meshObj::getLightAABB");
+        return;
+    }
+    aabb->min[0] = -INFINITY;
+    aabb->min[1] = -INFINITY;
+    aabb->min[2] = -INFINITY;
+    aabb->max[0] = INFINITY;
+    aabb->max[1] = INFINITY;
+    aabb->max[2] = INFINITY;
+
+    if (light >= _data->_num_lights) {
+        // No light selected, so use infinite bounding box
+        return;
+    }
+
+    if (_data->_lights[light].light_type == k3lightBufferData::POINT) {
+        float radius = _data->_lights[light].intensity / 1000.0f;
+        float position[3];
+        position[0] = _data->_lights[light].position[0];
+        position[1] = _data->_lights[light].position[1];
+        position[2] = _data->_lights[light].position[2];
+        aabb->min[0] = position[0] - radius;
+        aabb->min[1] = position[1] - radius;
+        aabb->min[2] = position[2] - radius;
+        aabb->max[0] = position[0] + radius;
+        aabb->max[1] = position[1] + radius;
+        aabb->max[2] = position[2] + radius;
+    }
+    //  Directional lights have infinite bounding box
+}
+
+K3API k3meshPartitions::k3meshPartitions()
 {
     llists = NULL;
     parts[0] = 0;
@@ -1450,7 +1484,7 @@ K3API k3meshPartions::k3meshPartions()
     part_size[2] = 0.0f;
 }
 
-K3API void k3meshPartions::insertObject(uint32_t obj_index, k3AABB* obj_aabb)
+K3API void k3meshPartitions::insertObject(uint32_t obj_index, k3AABB* obj_aabb)
 {
     k3AABB part_aabb;
     uint32_t p_index = 0;
@@ -1474,7 +1508,7 @@ K3API void k3meshPartions::insertObject(uint32_t obj_index, k3AABB* obj_aabb)
     }
 }
 
-K3API void k3meshObj::sizePartitions(k3meshPartions* p, float overlap)
+K3API void k3meshObj::sizePartitions(k3meshPartitions* p, float overlap)
 {
     // Generate AABB for entire mesh
     k3AABB overall_aabb;
@@ -1491,7 +1525,7 @@ K3API void k3meshObj::sizePartitions(k3meshPartions* p, float overlap)
     }
 }
 
-K3API void k3meshObj::createMeshPartitions(k3meshPartions* p, float overlap)
+K3API void k3meshObj::createMeshPartitions(k3meshPartitions* p, float overlap)
 {
     if (p == NULL) {
         k3error::Handler("Bad input", "k3meshObj::createPartionList");
@@ -1511,6 +1545,28 @@ K3API void k3meshObj::createMeshPartitions(k3meshPartions* p, float overlap)
         p->insertObject(o, &obj_aabb);
     }
 }
+
+K3API void k3meshObj::createLightPartitions(k3meshPartitions* p, float overlap)
+{
+    if (p == NULL) {
+        k3error::Handler("Bad input", "k3meshObj::createPartionList");
+        return;
+    }
+    if (p->part_size[0] == 0.0f && p->part_size[1] == 0.0f && p->part_size[2] == 0.0f) {
+        sizePartitions(p, overlap);
+    }
+    if (p->part_inc[0] == 0.0f) p->part_inc[0] = p->part_size[0];
+    if (p->part_inc[1] == 0.0f) p->part_inc[1] = p->part_size[1];
+    if (p->part_inc[2] == 0.0f) p->part_inc[2] = p->part_size[2];
+
+    uint32_t l;
+    k3AABB light_aabb;
+    for (l = 0; l < _data->_num_lights; l++) {
+        getLightAABB(&light_aabb, l);
+        p->insertObject(l, &light_aabb);
+    }
+}
+
 
 K3API void k3meshObj::genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id)
 {

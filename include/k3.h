@@ -1890,7 +1890,7 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB
 // Modify AABB by scaling and offsetting
 void k3bvh_ScaleOffsetAABB(k3AABB* d, const float* scale, const float* offset);
 
-struct k3meshPartions {
+struct k3meshPartitions {
     // Following arguments must be filled out when creating the partitions
     // llists must be an array of x_parts*y_parts*z_parts, all clear
     k3llist<uint32_t>::list_t* llists;
@@ -1899,7 +1899,7 @@ struct k3meshPartions {
     float start[3];
     float part_inc[3];
     float part_size[3];
-    K3API k3meshPartions();
+    K3API k3meshPartitions();
     // loops through all of the partitions and the object index to each partition the object AABB intersects
     K3API void insertObject(uint32_t obj_index, k3AABB* obj_aabb);
 };
@@ -1986,8 +1986,10 @@ public:
     K3API uint32_t getAnimLength(uint32_t a);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
     K3API void getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_exclude_mask);
-    K3API void sizePartitions(k3meshPartions* p, float overlap);
-    K3API void createMeshPartitions(k3meshPartions* p, float overlap);
+    K3API void getLightAABB(k3AABB* aabb, uint32_t light);
+    K3API void sizePartitions(k3meshPartitions* p, float overlap);
+    K3API void createMeshPartitions(k3meshPartitions* p, float overlap);
+    K3API void createLightPartitions(k3meshPartitions* p, float overlap);
     K3API void genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id);
 
     K3API k3buffer getIndexBuffer();
