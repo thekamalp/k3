@@ -329,6 +329,12 @@ void App::UpdateResources(uint32_t v)
     k3m4_Inverse(camera_data);
     cb_camera_upload[v]->Unmap();
 
+    uint32_t num_anims = scene->getNumAnims();
+    if (num_anims) {
+        uint32_t t = timer->GetTime();
+        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
+    }
+
     uint32_t i;
     uint32_t num_objects = scene->getNumObjects();
     obj_prop_t* obj_data = (obj_prop_t*)cb_obj_upload[v]->MapForWrite(num_objects * sizeof(obj_prop_t));
@@ -345,9 +351,6 @@ void App::UpdateResources(uint32_t v)
 
     uint32_t num_bones = scene->getNumBones();
     if (num_bones) {
-        uint32_t t = timer->GetTime();
-        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
-
         float* bone_data = (float*)cb_bone_upload[v]->MapForWrite(num_bones * 32 * sizeof(float));
         scene->genBoneMatrices(bone_data, true);
         cb_bone_upload[v]->Unmap();
@@ -362,10 +365,12 @@ void App::UpdateResources(uint32_t v)
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
     cmd_buf->UploadBuffer(cb_obj_upload[v], buffer_resource);
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
-    buffer_resource = cb_bone[v]->GetResource();
-    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
-    cmd_buf->UploadBuffer(cb_bone_upload[v], buffer_resource);
-    cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
+    if (cb_bone[v] != NULL) {
+        buffer_resource = cb_bone[v]->GetResource();
+        cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+        cmd_buf->UploadBuffer(cb_bone_upload[v], buffer_resource);
+        cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
+    }
 }
 
 void App::Keyboard(k3key k, char c, k3keyState state)

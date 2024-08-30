@@ -662,6 +662,7 @@ k3meshImpl::k3meshImpl()
     _num_empties = 0;
     _num_bones = 0;
     _num_anims = 0;
+    _num_static_models = 0;
     _geom_data = NULL;
     _mesh_start = NULL;
     _model = NULL;
@@ -721,6 +722,8 @@ k3meshImpl::~k3meshImpl()
         uint32_t i;
         for (i = 0; i < _num_anims; i++) {
             if (_anim[i].bone_data) delete[] _anim[i].bone_data;
+            if (_anim[i].bone_flag) delete[] _anim[i].bone_flag;
+            if (_anim[i].anim_objs) delete[] _anim[i].anim_objs;
         }
         delete[] _anim;
         _anim = NULL;
@@ -753,6 +756,16 @@ const k3meshImpl* k3meshObj::getImpl() const
 K3API uint32_t k3meshObj::getNumObjects()
 {
     return _data->_num_models;
+}
+
+K3API uint32_t k3meshObj::getNumStaticObjects()
+{
+    return _data->_num_static_models;
+}
+
+K3API uint32_t k3meshObj::getNumDynamicObjects()
+{
+    return _data->_num_models - _data->_num_static_models;
 }
 
 K3API uint32_t k3meshObj::getNumTextures()
@@ -1245,6 +1258,28 @@ K3API const char* k3meshObj::getAnimName(uint32_t a)
     return NULL;
 }
 
+K3API uint32_t k3meshObj::getAnimNumObjs(uint32_t a)
+{
+    if (a < _data->_num_anims) {
+        return _data->_anim[a].num_anim_objs;
+    }
+    k3error::Handler("Invalid animation value", "k3meshObj::getAnimNumObjs");
+    return 0;
+}
+
+K3API uint32_t k3meshObj::getAnimObj(uint32_t a, uint32_t i)
+{
+    if (a < _data->_num_anims) {
+        if (i < _data->_anim[a].num_anim_objs) {
+            return _data->_anim[a].anim_objs[i];
+        }
+        k3error::Handler("Invalid animation object value", "k3meshObj::getAnimObj");
+        return ~0x0;
+    }
+    k3error::Handler("Invalid animation value", "k3meshObj::getAnimObj");
+    return ~0x0;
+}
+
 K3API uint32_t k3meshObj::getAnimLength(uint32_t a)
 {
     if (a < _data->_num_anims) {
@@ -1256,7 +1291,6 @@ K3API uint32_t k3meshObj::getAnimLength(uint32_t a)
     k3error::Handler("Invalid animation value", "k3meshObj::getAnimLength");
     return 0;
 }
-
 
 K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags)
 {
@@ -1270,25 +1304,43 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
     uint32_t norm_time_msec = (num_frame_intervals) ? time_msec % total_anim_time_msec : 0;
     uint32_t anim_frame = (num_frame_intervals) ? norm_time_msec / delta_msec : 0;
     float anim_frame_frac = (num_frame_intervals) ? ((norm_time_msec % delta_msec) / (float)delta_msec) : 0.0f;
-    uint32_t bone_id;
+    uint32_t obj_index, obj_id;
     float* dest_pos_ptr;
     float* dest_scale_ptr;
     float* dest_quat_ptr;
-    uint32_t src0_index = anim_frame * _data->_num_bones;
-    uint32_t src1_index = src0_index + ((num_frame_intervals) ? _data->_num_bones : 0);
+    uint32_t num_anim_objs = _data->_anim[anim_index].num_anim_objs;
+    uint32_t src0_index = anim_frame * num_anim_objs;
+    uint32_t src1_index = src0_index + ((num_frame_intervals) ? num_anim_objs : 0);
     float temp_vec[4];
     float temp_vec2[4];
     const k3boneData* bone_data = _data->_anim[anim_index].bone_data;
     const uint32_t* bone_flag = _data->_anim[anim_index].bone_flag;
     bool force_anim = (flags & ANIM_FLAG_INCREMENTAL) ? false : true;
     bool overwrite_morphed = (~flags & ANIM_FLAG_MORPHED) ? false : true;
+    uint32_t obj_bone_flag;
+    float model_position[3];
+    float model_scaling[3];
+    float model_quat[4];
+    dest_pos_ptr = model_position;
+    dest_scale_ptr = model_scaling;
+    dest_quat_ptr = model_quat;
 
-    for (bone_id = 0; bone_id < _data->_num_bones; bone_id++) {
-        dest_pos_ptr = _data->_bones[bone_id].position;
-        dest_scale_ptr = _data->_bones[bone_id].scaling;
-        dest_quat_ptr = _data->_bones[bone_id].rot_quat;
+    for (obj_index = 0; obj_index < num_anim_objs; obj_index++) {
+        if (_data->_anim[anim_index].anim_objs) {
+            obj_id = _data->_anim[anim_index].anim_objs[obj_index];
+        } else {
+            obj_id = obj_index;
+        }
 
-        if (force_anim || ((bone_flag[bone_id] & K3_BONE_FLAG_MORPH) && overwrite_morphed)) {
+        if (_data->_bones) {
+            dest_pos_ptr = _data->_bones[obj_id].position;
+            dest_scale_ptr = _data->_bones[obj_id].scaling;
+            dest_quat_ptr = _data->_bones[obj_id].rot_quat;
+        }
+
+        obj_bone_flag = (bone_flag) ? bone_flag[obj_id] : K3_BONE_FLAG_MORPH;
+
+        if (force_anim || ((obj_bone_flag & K3_BONE_FLAG_MORPH) && overwrite_morphed)) {
             k3sv3_Mul(dest_pos_ptr, 1.0f - anim_frame_frac, bone_data[src0_index].position);
             k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
             k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
@@ -1301,7 +1353,7 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
             k3sv4_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].rot_quat);
             k3v4_Add(dest_quat_ptr, dest_quat_ptr, temp_vec);
             k3v4_Normalize(dest_quat_ptr);
-        } else if (bone_flag[bone_id] & K3_BONE_FLAG_MORPH) {
+        } else if (obj_bone_flag & K3_BONE_FLAG_MORPH) {
             //k3sv3_Mul(temp_vec2, 1.0f - anim_frame_frac, bone_data[src0_index].position);
             //k3sv3_Mul(temp_vec, anim_frame_frac, bone_data[src1_index].position);
             //k3v3_Add(dest_pos_ptr, dest_pos_ptr, temp_vec);
@@ -1323,7 +1375,29 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
             k3v4_QuatMul(dest_quat_ptr, dest_quat_ptr, temp_vec);
             k3v4_Normalize(dest_quat_ptr);
         }
- 
+
+        if (_data->_bones == NULL) {
+            float xlat_mat[16];
+            float rot_xlat_mat[16];
+            float* dest_xform = _data->_model[obj_id].world_xform;
+            k3m4_QuatToMat(rot_xlat_mat, dest_quat_ptr);
+            k3m4_SetIdentity(xlat_mat);
+            xlat_mat[3] = dest_pos_ptr[0];
+            xlat_mat[7] = dest_pos_ptr[1];
+            xlat_mat[11] = dest_pos_ptr[2];
+            k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
+            k3m4_SetIdentity(xlat_mat);
+            xlat_mat[0] = dest_scale_ptr[0];
+            xlat_mat[5] = dest_scale_ptr[1];
+            xlat_mat[10] = dest_scale_ptr[2];
+            k3m4_Mul(dest_xform, rot_xlat_mat, xlat_mat);
+            uint32_t parent = _data->_model[obj_id].parent;
+            if (parent < _data->_num_models) {
+                float* parent_xform = _data->_model[parent].world_xform;
+                k3m4_Mul(dest_xform, parent_xform, dest_xform);
+            }
+        }
+
         src0_index++;
         src1_index++;
     }
@@ -1765,6 +1839,7 @@ struct k3fbxModelData {
     float rotation[3];
     float scaling[3];
     float visibility;
+    bool dynamic;
 };
 
 struct k3fbxMaterialData {
@@ -1841,7 +1916,7 @@ struct k3fbxAnimCurveNode {
     uint64_t id;
     k3fbxAnimCurveType curve_type;
     uint32_t anim_curve[3];
-    uint32_t limb_node;
+    uint32_t model_id;
     float default_value[3];
 };
 
@@ -2167,7 +2242,8 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             // check if id1 is an anim_layer
             index1 = findFbxAnimLayer(fbx, id[1]);
             if (index1 != ~0x0) {
-                if (fbx->anim_layer[index1].num_anim_curve_nodes < K3_FBX_BONE_TO_ANIM_MULTIPLIER * fbx->num_clusters) {
+                uint32_t num_anim_objs = (fbx->num_clusters) ? fbx->num_clusters : fbx->num_models;
+                if (fbx->anim_layer[index1].num_anim_curve_nodes < K3_FBX_BONE_TO_ANIM_MULTIPLIER * num_anim_objs) {
                     fbx->anim_layer[index1].anim_curve_node_id[fbx->anim_layer[index1].num_anim_curve_nodes] = index0;
                     fbx->anim_layer[index1].num_anim_curve_nodes++;
                 } else {
@@ -2176,8 +2252,9 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             } else {
                 // Check if id1 is a limb node
                 index1 = findFbxModelNode(fbx, id[1]);
-                if (index1 != ~0x0 && fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE) {
-                    fbx->anim_curve_node[index0].limb_node = index1;
+                if (index1 != ~0x0 && (fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE || fbx->model[index1].obj_type == k3fbxObjType::MESH)) {
+                    fbx->anim_curve_node[index0].model_id = index1;
+                    fbx->model[index1].dynamic = true;
                 }
             }
         }
@@ -2395,6 +2472,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->model[fbx->num_models].scaling[1] = 1.0f;
                 fbx->model[fbx->num_models].scaling[2] = 1.0f;
                 fbx->model[fbx->num_models].visibility = 1.0f;
+                fbx->model[fbx->num_models].dynamic = false;
             }
             fbx->num_models++;
             fbx_node_argument = 0;
@@ -2470,7 +2548,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[0] = ~0x0;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[1] = ~0x0;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].anim_curve[2] = ~0x0;
-                fbx->anim_curve_node[fbx->num_anim_curve_nodes].limb_node = ~0x0;
+                fbx->anim_curve_node[fbx->num_anim_curve_nodes].model_id = ~0x0;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[0] = 0.0f;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[1] = 0.0f;
                 fbx->anim_curve_node[fbx->num_anim_curve_nodes].default_value[2] = 0.0f;
@@ -2550,7 +2628,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         break;
                     case k3fbxProperty::VISIBILITY:
                         if (fbx->model && fbx_property_argument < 1) {
-                            fbx->model[fbx->num_models - 1].visibility = *i32_arr;
+                            fbx->model[fbx->num_models - 1].visibility = (float)*i32_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -3412,27 +3490,61 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
 }
 
 // Sort mesh models; list must be large enogh to contain all models
-void insertFbxModelToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sorted_model_id)
+void insertFbxModelToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sorted_model_id, uint32_t num_static_models)
 {
     if (model_id >= fbx->num_models) return;
     if (sorted_model_id[model_id] != ~0x0) return;
-    if (fbx->model[model_id].obj_type != k3fbxObjType::MESH) return;
+    if (fbx->model[model_id].obj_type != k3fbxObjType::MESH || fbx->model[model_id].index.model.mesh == ~0x0) return;
     uint32_t parent_model_id = fbx->model[model_id].index.model.parent;
     if (parent_model_id < fbx->num_models) {
         // Make sure parent model has been sorted
-        insertFbxModelToSortedList(parent_model_id, fbx, sorted_model_id);
+        insertFbxModelToSortedList(parent_model_id, fbx, sorted_model_id, num_static_models);
         // insert child just after parent
         sorted_model_id[model_id] = sorted_model_id[parent_model_id] + 1;
+    } else if (fbx->model[model_id].dynamic) {
+        // if there is no parent, and the model is dynamic, insert the first after the static models
+        sorted_model_id[model_id] = num_static_models;
     } else {
-        // if there is no parent, insert t first location
+        // if there is no parent, and the model is static, insert the first location
         sorted_model_id[model_id] = 0;
     }
+
+    // Check that the model state is consistent with its placement
+    uint32_t model_limit = ~0x0;
+    if (fbx->model[model_id].dynamic) {
+        if (sorted_model_id[model_id] < num_static_models) {
+            k3error::Handler("Dynamic model sorted into static region", "insertFbxModelToSortedList");
+        }
+    } else {
+        model_limit = num_static_models;
+        if (sorted_model_id[model_id] >= num_static_models) {
+            k3error::Handler("static model sorted into dynamic region", "insertFbxModelToSortedList");
+        }
+    }
+
     uint32_t m;
     for (m = 0; m < fbx->num_models; m++) {
-        if (sorted_model_id[m] != ~0x0 && sorted_model_id[m] >= sorted_model_id[model_id] && m != model_id) {
+        if (sorted_model_id[m] < model_limit && sorted_model_id[m] >= sorted_model_id[model_id] && m != model_id) {
             sorted_model_id[m]++;
         }
     }
+}
+
+// Checks if model is dynamic and if not, is inherited from a dynamic model
+bool isFbxModelInheritedDynamic(uint32_t model_id, k3fbxData* fbx)
+{
+    if (model_id >= fbx->num_models) return false;
+    if (fbx->model[model_id].dynamic) return true;
+    uint32_t parent_model = ~0x0;
+    switch (fbx->model[model_id].obj_type) {
+    case k3fbxObjType::MESH:
+        parent_model = fbx->model[model_id].index.model.parent;
+        break;
+    case k3fbxObjType::LIMB_NODE:
+        parent_model = fbx->model[model_id].index.limb_node.parent;
+        break;
+    }
+    return isFbxModelInheritedDynamic(parent_model, fbx);
 }
 
 void insertFbxBoneToSortedList(uint32_t bone_id, k3fbxData* fbx, uint32_t* sorted_bone_id)
@@ -3512,8 +3624,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_anim_layers) {
         fbx.anim_layer = new k3fbxAnimLayer[fbx.num_anim_layers];
         uint32_t i;
+        uint32_t num_anim_objs = (fbx.num_clusters) ? fbx.num_clusters : fbx.num_models;
         for (i = 0; i < fbx.num_anim_layers; i++) {
-            fbx.anim_layer[i].anim_curve_node_id = new uint32_t[K3_FBX_BONE_TO_ANIM_MULTIPLIER * fbx.num_clusters];
+            fbx.anim_layer[i].anim_curve_node_id = new uint32_t[K3_FBX_BONE_TO_ANIM_MULTIPLIER * num_anim_objs];
         }
     }
     if (fbx.num_anim_curve_nodes) fbx.anim_curve_node = new k3fbxAnimCurveNode[fbx.num_anim_curve_nodes];
@@ -3679,13 +3792,27 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         if (fbx.model[i].obj_type == k3fbxObjType::NONE) mesh_impl->_num_empties++;
     }
 
+    // Count and mark dynamic models
+    uint32_t num_dynamic_models = 0;
+    for (i = 0; i < fbx.num_models; i++) {
+        if (isFbxModelInheritedDynamic(i, &fbx)) {
+            fbx.model[i].dynamic = true;
+            if (fbx.model[i].obj_type == k3fbxObjType::MESH && fbx.model[i].index.model.mesh != ~0x0) {
+                num_dynamic_models++;
+            }
+        }
+    }
+
+    // Sort the models so that parents are always before their children,
+    // and dynamic models areat the end
     uint32_t* sorted_model_id = new uint32_t[fbx.num_models];
     for (i = 0; i < fbx.num_models; i++) {
         sorted_model_id[i] = ~0x0;
     }
     for (i = 0; i < fbx.num_models; i++) {
-        insertFbxModelToSortedList(i, &fbx, sorted_model_id);
+        insertFbxModelToSortedList(i, &fbx, sorted_model_id, mesh_impl->_num_models - num_dynamic_models);
     }
+
     mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
     mesh_impl->_num_model_custom_props = custom_props.num_model_custom_props;
     if (mesh_impl->_num_model_custom_props) {
@@ -3720,22 +3847,24 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_model[dest_index].diffuse_map_index = ~0;
             mesh_impl->_model[dest_index].normal_map_index = ~0;
             mesh_impl->_model[dest_index].visibility = fbx.model[i].visibility;
+            mesh_impl->_model[dest_index].flags = 0x0;
+            if (fbx.model[i].dynamic) {
+                mesh_impl->_model[dest_index].flags |= k3meshModel::FLAG_DYNAMIC;
+            }
             // Set initial model rotation and position
-            k3m4_SetIdentity(mesh_impl->_model[dest_index].world_xform);
-            mesh_impl->_model[dest_index].world_xform[0] = fbx.model[i].scaling[0];
-            mesh_impl->_model[dest_index].world_xform[5] = fbx.model[i].scaling[1];
-            mesh_impl->_model[dest_index].world_xform[10] = fbx.model[i].scaling[2];
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
-            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
-            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
-            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
-            k3m4_SetIdentity(mat);
-            mat[3] = fbx.model[i].translation[0];
-            mat[7] = fbx.model[i].translation[1];
-            mat[11] = fbx.model[i].translation[2];
-            k3m4_Mul(mesh_impl->_model[dest_index].world_xform, mat, mesh_impl->_model[dest_index].world_xform);
+            mesh_impl->_model[dest_index].position[0] = fbx.model[i].translation[0];
+            mesh_impl->_model[dest_index].position[1] = fbx.model[i].translation[1];
+            mesh_impl->_model[dest_index].position[2] = fbx.model[i].translation[2];
+            mesh_impl->_model[dest_index].rotation[0] = fbx.model[i].rotation[0];
+            mesh_impl->_model[dest_index].rotation[1] = fbx.model[i].rotation[1];
+            mesh_impl->_model[dest_index].rotation[2] = fbx.model[i].rotation[2];
+            mesh_impl->_model[dest_index].scaling[0] = fbx.model[i].scaling[0];
+            mesh_impl->_model[dest_index].scaling[1] = fbx.model[i].scaling[1];
+            mesh_impl->_model[dest_index].scaling[2] = fbx.model[i].scaling[2];
+            k3m4_SetScaleRotAngleXlat(mesh_impl->_model[dest_index].world_xform,
+                mesh_impl->_model[dest_index].scaling,
+                mesh_impl->_model[dest_index].rotation,
+                mesh_impl->_model[dest_index].position);
             if (fbx.model[i].index.model.parent < fbx.num_models) {
                 mesh_impl->_model[dest_index].parent = sorted_model_id[fbx.model[i].index.model.parent];
             } else {
@@ -3761,8 +3890,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_num_models++;
         }
     }
-    delete[] sorted_model_id;
-    // Transform by the mdel parent, if there is any
+
+    // Transform by the model parent, if there is any
     for (i = 0; i < mesh_impl->_num_models; i++) {
         uint32_t parent = mesh_impl->_model[i].parent;
         if (parent < mesh_impl->_num_models) {
@@ -3776,22 +3905,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         if (fbx.model[i].obj_type == k3fbxObjType::NONE) {
             strncpy(mesh_impl->_empties[mesh_impl->_num_empties].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
             // Set initial model rotation and position
-            k3m4_SetIdentity(mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
-            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[0] = fbx.model[i].scaling[0];
-            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[5] = fbx.model[i].scaling[1];
-            mesh_impl->_empties[mesh_impl->_num_empties].world_xform[10] = fbx.model[i].scaling[2];
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
-            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
-            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
-            k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
-            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
-            k3m4_SetIdentity(mat);
-            mat[3] = fbx.model[i].translation[0];
-            mat[7] = fbx.model[i].translation[1];
-            mat[11] = fbx.model[i].translation[2];
-            k3m4_Mul(mesh_impl->_empties[mesh_impl->_num_empties].world_xform, mat, mesh_impl->_empties[mesh_impl->_num_empties].world_xform);
-
+            k3m4_SetScaleRotAngleXlat(mesh_impl->_empties[mesh_impl->_num_empties].world_xform,
+                fbx.model[i].scaling,
+                fbx.model[i].rotation,
+                fbx.model[i].translation);
             mesh_impl->_num_empties++;
         }
     }
@@ -3876,38 +3993,67 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
-    if (use_skin) {
-        uint32_t b, bone_id;
-        mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
+    // Remap either the bone ids or models ids so that parents are always before the child
+    uint32_t* sorted_obj_id;
+    uint32_t obj_id;
 
-        // Remap bone ids so that parents are always before child
-        uint32_t* sorted_bone_id = new uint32_t[mesh_impl->_num_bones];
-        // first initialize sorted list to ~0x0, which is the null value
-        for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
-            sorted_bone_id[bone_id] = ~0x0;
+    mesh_impl->_num_anims = fbx.num_anim_layers;
+    bool expand_anim = !use_skin && (fbx.num_anim_layers == 1);
+    if (expand_anim) {
+        mesh_impl->_num_anims = 0;
+        k3bitTracker obj_tracker = k3bitTrackerObj::Create(mesh_impl->_num_models);
+        uint32_t anim_id;
+        uint32_t curve_node_index, curve_node_id, dest_index, obj_id;
+        for (anim_id = 0; anim_id < fbx.num_anim_layers; anim_id++) {
+            obj_tracker->SetAll(false);
+            for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
+                curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
+                dest_index = fbx.anim_curve_node[curve_node_id].model_id;
+                if (dest_index < fbx.num_models) {
+                    obj_id = sorted_model_id[dest_index];
+                    if (obj_id < mesh_impl->_num_models && !obj_tracker->GetBit(obj_id)) {
+                        obj_tracker->SetBit(obj_id, true);
+                        mesh_impl->_num_anims++;
+                    }
+                }
+            }
+
         }
-        // Then insert each bone, into the the sorted list, taking care that parents are before the children
-        for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
-            insertFbxBoneToSortedList(bone_id, &fbx, sorted_bone_id);
+    }
+    if (mesh_impl->_num_anims) {
+        mesh_impl->_anim = new k3anim[mesh_impl->_num_anims];
+    }
+
+    if (use_skin) {
+        mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
+        sorted_obj_id = new uint32_t[mesh_impl->_num_bones];
+
+        // first initialize sorted list to ~0x0, which is the null value
+        for (obj_id = 0; obj_id < mesh_impl->_num_bones; obj_id++) {
+            sorted_obj_id[obj_id] = ~0x0;
+        }
+        // Then insert each object, into the the sorted list, taking care that parents are before the children
+        for (obj_id = 0; obj_id < mesh_impl->_num_bones; obj_id++) {
+            insertFbxBoneToSortedList(obj_id, &fbx, sorted_obj_id);
         }
 
         // Loop through all the bones
-        for (b = 0; b < mesh_impl->_num_bones; b++) {
-            bone_id = sorted_bone_id[b];
+        for (o = 0; o < mesh_impl->_num_bones; o++) {
+            obj_id = sorted_obj_id[o];
 
             // Find the skin it belongs to
-            uint32_t skin_id = fbx.cluster[b].skin_index;
+            uint32_t skin_id = fbx.cluster[o].skin_index;
             if (skin_id < fbx.num_skins) {
                 // then find the corresponding mesh
-                uint32_t w_start = fbx.cluster[b].weight_start;
-                uint32_t i_start = fbx.cluster[b].index_start;
+                uint32_t w_start = fbx.cluster[o].weight_start;
+                uint32_t i_start = fbx.cluster[o].index_start;
                 float* weights = (float*)((char*)fbx.cluster_weights + w_start);
                 uint32_t* cl_indexes = fbx.cluster_indexes + i_start;
-                uint32_t num_cl_indexes = (b == mesh_impl->_num_bones - 1) ? fbx.num_cluster_indexes : fbx.cluster[b + 1].index_start;
+                uint32_t num_cl_indexes = (o == mesh_impl->_num_bones - 1) ? fbx.num_cluster_indexes : fbx.cluster[o + 1].index_start;
                 num_cl_indexes -= i_start;
-                if (fbx.cluster[b].weight_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) {
+                if (fbx.cluster[o].weight_type == K3_FBX_TYPECODE_DOUBLE_ARRAY) {
                     doubleToFloatArray(weights, num_cl_indexes);
-                    fbx.cluster[b].weight_type = K3_FBX_TYPECODE_FLOAT_ARRAY;
+                    fbx.cluster[o].weight_type = K3_FBX_TYPECODE_FLOAT_ARRAY;
                 }
                 uint32_t mesh_id = fbx.skin[skin_id].mesh_index;
                 if (mesh_id < fbx.num_meshes) {
@@ -3915,7 +4061,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                     uint32_t i, w;
                     for (i = 0; i < num_cl_indexes; i++) {
                         float temp_weight, cur_weight = weights[i];
-                        uint32_t temp_bone, cur_bone = bone_id;
+                        uint32_t temp_bone, cur_bone = obj_id;
                         v_id = v_start + cl_indexes[i];
                         for (w = 0; w < 4; w++) {
                             if (alloc_skin_f[8 * v_id + 4 + w] < cur_weight) {
@@ -3931,34 +4077,34 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 }
             }
             // Find the bone model index
-            uint32_t bone_model_index = fbx.cluster[b].bone_index;
+            uint32_t bone_model_index = fbx.cluster[o].bone_index;
             uint32_t parent_bone_index = fbx.model[bone_model_index].index.limb_node.parent;
             uint32_t bind_pose_index = fbx.model[bone_model_index].index.limb_node.bind_pose_index;
-            strncpy(mesh_impl->_bones[bone_id].name, fbx.model[bone_model_index].name, K3_FBX_MAX_NAME_LENGTH);
-            mesh_impl->_bones[bone_id].position[0] = fbx.model[bone_model_index].translation[0];
-            mesh_impl->_bones[bone_id].position[1] = fbx.model[bone_model_index].translation[1];
-            mesh_impl->_bones[bone_id].position[2] = fbx.model[bone_model_index].translation[2];
-            mesh_impl->_bones[bone_id].scaling[0] = fbx.model[bone_model_index].scaling[0];
-            mesh_impl->_bones[bone_id].scaling[1] = fbx.model[bone_model_index].scaling[1];
-            mesh_impl->_bones[bone_id].scaling[2] = fbx.model[bone_model_index].scaling[2];
+            strncpy(mesh_impl->_bones[obj_id].name, fbx.model[bone_model_index].name, K3_FBX_MAX_NAME_LENGTH);
+            mesh_impl->_bones[obj_id].position[0] = fbx.model[bone_model_index].translation[0];
+            mesh_impl->_bones[obj_id].position[1] = fbx.model[bone_model_index].translation[1];
+            mesh_impl->_bones[obj_id].position[2] = fbx.model[bone_model_index].translation[2];
+            mesh_impl->_bones[obj_id].scaling[0] = fbx.model[bone_model_index].scaling[0];
+            mesh_impl->_bones[obj_id].scaling[1] = fbx.model[bone_model_index].scaling[1];
+            mesh_impl->_bones[obj_id].scaling[2] = fbx.model[bone_model_index].scaling[2];
             if (bind_pose_index < fbx.num_bind_pose_nodes) {
-                memcpy(mesh_impl->_bones[bone_id].inv_bind_pose, fbx.bind_pose_node[bind_pose_index].xform, 16*sizeof(float));
+                memcpy(mesh_impl->_bones[obj_id].inv_bind_pose, fbx.bind_pose_node[bind_pose_index].xform, 16*sizeof(float));
                 // TODO: Shold copy and transpose in one step
-                k3m4_Transpose(mesh_impl->_bones[bone_id].inv_bind_pose);
-                k3m4_Inverse(mesh_impl->_bones[bone_id].inv_bind_pose);
+                k3m4_Transpose(mesh_impl->_bones[obj_id].inv_bind_pose);
+                k3m4_Inverse(mesh_impl->_bones[obj_id].inv_bind_pose);
             } else {
                 // No bind pose found, so assume identity
-                k3m4_SetIdentity(mesh_impl->_bones[bone_id].inv_bind_pose);
+                k3m4_SetIdentity(mesh_impl->_bones[obj_id].inv_bind_pose);
             }
             if (parent_bone_index < fbx.num_models) {
                 uint32_t parent_bone_id = fbx.model[parent_bone_index].index.limb_node.cluster_index;
-                uint32_t sorted_parent_bone_id = sorted_bone_id[parent_bone_id];
-                mesh_impl->_bones[bone_id].parent = sorted_parent_bone_id;
-                if (mesh_impl->_bones[bone_id].parent > bone_id) {
+                uint32_t sorted_parent_bone_id = sorted_obj_id[parent_bone_id];
+                mesh_impl->_bones[obj_id].parent = sorted_parent_bone_id;
+                if (mesh_impl->_bones[obj_id].parent > obj_id) {
                     k3error::Handler("Parent bone after child", "k3gfxObj::CreateMesh");
                 }
             } else {
-                mesh_impl->_bones[bone_id].parent = ~0x0;
+                mesh_impl->_bones[obj_id].parent = ~0x0;
             }
             float rot_mat[16];
             k3m4_SetRotation(rot_mat, -deg2rad(fbx.model[bone_model_index].rotation[0]), x_axis);
@@ -3966,8 +4112,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             k3m4_Mul(rot_mat, mat, rot_mat);
             k3m4_SetRotation(mat, -deg2rad(fbx.model[bone_model_index].rotation[2]), z_axis);
             k3m4_Mul(rot_mat, mat, rot_mat);
-            k3m4_MatToQuat(mesh_impl->_bones[bone_id].rot_quat, rot_mat);
+            k3m4_MatToQuat(mesh_impl->_bones[obj_id].rot_quat, rot_mat);
         }
+
         // Normalize skin weights
         uint32_t v_id;
         for (v_id = 0; v_id < num_verts; v_id++) {
@@ -3975,55 +4122,181 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
             }
         }
+        mesh_impl->_num_static_models = mesh_impl->_num_models;
+    } else {
+        mesh_impl->_num_static_models = mesh_impl->_num_models - num_dynamic_models;
+        sorted_obj_id = sorted_model_id;
+    }
 
-        // load animations
-        mesh_impl->_num_anims = fbx.num_anim_layers;
-        if (mesh_impl->_num_anims) {
-            mesh_impl->_anim = new k3anim[mesh_impl->_num_anims];
-            uint32_t anim_id, curve_node_index, curve_node_id, curve_id, axis;
-            uint32_t k, cur_time, cur_curve_index, dest_index, dest_stride;
-            uint64_t* curve_time_ptr;
-            //uint32_t curve_time;
-            //uint32_t last_curve_time;
-            float* dest;
-            float* default_value;
-            //float cur_value, interp, next_value;
-            for (anim_id = 0; anim_id < mesh_impl->_num_anims; anim_id++) {
-                mesh_impl->_anim[anim_id].num_keyframes = 0;
-                mesh_impl->_anim[anim_id].keyframe_delta_msec = 0;
-                for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
-                    curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
-                    for (axis = 0; axis < 3; axis++) {
-                        curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
-                        if (curve_id < fbx.num_anim_curves && fbx.anim_curve[curve_id].num_key_frames > mesh_impl->_anim[anim_id].num_keyframes) {
-                            mesh_impl->_anim[anim_id].num_keyframes = fbx.anim_curve[curve_id].num_key_frames;
-                            uint64_t* end_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start + fbx.anim_curve[curve_id].num_key_frames - 1;
-                            mesh_impl->_anim[anim_id].keyframe_delta_msec = (uint32_t)(*end_time_ptr / K3_FBX_TICKS_PER_MSEC);
+    // load animations
+    if (mesh_impl->_num_anims) {
+        uint32_t num_anim_objs = mesh_impl->_num_bones;
+        uint32_t anim_id, curve_node_index, curve_node_id, curve_id, axis;
+        uint32_t k, cur_time, cur_curve_index, dest_index, dest_stride;
+        uint64_t* curve_time_ptr;
+        //uint32_t curve_time;
+        //uint32_t last_curve_time;
+        float* dest;
+        float* default_value;
+        uint32_t fbx_anim_id;
+        //float cur_value, interp, next_value;
+        for (anim_id = 0; anim_id < mesh_impl->_num_anims; anim_id++) {
+            fbx_anim_id = (expand_anim) ? 0 : anim_id;
+            mesh_impl->_anim[anim_id].num_keyframes = 0;
+            mesh_impl->_anim[anim_id].keyframe_delta_msec = 0;
+            mesh_impl->_anim[anim_id].model_id = ~0x0;
+            mesh_impl->_anim[anim_id].bone_data = NULL;
+            mesh_impl->_anim[anim_id].bone_flag = NULL;
+            mesh_impl->_anim[anim_id].anim_objs = NULL;
+            obj_id = ~0x0;
+            // Find the next object we are animating
+            for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes && obj_id >= mesh_impl->_num_models; curve_node_index++) {
+                curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
+                dest_index = fbx.anim_curve_node[curve_node_id].model_id;
+                if (dest_index < fbx.num_models) {
+                    obj_id = sorted_obj_id[dest_index];
+                    if (expand_anim) {
+                        uint32_t a;
+                        for (a = 0; a < anim_id && obj_id < mesh_impl->_num_models; a++) {
+                            // if the object has already been animated it, go to the next one
+                            if (mesh_impl->_anim[a].model_id == obj_id) obj_id = ~0x0;
                         }
                     }
                 }
-                if (mesh_impl->_anim[anim_id].num_keyframes == 0) mesh_impl->_anim[anim_id].num_keyframes = 1;
-                mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
-                strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[anim_id].name, K3_FBX_MAX_NAME_LENGTH);
-                mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones];
+            }
+            mesh_impl->_anim[anim_id].model_id = obj_id;
+
+            for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes; curve_node_index++) {
+                curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
+                bool model_matches = (fbx.anim_curve_node[curve_node_id].model_id < fbx.num_models) &&
+                    (sorted_obj_id[fbx.anim_curve_node[curve_node_id].model_id] == mesh_impl->_anim[anim_id].model_id);
+                if (!expand_anim || model_matches) {
+                    for (axis = 0; axis < 3; axis++) {
+                        curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
+                        if (curve_id < fbx.num_anim_curves) {
+                            uint32_t num_significant_key_frames = fbx.anim_curve[curve_id].num_key_frames;
+                            if (expand_anim) {
+                                // loop though the curve backwrds, and see if there is significant change in the value; if not, don't include that key frame
+                                uint32_t k;
+                                float* curve_data_ptr = fbx.anim_curve_data + fbx.anim_curve[curve_id].data_start + num_significant_key_frames - 1;
+                                for (k = num_significant_key_frames - 1; k > 0; k--) {
+                                    // find a significant change in value, and break out of the loop
+                                    if (fabsf(*curve_data_ptr - *(curve_data_ptr - 1)) >= 0.001f) break;
+                                    curve_data_ptr--;
+                                }
+                                num_significant_key_frames = k + 1;
+                            }
+                            if (num_significant_key_frames > mesh_impl->_anim[anim_id].num_keyframes) {
+                                mesh_impl->_anim[anim_id].num_keyframes = num_significant_key_frames;
+                                uint64_t* end_time_ptr = fbx.anim_curve_time + fbx.anim_curve[curve_id].time_start + num_significant_key_frames - 1;
+                                mesh_impl->_anim[anim_id].keyframe_delta_msec = (uint32_t)(*end_time_ptr / K3_FBX_TICKS_PER_MSEC);
+                            }
+                        }
+                    }
+                }
+            }
+            if (mesh_impl->_anim[anim_id].num_keyframes == 0) mesh_impl->_anim[anim_id].num_keyframes = 1;
+            mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
+            strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[fbx_anim_id].name, K3_FBX_MAX_NAME_LENGTH);
+            if (use_skin) {
+                mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * num_anim_objs];
                 mesh_impl->_anim[anim_id].bone_flag = new uint32_t[mesh_impl->_num_bones];
-                memset(mesh_impl->_anim[anim_id].bone_data, 0, mesh_impl->_anim[anim_id].num_keyframes* mesh_impl->_num_bones * sizeof(k3boneData));
                 memset(mesh_impl->_anim[anim_id].bone_flag, 0, mesh_impl->_num_bones * sizeof(uint32_t));
-                for (bone_id = 0; bone_id < mesh_impl->_num_bones; bone_id++) {
+                memset(mesh_impl->_anim[anim_id].bone_data, 0, mesh_impl->_anim[anim_id].num_keyframes * num_anim_objs * sizeof(k3boneData));
+                for (obj_id = 0; obj_id < num_anim_objs; obj_id++) {
                     for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
                         for (axis = 0; axis < 3; axis++) {
                             // initialize scale to 1.0
-                            mesh_impl->_anim[anim_id].bone_data[k * mesh_impl->_num_bones + bone_id].scaling[axis] = 1.0f;
+                            mesh_impl->_anim[anim_id].bone_data[k * num_anim_objs + obj_id].scaling[axis] = 1.0f;
                         }
                     }
                 }
-                dest_stride = (sizeof(k3boneData) / sizeof(float)) * mesh_impl->_num_bones;
-                for (curve_node_index = 0; curve_node_index < fbx.anim_layer[anim_id].num_anim_curve_nodes; curve_node_index++) {
-                    curve_node_id = fbx.anim_layer[anim_id].anim_curve_node_id[curve_node_index];
-                    dest_index = fbx.anim_curve_node[curve_node_id].limb_node;
-                    if ((fbx.anim_curve_node[curve_node_id].curve_type != k3fbxAnimCurveType::None) && (dest_index < fbx.num_models)) {
+                mesh_impl->_anim[anim_id].num_anim_objs = num_anim_objs;
+                mesh_impl->_anim[anim_id].anim_objs = NULL;
+            } else {
+                mesh_impl->_anim[anim_id].bone_flag = NULL;
+                //obj_id = ~0x0;
+                //// Find the next object we are animating
+                //for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes && obj_id >= mesh_impl->_num_models; curve_node_index++) {
+                //    curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
+                //    dest_index = fbx.anim_curve_node[curve_node_id].model_id;
+                //    if (dest_index < fbx.num_models) {
+                //        obj_id = sorted_obj_id[dest_index];
+                //        if (expand_anim) {
+                //            uint32_t a;
+                //            for (a = 0; a < anim_id && obj_id < mesh_impl->_num_models; a++) {
+                //                // if the object has already been animated it, go to the next one
+                //                if (mesh_impl->_anim[a].model_id == obj_id) obj_id = ~0x0;
+                //            }
+                //        }
+                //    }
+                //}
+                //mesh_impl->_anim[anim_id].model_id = obj_id;
+                obj_id = mesh_impl->_anim[anim_id].model_id;
+                num_anim_objs = 0;
+                mesh_impl->_anim[anim_id].num_anim_objs = 0;
+                mesh_impl->_anim[anim_id].anim_objs = NULL;
+                if (obj_id < mesh_impl->_num_models) {
+                    if (expand_anim) {
+                        // Copy the model's name as the animation name
+                        strncpy(mesh_impl->_anim[anim_id].name, mesh_impl->_model[obj_id].name, K3_FBX_MAX_NAME_LENGTH);
+                    }
+
+                    k3bitTracker obj_tracker = k3bitTrackerObj::Create(mesh_impl->_num_models);
+                    obj_tracker->SetAll(false);
+                    obj_tracker->SetBit(obj_id, true);
+                    num_anim_objs++;
+                    uint32_t parent;
+                    for (; obj_id < mesh_impl->_num_models; obj_id++) {
+                        parent = mesh_impl->_model[obj_id].parent;
+                        if (parent < mesh_impl->_num_models && obj_tracker->GetBit(parent)) {
+                            obj_tracker->SetBit(obj_id, true);
+                            num_anim_objs++;
+                        }
+                    }
+                    mesh_impl->_anim[anim_id].num_anim_objs = num_anim_objs;
+                    mesh_impl->_anim[anim_id].anim_objs = new uint32_t[num_anim_objs];
+                    num_anim_objs = 0;
+                    for (obj_id = mesh_impl->_anim[anim_id].model_id; obj_id < mesh_impl->_num_models; obj_id++) {
+                        if (obj_tracker->GetBit(obj_id)) {
+                            mesh_impl->_anim[anim_id].anim_objs[num_anim_objs] = obj_id;
+                            num_anim_objs++;
+                        }
+                    }
+
+                    mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * num_anim_objs];
+                    uint32_t obj_index, bd_index;
+                    for (obj_index = 0; obj_index < num_anim_objs; obj_index++) {
+                        obj_id = mesh_impl->_anim[anim_id].anim_objs[obj_index];
+                        for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
+                            bd_index = k * num_anim_objs + obj_index;
+                            for (axis = 0; axis < 3; axis++) {
+                                mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_model[obj_id].position[axis];
+                                // this gets converted to a quat later
+                                mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = mesh_impl->_model[obj_id].rotation[axis];
+                                mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = mesh_impl->_model[obj_id].scaling[axis];
+                            }
+                        }
+                    }
+                }
+            }
+
+            dest_stride = (sizeof(k3boneData) / sizeof(float)) * num_anim_objs;
+            for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes; curve_node_index++) {
+                curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
+                dest_index = fbx.anim_curve_node[curve_node_id].model_id;
+                if ((fbx.anim_curve_node[curve_node_id].curve_type != k3fbxAnimCurveType::None) && (dest_index < fbx.num_models)) {
+                    if (use_skin) {
                         dest_index = fbx.model[dest_index].index.limb_node.cluster_index;
-                        dest_index = sorted_bone_id[dest_index];
+                        dest_index = sorted_obj_id[dest_index];
+                    } else {
+                        if (mesh_impl->_anim[anim_id].model_id == sorted_obj_id[dest_index]) {
+                            dest_index = 0;
+                        } else {
+                            dest_index = num_anim_objs;
+                        }
+                    }
+                    if (dest_index < num_anim_objs) {
                         default_value = fbx.anim_curve_node[curve_node_id].default_value;
                         switch (fbx.anim_curve_node[curve_node_id].curve_type) {
                         case k3fbxAnimCurveType::Translation:
@@ -4071,9 +4344,11 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                                 for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
                                     *(dest + dest_stride * k) = fbx.anim_curve_data[fbx.anim_curve[curve_id].data_start + cur_curve_index];
 
-                                    if ( fabsf(*(dest + dest_stride * k) - default_value[axis]) >= 0.001f) {
-                                        // if the curve has some non-zero motion, then set the bone to be morphed
-                                        mesh_impl->_anim[anim_id].bone_flag[dest_index] |= K3_BONE_FLAG_MORPH;
+                                    if (mesh_impl->_anim[anim_id].bone_flag) {
+                                        if (fabsf(*(dest + dest_stride * k) - default_value[axis]) >= 0.001f) {
+                                            // if the curve has some non-zero motion, then set the bone to be morphed
+                                            mesh_impl->_anim[anim_id].bone_flag[dest_index] |= K3_BONE_FLAG_MORPH;
+                                        }
                                     }
 
                                     if (cur_curve_index < fbx.anim_curve[curve_id].num_key_frames - 1) {
@@ -4087,19 +4362,23 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                         }
                     }
                 }
-                // convert rotations from euler angles to quaternions
-                for (k = 0; k < (mesh_impl->_anim[anim_id].num_keyframes * mesh_impl->_num_bones); k++) {
-                    dest = mesh_impl->_anim[anim_id].bone_data[k].rot_quat;
-                    dest[0] = deg2rad(dest[0]);
-                    dest[1] = deg2rad(dest[1]);
-                    dest[2] = deg2rad(dest[2]);
-                    k3v4_SetQuatEuler(dest, dest);
-                }
+            }
+            // convert rotations from euler angles to quaternions
+            for (k = 0; k < (mesh_impl->_anim[anim_id].num_keyframes * num_anim_objs); k++) {
+                dest = mesh_impl->_anim[anim_id].bone_data[k].rot_quat;
+                dest[0] = deg2rad(dest[0]);
+                dest[1] = deg2rad(dest[1]);
+                dest[2] = deg2rad(dest[2]);
+                k3v4_SetQuatEuler(dest, dest);
             }
         }
-
-        delete[] sorted_bone_id;
     }
+
+
+    if ((mesh_impl->_num_bones)) {
+        delete[] sorted_obj_id;
+    }
+    delete[] sorted_model_id;
 
     float* fbx_verts = (float*)fbx.vertices;
     float* fbx_normals = (float*)fbx.normals;

@@ -86,11 +86,17 @@ struct k3fontCBuffer {
 };
 
 struct k3meshModel {
+    static const uint32_t FLAG_DYNAMIC = 0x1;
+
     uint32_t parent;
     char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t mesh_index;
     uint32_t prim_start;
     uint32_t num_prims;
+    float position[3];
+    float rotation[3];
+    float scaling[3];
+    uint32_t flags;
     float world_xform[16];
     float diffuse_color[3];
     float emissive_factor;
@@ -151,8 +157,11 @@ struct k3anim {
     char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t num_keyframes;
     uint32_t keyframe_delta_msec;
-    k3boneData* bone_data;  // array of num_bones * num_keyframes
+    k3boneData* bone_data;  // array of num_bones * num_keyframes; for model animations, just num_keyframes
     uint32_t* bone_flag;  // per bone attributes
+    uint32_t model_id;
+    uint32_t num_anim_objs;
+    uint32_t* anim_objs;
 };
 
 class k3meshImpl
@@ -171,6 +180,7 @@ public:
     uint32_t _num_empties;
     uint32_t _num_bones;
     uint32_t _num_anims;
+    uint32_t _num_static_models;
     float* _geom_data;
     uint32_t* _mesh_start;
     k3meshModel* _model;

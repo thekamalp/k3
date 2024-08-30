@@ -762,6 +762,57 @@ K3API float* k3m4_SetLookAt(float* d, const float* eye, const float* at, const f
     return d;
 }
 
+K3API float* k3m4_SetRotAngleScaleXlat(float* d, const float* r3, const float* s3, const float* t3)
+{
+    float mat[16];
+    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+    k3m4_SetRotation(d, -deg2rad(r3[0]), x_axis);
+    k3m4_SetRotation(mat, -deg2rad(r3[1]), y_axis);
+    k3m4_Mul(d, mat, d);
+    k3m4_SetRotation(mat, -deg2rad(r3[2]), z_axis);
+    k3m4_Mul(d, mat, d);
+    k3m4_SetIdentity(mat);
+    mat[0] = s3[0];
+    mat[5] = s3[1];
+    mat[10] = s3[2];
+    k3m4_Mul(d, mat, d);
+    mat[0] = 1.0f;
+    mat[5] = 1.0f;
+    mat[10] = 1.0f;
+    mat[3] = t3[0];
+    mat[7] = t3[1];
+    mat[11] = t3[2];
+    k3m4_Mul(d, mat, d);
+    return d;
+}
+
+K3API float* k3m4_SetScaleRotAngleXlat(float* d, const float* s3, const float* r3, const float* t3)
+{
+    float mat[16];
+    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+    k3m4_SetIdentity(d);
+    d[0] = s3[0];
+    d[5] = s3[1];
+    d[10] = s3[2];
+    k3m4_SetRotation(mat, -deg2rad(r3[0]), x_axis);
+    k3m4_Mul(d, mat, d);
+    k3m4_SetRotation(mat, -deg2rad(r3[1]), y_axis);
+    k3m4_Mul(d, mat, d);
+    k3m4_SetRotation(mat, -deg2rad(r3[2]), z_axis);
+    k3m4_Mul(d, mat, d);
+    k3m4_SetIdentity(mat);
+    mat[3] = t3[0];
+    mat[7] = t3[1];
+    mat[11] = t3[2];
+    k3m4_Mul(d, mat, d);
+    return d;
+}
+
+
 /* operations on 2 matrices */
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2)
 {

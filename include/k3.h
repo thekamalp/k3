@@ -289,6 +289,8 @@ K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, flo
 K3API float* k3m4_SetPerspectiveFov(float* d, float fovy, float aspect, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
 K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
 K3API float* k3m4_SetLookAt(float* d, const float* eye, const float* at, const float* up_dir, bool left_handed);
+K3API float* k3m4_SetRotAngleScaleXlat(float* d, const float* r3, const float* s3, const float* t3);
+K3API float* k3m4_SetScaleRotAngleXlat(float* d, const float* s3, const float* r3, const float* t3);
 
 /* operations on 2 matrices */
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2);
@@ -1931,6 +1933,8 @@ public:
 
 
     K3API uint32_t getNumObjects();
+    K3API uint32_t getNumStaticObjects();
+    K3API uint32_t getNumDynamicObjects();
     K3API uint32_t getNumTextures();
     K3API uint32_t getNumMeshes();
     K3API uint32_t getNumEmpties();
@@ -1984,6 +1988,8 @@ public:
     K3API const char* getBoneName(uint32_t i);
     K3API const char* getAnimName(uint32_t a);
     K3API uint32_t getAnimLength(uint32_t a);
+    K3API uint32_t getAnimNumObjs(uint32_t a);
+    K3API uint32_t getAnimObj(uint32_t a, uint32_t i);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
     K3API void getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_exclude_mask);
     K3API void getLightAABB(k3AABB* aabb, uint32_t light);
