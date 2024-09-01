@@ -1125,6 +1125,13 @@ public:
         if (tail == NULL) tail = node;
     }
 
+    void AddHead(node_t n)
+    {
+        n->next = head;
+        head = n;
+        if (tail == NULL) tail = n;
+    }
+
     void AddTail(T d)
     {
         node_t node = new k3llistNodeObj<T>;
@@ -1133,6 +1140,14 @@ public:
         if (tail == NULL) head = node;
         else  tail->next = node;
         tail = node;
+    }
+
+    void AddTail(node_t n)
+    {
+        n->next = NULL;
+        if (tail == NULL) head = n;
+        else tail->next = n;
+        tail = n;
     }
 
     void RemoveHead()
