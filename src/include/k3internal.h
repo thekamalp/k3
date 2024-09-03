@@ -120,6 +120,10 @@ struct k3camera {
 };
 
 struct k3light {
+    static const uint32_t FLAG_DYNAMIC = 0x1;
+    static const uint32_t FLAG_CAST_SHADOWS = 0x2;
+
+    uint32_t parent;
     char name[K3_FBX_MAX_NAME_LENGTH];
     float position[4];
     float color[3];
@@ -127,7 +131,7 @@ struct k3light {
     uint32_t light_type;
     uint32_t decay_type;
     float decay_start;
-    bool cast_shadows;
+    uint32_t flags;
 };
 
 struct k3emptyModel {
@@ -153,15 +157,28 @@ struct k3boneData {
 static const uint32_t K3_BONE_FLAG_NONE = 0x0;
 static const uint32_t K3_BONE_FLAG_MORPH = 0x1;
 
+enum class k3fbxObjType {
+    NONE,
+    MESH,
+    LIGHT,
+    CAMERA,
+    LIMB_NODE
+};
+
+struct k3animObj {
+    k3fbxObjType obj_type;
+    uint32_t id;
+};
+
 struct k3anim {
     char name[K3_FBX_MAX_NAME_LENGTH];
     uint32_t num_keyframes;
     uint32_t keyframe_delta_msec;
     k3boneData* bone_data;  // array of num_bones * num_keyframes; for model animations, just num_keyframes
     uint32_t* bone_flag;  // per bone attributes
-    uint32_t model_id;
+    k3animObj model;
     uint32_t num_anim_objs;
-    uint32_t* anim_objs;
+    k3animObj* anim_objs;
 };
 
 class k3meshImpl
@@ -181,6 +198,7 @@ public:
     uint32_t _num_bones;
     uint32_t _num_anims;
     uint32_t _num_static_models;
+    uint32_t _num_static_lights;
     float* _geom_data;
     uint32_t* _mesh_start;
     k3meshModel* _model;

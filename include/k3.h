@@ -1954,6 +1954,8 @@ public:
     K3API uint32_t getNumMeshes();
     K3API uint32_t getNumEmpties();
     K3API uint32_t getNumLights();
+    K3API uint32_t getNumStaticLights();
+    K3API uint32_t getNumDynamicLights();
     K3API uint32_t getNumCameras();
     K3API uint32_t getNumBones();
     K3API uint32_t getNumAnims();
@@ -1989,6 +1991,9 @@ public:
     K3API void setCameraResolution(uint32_t camera, uint32_t width, uint32_t height);
     K3API void setCameraNearPlane(uint32_t camera, float near);
     K3API void setCameraFarPlane(uint32_t camera, float far);
+    K3API float* getLightPosition(uint32_t light);
+    K3API float* getLightColor(uint32_t light);
+    K3API void getLightData(uint32_t light, k3lightBufferData* lb_data);
     K3API void genBoneMatrices(float* mat, bool gen_inv);
     K3API uint32_t findModel(const char* name);
     K3API uint32_t findEmpty(const char* name);

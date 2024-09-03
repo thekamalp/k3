@@ -788,6 +788,16 @@ K3API uint32_t k3meshObj::getNumLights()
     return _data->_num_lights;
 }
 
+K3API uint32_t k3meshObj::getNumStaticLights()
+{
+    return _data->_num_static_lights;
+}
+
+K3API uint32_t k3meshObj::getNumDynamicLights()
+{
+    return _data->_num_lights - _data->_num_static_lights;
+}
+
 K3API uint32_t k3meshObj::getNumCameras()
 {
     return _data->_num_cameras;
@@ -1101,6 +1111,40 @@ K3API void k3meshObj::setCameraFarPlane(uint32_t camera, float far)
     cam->far_plane = far;
 }
 
+K3API float* k3meshObj::getLightPosition(uint32_t light)
+{
+    if (light < _data->_num_lights) {
+        return _data->_lights[light].position;
+    }
+    return NULL;
+}
+
+K3API float* k3meshObj::getLightColor(uint32_t light)
+{
+    if (light < _data->_num_lights) {
+        return _data->_lights[light].color;
+    }
+    return NULL;
+}
+
+K3API void k3meshObj::getLightData(uint32_t light, k3lightBufferData* lb_data)
+{
+    if (light < _data->_num_lights && lb_data != NULL) {
+        lb_data->position[0] = _data->_lights[light].position[0];
+        lb_data->position[1] = _data->_lights[light].position[1];
+        lb_data->position[2] = _data->_lights[light].position[2];
+        lb_data->intensity = _data->_lights[light].intensity;
+        lb_data->color[0] = _data->_lights[light].color[0];
+        lb_data->color[1] = _data->_lights[light].color[1];
+        lb_data->color[2] = _data->_lights[light].color[2];
+        lb_data->decay_start = _data->_lights[light].decay_start;
+        lb_data->light_type = _data->_lights[light].light_type;
+        lb_data->decay_type = _data->_lights[light].decay_type;
+        lb_data->cast_shadows = (_data->_lights[light].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
+        lb_data->spot_angle = 45.0f;
+    }
+}
+
 K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
 {
     uint32_t bone_id, parent_bone_id;
@@ -1271,7 +1315,7 @@ K3API uint32_t k3meshObj::getAnimObj(uint32_t a, uint32_t i)
 {
     if (a < _data->_num_anims) {
         if (i < _data->_anim[a].num_anim_objs) {
-            return _data->_anim[a].anim_objs[i];
+            return _data->_anim[a].anim_objs[i].id;
         }
         k3error::Handler("Invalid animation object value", "k3meshObj::getAnimObj");
         return ~0x0;
@@ -1304,6 +1348,7 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
     uint32_t norm_time_msec = (num_frame_intervals) ? time_msec % total_anim_time_msec : 0;
     uint32_t anim_frame = (num_frame_intervals) ? norm_time_msec / delta_msec : 0;
     float anim_frame_frac = (num_frame_intervals) ? ((norm_time_msec % delta_msec) / (float)delta_msec) : 0.0f;
+    k3fbxObjType obj_type;
     uint32_t obj_index, obj_id;
     float* dest_pos_ptr;
     float* dest_scale_ptr;
@@ -1327,8 +1372,10 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
 
     for (obj_index = 0; obj_index < num_anim_objs; obj_index++) {
         if (_data->_anim[anim_index].anim_objs) {
-            obj_id = _data->_anim[anim_index].anim_objs[obj_index];
+            obj_type = _data->_anim[anim_index].anim_objs[obj_index].obj_type;
+            obj_id = _data->_anim[anim_index].anim_objs[obj_index].id;
         } else {
+            obj_type = k3fbxObjType::MESH;
             obj_id = obj_index;
         }
 
@@ -1336,6 +1383,8 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
             dest_pos_ptr = _data->_bones[obj_id].position;
             dest_scale_ptr = _data->_bones[obj_id].scaling;
             dest_quat_ptr = _data->_bones[obj_id].rot_quat;
+        } else if (obj_type == k3fbxObjType::LIGHT) {
+            dest_pos_ptr = _data->_lights[obj_id].position;
         }
 
         obj_bone_flag = (bone_flag) ? bone_flag[obj_id] : K3_BONE_FLAG_MORPH;
@@ -1377,24 +1426,32 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
         }
 
         if (_data->_bones == NULL) {
-            float xlat_mat[16];
-            float rot_xlat_mat[16];
-            float* dest_xform = _data->_model[obj_id].world_xform;
-            k3m4_QuatToMat(rot_xlat_mat, dest_quat_ptr);
-            k3m4_SetIdentity(xlat_mat);
-            xlat_mat[3] = dest_pos_ptr[0];
-            xlat_mat[7] = dest_pos_ptr[1];
-            xlat_mat[11] = dest_pos_ptr[2];
-            k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
-            k3m4_SetIdentity(xlat_mat);
-            xlat_mat[0] = dest_scale_ptr[0];
-            xlat_mat[5] = dest_scale_ptr[1];
-            xlat_mat[10] = dest_scale_ptr[2];
-            k3m4_Mul(dest_xform, rot_xlat_mat, xlat_mat);
-            uint32_t parent = _data->_model[obj_id].parent;
-            if (parent < _data->_num_models) {
-                float* parent_xform = _data->_model[parent].world_xform;
-                k3m4_Mul(dest_xform, parent_xform, dest_xform);
+            if (obj_type == k3fbxObjType::MESH) {
+                float xlat_mat[16];
+                float rot_xlat_mat[16];
+                float* dest_xform = _data->_model[obj_id].world_xform;
+                k3m4_QuatToMat(rot_xlat_mat, dest_quat_ptr);
+                k3m4_SetIdentity(xlat_mat);
+                xlat_mat[3] = dest_pos_ptr[0];
+                xlat_mat[7] = dest_pos_ptr[1];
+                xlat_mat[11] = dest_pos_ptr[2];
+                k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
+                k3m4_SetIdentity(xlat_mat);
+                xlat_mat[0] = dest_scale_ptr[0];
+                xlat_mat[5] = dest_scale_ptr[1];
+                xlat_mat[10] = dest_scale_ptr[2];
+                k3m4_Mul(dest_xform, rot_xlat_mat, xlat_mat);
+                uint32_t parent = _data->_model[obj_id].parent;
+                if (parent < _data->_num_models) {
+                    float* parent_xform = _data->_model[parent].world_xform;
+                    k3m4_Mul(dest_xform, parent_xform, dest_xform);
+                }
+            } else if (obj_type == k3fbxObjType::LIGHT) {
+                uint32_t parent = _data->_lights[obj_id].parent;
+                if (parent < _data->_num_models) {
+                    float* parent_xform = _data->_model[parent].world_xform;
+                    k3mv4_Mul(dest_pos_ptr, parent_xform, dest_pos_ptr);
+                }
             }
         }
 
@@ -1716,14 +1773,6 @@ enum class k3fbxNodeType {
     KEY_VALUE_FLOAT
 };
 
-enum class k3fbxObjType {
-    NONE,
-    MESH,
-    LIGHT,
-    CAMERA,
-    LIMB_NODE
-};
-
 enum class k3fbxProperty {
     NONE,
     LOCAL_TRANSLATION,
@@ -1815,6 +1864,7 @@ struct k3fbxModelIndexData {
 };
 
 struct k3fbxLightIndexData {
+    uint32_t parent;
     uint32_t light_node;
 };
 
@@ -2218,6 +2268,13 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
                 fbx->model[index0].index.model.parent = index1;
             }
         }
+        if (index0 != ~0x0 && fbx->model[index0].obj_type == k3fbxObjType::LIGHT) {
+            // id1 should be a model/mesh
+            index1 = findFbxModelNode(fbx, id[1]);
+            if (index1 != ~0x0 && fbx->model[index1].obj_type == k3fbxObjType::MESH) {
+                fbx->model[index0].index.light.parent = index1;
+            }
+        }
         // Check if id0 is a cluster
         index0 = findFbxCluster(fbx, id[0]);
         if (index0 != ~0x0) {
@@ -2252,7 +2309,10 @@ void connectFbxNode(k3fbxData* fbx, uint64_t* id)
             } else {
                 // Check if id1 is a limb node
                 index1 = findFbxModelNode(fbx, id[1]);
-                if (index1 != ~0x0 && (fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE || fbx->model[index1].obj_type == k3fbxObjType::MESH)) {
+                if (index1 != ~0x0 && 
+                    (fbx->model[index1].obj_type == k3fbxObjType::LIMB_NODE || 
+                     fbx->model[index1].obj_type == k3fbxObjType::MESH ||
+                     fbx->model[index1].obj_type == k3fbxObjType::LIGHT)) {
                     fbx->anim_curve_node[index0].model_id = index1;
                     fbx->model[index1].dynamic = true;
                 }
@@ -3530,6 +3590,47 @@ void insertFbxModelToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sor
     }
 }
 
+// Sort light models; list must be large enough to contain all models; this must be called after the insertFbxModelToSortdList
+void insertFbxLightToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sorted_model_id, uint32_t num_static_lights)
+{
+    if (model_id >= fbx->num_models) return;
+    if (sorted_model_id[model_id] != ~0x0) return;
+    if (fbx->model[model_id].obj_type != k3fbxObjType::LIGHT) return;
+    uint32_t parent_model_id = fbx->model[model_id].index.light.parent;
+    if ((parent_model_id < fbx->num_models) && (fbx->model[parent_model_id].obj_type == k3fbxObjType::LIGHT)) {
+        // Make sure parent model has been sorted
+        insertFbxLightToSortedList(parent_model_id, fbx, sorted_model_id, num_static_lights);
+        // insert child just after the parent
+        sorted_model_id[model_id] = sorted_model_id[parent_model_id] + 1;
+    } else if (fbx->model[model_id].dynamic) {
+        // if there is no light parent, and the light is dynamic, insert the first after the static lights
+        sorted_model_id[model_id] = num_static_lights;
+    } else {
+        // if there is no light parent, and the model is static, insert the first location
+        sorted_model_id[model_id] = 0;
+    }
+
+    // Check that the model state is consistent with its placement
+    uint32_t model_limit = ~0x0;
+    if (fbx->model[model_id].dynamic) {
+        if (sorted_model_id[model_id] < num_static_lights) {
+            k3error::Handler("Dynamc light sorted into static region", "insertFbxLightToSortedList");
+        }
+    } else {
+        model_limit = num_static_lights;
+        if (sorted_model_id[model_id] >= num_static_lights) {
+            k3error::Handler("Static light sorted into dynamic region", "insertFbxLightToSortedList");
+        }
+    }
+
+    uint32_t m;
+    for (m = 0; m < fbx->num_models; m++) {
+        if (sorted_model_id[m] < model_limit && sorted_model_id[m] >= sorted_model_id[model_id] && m != model_id && fbx->model[m].obj_type == k3fbxObjType::LIGHT) {
+            sorted_model_id[m]++;
+        }
+    }
+}
+
 // Checks if model is dynamic and if not, is inherited from a dynamic model
 bool isFbxModelInheritedDynamic(uint32_t model_id, k3fbxData* fbx)
 {
@@ -3542,6 +3643,9 @@ bool isFbxModelInheritedDynamic(uint32_t model_id, k3fbxData* fbx)
         break;
     case k3fbxObjType::LIMB_NODE:
         parent_model = fbx->model[model_id].index.limb_node.parent;
+        break;
+    case k3fbxObjType::LIGHT:
+        parent_model = fbx->model[model_id].index.light.parent;
         break;
     }
     return isFbxModelInheritedDynamic(parent_model, fbx);
@@ -3715,46 +3819,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     fclose(in_file);
 
-    mesh_impl->_lights = new k3light[fbx.num_lights];
-    mesh_impl->_num_lights = 0;
-    for (i = 0; i < fbx.num_models && mesh_impl->_num_lights < fbx.num_lights; i++) {
-        if (fbx.model[i].obj_type == k3fbxObjType::LIGHT) {
-            uint32_t light_node_index = fbx.model[i].index.light.light_node;
-            if (light_node_index != ~0x0) {
-                k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
-                strncpy(mesh_impl->_lights[mesh_impl->_num_lights].name, light_node->name, K3_FBX_MAX_NAME_LENGTH);
-                if (light_node->light_type == k3lightBufferData::DIRECTIONAL) {
-                    float mat[16];
-                    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
-                    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
-                    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
-                    float* light_dir = mesh_impl->_lights[mesh_impl->_num_lights].position;
-                    light_dir[0] = 0.0f; light_dir[1] = 1.0f; light_dir[2] = 0.0f;
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                } else {
-                    mesh_impl->_lights[mesh_impl->_num_lights].position[0] = fbx.model[i].translation[0];
-                    mesh_impl->_lights[mesh_impl->_num_lights].position[1] = fbx.model[i].translation[1];
-                    mesh_impl->_lights[mesh_impl->_num_lights].position[2] = fbx.model[i].translation[2];
-                }
-                mesh_impl->_lights[mesh_impl->_num_lights].light_type = light_node->light_type;
-                mesh_impl->_lights[mesh_impl->_num_lights].color[0] = light_node->color[0];
-                mesh_impl->_lights[mesh_impl->_num_lights].color[1] = light_node->color[1];
-                mesh_impl->_lights[mesh_impl->_num_lights].color[2] = light_node->color[2];
-                mesh_impl->_lights[mesh_impl->_num_lights].intensity = light_node->intensity;
-                mesh_impl->_lights[mesh_impl->_num_lights].decay_type = light_node->decay_type;
-                mesh_impl->_lights[mesh_impl->_num_lights].decay_start = light_node->decay_start;
-                mesh_impl->_lights[mesh_impl->_num_lights].cast_shadows = light_node->cast_shadows;
-                mesh_impl->_num_lights++;
-            }
-
-        }
-    }
-
     mesh_impl->_num_cameras = fbx.num_cameras;
     mesh_impl->_cameras = new k3camera[mesh_impl->_num_cameras];
     for (i = 0; i < mesh_impl->_num_cameras; i++) {
@@ -3785,23 +3849,30 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
 
     mesh_impl->_num_models = 0;  // determine which models have actual geometries...those are the only valid ones
-    mesh_impl->_num_empties = 0; // determine thte empties as well
+    mesh_impl->_num_empties = 0; // determine the empties as well
     for (i = 0; i < fbx.num_models; i++) {
         uint32_t mesh_index = fbx.model[i].index.model.mesh;
         if (mesh_index != ~0 && fbx.model[i].obj_type == k3fbxObjType::MESH) mesh_impl->_num_models++;
         if (fbx.model[i].obj_type == k3fbxObjType::NONE) mesh_impl->_num_empties++;
     }
 
+    mesh_impl->_num_lights = fbx.num_lights;
+
     // Count and mark dynamic models
     uint32_t num_dynamic_models = 0;
+    uint32_t num_dynamic_lights = 0;
     for (i = 0; i < fbx.num_models; i++) {
         if (isFbxModelInheritedDynamic(i, &fbx)) {
             fbx.model[i].dynamic = true;
             if (fbx.model[i].obj_type == k3fbxObjType::MESH && fbx.model[i].index.model.mesh != ~0x0) {
                 num_dynamic_models++;
             }
+            if (fbx.model[i].obj_type == k3fbxObjType::LIGHT) {
+                num_dynamic_lights++;
+            }
         }
     }
+    mesh_impl->_num_static_lights = mesh_impl->_num_lights - num_dynamic_lights;
 
     // Sort the models so that parents are always before their children,
     // and dynamic models areat the end
@@ -3811,6 +3882,9 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     }
     for (i = 0; i < fbx.num_models; i++) {
         insertFbxModelToSortedList(i, &fbx, sorted_model_id, mesh_impl->_num_models - num_dynamic_models);
+    }
+    for (i = 0; i < fbx.num_models; i++) {
+        insertFbxLightToSortedList(i, &fbx, sorted_model_id, mesh_impl->_num_lights - num_dynamic_lights);
     }
 
     mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
@@ -3899,6 +3973,62 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
+    mesh_impl->_lights = new k3light[fbx.num_lights];
+    for (i = 0; i < fbx.num_models; i++) {
+        if (fbx.model[i].obj_type == k3fbxObjType::LIGHT) {
+            uint32_t dest_index = sorted_model_id[i];
+            uint32_t light_node_index = fbx.model[i].index.light.light_node;
+            if (dest_index < mesh_impl->_num_lights && light_node_index != ~0x0) {
+                k3fbxLightNode* light_node = &(fbx.light_node[light_node_index]);
+                strncpy(mesh_impl->_lights[dest_index].name, light_node->name, K3_FBX_MAX_NAME_LENGTH);
+                mesh_impl->_lights[dest_index].flags = 0x0;
+                if (fbx.model[i].dynamic) {
+                    mesh_impl->_lights[dest_index].flags |= k3light::FLAG_DYNAMIC;
+                }
+                if (light_node->light_type == k3lightBufferData::DIRECTIONAL) {
+                    float mat[16];
+                    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+                    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+                    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+                    float* light_dir = mesh_impl->_lights[dest_index].position;
+                    light_dir[0] = 0.0f; light_dir[1] = 1.0f; light_dir[2] = 0.0f; light_dir[3] = 0.0f;
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
+                    k3mv4_Mul(light_dir, mat, light_dir);
+                } else {
+                    mesh_impl->_lights[dest_index].position[0] = fbx.model[i].translation[0];
+                    mesh_impl->_lights[dest_index].position[1] = fbx.model[i].translation[1];
+                    mesh_impl->_lights[dest_index].position[2] = fbx.model[i].translation[2];
+                    mesh_impl->_lights[dest_index].position[3] = 1.0f;
+                }
+                if (fbx.model[i].index.light.parent < fbx.num_models) {
+                    uint32_t parent = sorted_model_id[fbx.model[i].index.light.parent];
+                    mesh_impl->_lights[dest_index].parent = parent;
+                    if (mesh_impl->_model[parent].flags & k3meshModel::FLAG_DYNAMIC) {
+                        mesh_impl->_lights[dest_index].flags |= k3light::FLAG_DYNAMIC;
+                    }
+                    // This is done later, after position is recorded in bone animation, if needed
+                    //k3mv4_Mul(mesh_impl->_lights[dest_index].position, mesh_impl->_model[parent].world_xform, mesh_impl->_lights[dest_index].position);
+                } else {
+                    mesh_impl->_lights[dest_index].parent = ~0x0;
+                }
+                mesh_impl->_lights[dest_index].light_type = light_node->light_type;
+                mesh_impl->_lights[dest_index].color[0] = light_node->color[0];
+                mesh_impl->_lights[dest_index].color[1] = light_node->color[1];
+                mesh_impl->_lights[dest_index].color[2] = light_node->color[2];
+                mesh_impl->_lights[dest_index].intensity = light_node->intensity;
+                mesh_impl->_lights[dest_index].decay_type = light_node->decay_type;
+                mesh_impl->_lights[dest_index].decay_start = light_node->decay_start;
+                if (light_node->cast_shadows) {
+                    mesh_impl->_lights[dest_index].flags |= k3light::FLAG_CAST_SHADOWS;
+                }
+            }
+        }
+    }
+
     mesh_impl->_empties = new k3emptyModel[mesh_impl->_num_empties];
     mesh_impl->_num_empties = 0;
     for (i = 0; i < fbx.num_models; i++) {
@@ -3964,33 +4094,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
         // clear the skin data
         memset(alloc_skin_i, 0, 8 * num_verts * sizeof(float));
-    }
-
-    uint32_t num_lights = mesh_impl->_num_lights;
-    if (num_lights) {
-        bdesc.size = lbuf_size;
-        bdesc.stride = sizeof(k3lightBufferData);
-        bdesc.format = k3fmt::UNKNOWN;
-        bdesc.view_index = desc->view_index++;
-        bdesc.shader_resource = true;
-        mesh_impl->_lb = CreateBuffer(&bdesc);
-
-        k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
-
-        for (i = 0; i < num_lights; i++) {
-            lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
-            lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
-            lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
-            lb_data[i].intensity = mesh_impl->_lights[i].intensity;
-            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
-            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
-            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
-            lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
-            lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
-            lb_data[i].light_type = mesh_impl->_lights[i].light_type;
-            lb_data[i].cast_shadows = mesh_impl->_lights[i].cast_shadows;
-            lb_data[i].spot_angle = 45.0f;
-        }
     }
 
     // Remap either the bone ids or models ids so that parents are always before the child
@@ -4139,12 +4242,14 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         float* dest;
         float* default_value;
         uint32_t fbx_anim_id;
+        k3fbxObjType obj_type = k3fbxObjType::NONE;
         //float cur_value, interp, next_value;
         for (anim_id = 0; anim_id < mesh_impl->_num_anims; anim_id++) {
             fbx_anim_id = (expand_anim) ? 0 : anim_id;
             mesh_impl->_anim[anim_id].num_keyframes = 0;
             mesh_impl->_anim[anim_id].keyframe_delta_msec = 0;
-            mesh_impl->_anim[anim_id].model_id = ~0x0;
+            mesh_impl->_anim[anim_id].model.obj_type = k3fbxObjType::NONE;
+            mesh_impl->_anim[anim_id].model.id = ~0x0;
             mesh_impl->_anim[anim_id].bone_data = NULL;
             mesh_impl->_anim[anim_id].bone_flag = NULL;
             mesh_impl->_anim[anim_id].anim_objs = NULL;
@@ -4154,22 +4259,34 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
                 dest_index = fbx.anim_curve_node[curve_node_id].model_id;
                 if (dest_index < fbx.num_models) {
+                    obj_type = fbx.model[dest_index].obj_type;
                     obj_id = sorted_obj_id[dest_index];
                     if (expand_anim) {
                         uint32_t a;
-                        for (a = 0; a < anim_id && obj_id < mesh_impl->_num_models; a++) {
-                            // if the object has already been animated it, go to the next one
-                            if (mesh_impl->_anim[a].model_id == obj_id) obj_id = ~0x0;
+                        switch (obj_type) {
+                        case k3fbxObjType::MESH:
+                            for (a = 0; a < anim_id && obj_id < mesh_impl->_num_models; a++) {
+                                // if the object has already been animated it, go to the next one
+                                if (mesh_impl->_anim[a].model.id == obj_id) obj_id = ~0x0;
+                            }
+                            break;
+                        case k3fbxObjType::LIGHT:
+                            for (a = 0; a < anim_id && obj_id < mesh_impl->_num_lights; a++) {
+                                // if the object has already been animated it, go to the next one
+                                if (mesh_impl->_anim[a].model.id == obj_id) obj_id = ~0x0;
+                            }
+                            break;
                         }
                     }
                 }
             }
-            mesh_impl->_anim[anim_id].model_id = obj_id;
+            mesh_impl->_anim[anim_id].model.obj_type = obj_type;
+            mesh_impl->_anim[anim_id].model.id = obj_id;
 
             for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes; curve_node_index++) {
                 curve_node_id = fbx.anim_layer[fbx_anim_id].anim_curve_node_id[curve_node_index];
                 bool model_matches = (fbx.anim_curve_node[curve_node_id].model_id < fbx.num_models) &&
-                    (sorted_obj_id[fbx.anim_curve_node[curve_node_id].model_id] == mesh_impl->_anim[anim_id].model_id);
+                    (sorted_obj_id[fbx.anim_curve_node[curve_node_id].model_id] == mesh_impl->_anim[anim_id].model.id);
                 if (!expand_anim || model_matches) {
                     for (axis = 0; axis < 3; axis++) {
                         curve_id = fbx.anim_curve_node[curve_node_id].anim_curve[axis];
@@ -4232,34 +4349,66 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 //    }
                 //}
                 //mesh_impl->_anim[anim_id].model_id = obj_id;
-                obj_id = mesh_impl->_anim[anim_id].model_id;
+                obj_type = mesh_impl->_anim[anim_id].model.obj_type;
+                obj_id = mesh_impl->_anim[anim_id].model.id;
                 num_anim_objs = 0;
                 mesh_impl->_anim[anim_id].num_anim_objs = 0;
                 mesh_impl->_anim[anim_id].anim_objs = NULL;
-                if (obj_id < mesh_impl->_num_models) {
+                uint32_t num_objs = (obj_type == k3fbxObjType::MESH) ? mesh_impl->_num_models : mesh_impl->_num_lights;
+                if (obj_id < num_objs) {
                     if (expand_anim) {
                         // Copy the model's name as the animation name
-                        strncpy(mesh_impl->_anim[anim_id].name, mesh_impl->_model[obj_id].name, K3_FBX_MAX_NAME_LENGTH);
+                        const char* anim_name = (obj_type == k3fbxObjType::MESH) ? mesh_impl->_model[obj_id].name : mesh_impl->_lights[obj_id].name;
+                        strncpy(mesh_impl->_anim[anim_id].name, anim_name, K3_FBX_MAX_NAME_LENGTH);
                     }
 
                     k3bitTracker obj_tracker = k3bitTrackerObj::Create(mesh_impl->_num_models);
+                    k3bitTracker light_tracker = k3bitTrackerObj::Create(mesh_impl->_num_lights);
                     obj_tracker->SetAll(false);
-                    obj_tracker->SetBit(obj_id, true);
-                    num_anim_objs++;
-                    uint32_t parent;
-                    for (; obj_id < mesh_impl->_num_models; obj_id++) {
-                        parent = mesh_impl->_model[obj_id].parent;
+                    light_tracker->SetAll(false);
+                    uint32_t parent, light_id = 0;;
+                    if (obj_type == k3fbxObjType::MESH) {
+                        obj_tracker->SetBit(obj_id, true);
+                        num_anim_objs++;
+                        for (; obj_id < mesh_impl->_num_models; obj_id++) {
+                            parent = mesh_impl->_model[obj_id].parent;
+                            if (parent < mesh_impl->_num_models && obj_tracker->GetBit(parent)) {
+                                obj_tracker->SetBit(obj_id, true);
+                                num_anim_objs++;
+                            }
+                        }
+                    } else {
+                        light_tracker->SetBit(obj_id, true);
+                        num_anim_objs++;
+                        light_id = obj_id;
+                    }
+                    for (; light_id < mesh_impl->_num_lights; light_id++) {
+                        parent = mesh_impl->_lights[light_id].parent;
                         if (parent < mesh_impl->_num_models && obj_tracker->GetBit(parent)) {
-                            obj_tracker->SetBit(obj_id, true);
+                            light_tracker->SetBit(light_id, true);
                             num_anim_objs++;
                         }
                     }
+
                     mesh_impl->_anim[anim_id].num_anim_objs = num_anim_objs;
-                    mesh_impl->_anim[anim_id].anim_objs = new uint32_t[num_anim_objs];
+                    mesh_impl->_anim[anim_id].anim_objs = new k3animObj[num_anim_objs];
                     num_anim_objs = 0;
-                    for (obj_id = mesh_impl->_anim[anim_id].model_id; obj_id < mesh_impl->_num_models; obj_id++) {
-                        if (obj_tracker->GetBit(obj_id)) {
-                            mesh_impl->_anim[anim_id].anim_objs[num_anim_objs] = obj_id;
+                    light_id = 0;
+                    if (obj_type == k3fbxObjType::MESH) {
+                        for (obj_id = mesh_impl->_anim[anim_id].model.id; obj_id < mesh_impl->_num_models; obj_id++) {
+                            if (obj_tracker->GetBit(obj_id)) {
+                                mesh_impl->_anim[anim_id].anim_objs[num_anim_objs].obj_type = k3fbxObjType::MESH;
+                                mesh_impl->_anim[anim_id].anim_objs[num_anim_objs].id = obj_id;
+                                num_anim_objs++;
+                            }
+                        }
+                    } else {
+                        light_id = obj_id;
+                    }
+                    for (; light_id < mesh_impl->_num_lights; light_id++) {
+                        if (light_tracker->GetBit(light_id)) {
+                            mesh_impl->_anim[anim_id].anim_objs[num_anim_objs].obj_type = k3fbxObjType::LIGHT;
+                            mesh_impl->_anim[anim_id].anim_objs[num_anim_objs].id = light_id;
                             num_anim_objs++;
                         }
                     }
@@ -4267,14 +4416,24 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                     mesh_impl->_anim[anim_id].bone_data = new k3boneData[mesh_impl->_anim[anim_id].num_keyframes * num_anim_objs];
                     uint32_t obj_index, bd_index;
                     for (obj_index = 0; obj_index < num_anim_objs; obj_index++) {
-                        obj_id = mesh_impl->_anim[anim_id].anim_objs[obj_index];
+                        obj_type = mesh_impl->_anim[anim_id].anim_objs[obj_index].obj_type;
+                        obj_id = mesh_impl->_anim[anim_id].anim_objs[obj_index].id;
                         for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
                             bd_index = k * num_anim_objs + obj_index;
                             for (axis = 0; axis < 3; axis++) {
-                                mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_model[obj_id].position[axis];
-                                // this gets converted to a quat later
-                                mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = mesh_impl->_model[obj_id].rotation[axis];
-                                mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = mesh_impl->_model[obj_id].scaling[axis];
+                                switch (obj_type) {
+                                case k3fbxObjType::MESH:
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_model[obj_id].position[axis];
+                                    // this gets converted to a quat later
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = mesh_impl->_model[obj_id].rotation[axis];
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = mesh_impl->_model[obj_id].scaling[axis];
+                                    break;
+                                case k3fbxObjType::LIGHT:
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_lights[obj_id].position[axis];
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = 0.0f;
+                                    mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = 1.0f;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -4290,7 +4449,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                         dest_index = fbx.model[dest_index].index.limb_node.cluster_index;
                         dest_index = sorted_obj_id[dest_index];
                     } else {
-                        if (mesh_impl->_anim[anim_id].model_id == sorted_obj_id[dest_index]) {
+                        if (mesh_impl->_anim[anim_id].model.id == sorted_obj_id[dest_index]) {
                             dest_index = 0;
                         } else {
                             dest_index = num_anim_objs;
@@ -4371,6 +4530,41 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 dest[2] = deg2rad(dest[2]);
                 k3v4_SetQuatEuler(dest, dest);
             }
+        }
+    }
+
+    // transform list positions based on parent xform
+    for (i = 0; i < mesh_impl->_num_lights; i++) {
+        uint32_t parent = mesh_impl->_lights[i].parent;
+        if (parent < mesh_impl->_num_models) {
+            k3mv4_Mul(mesh_impl->_lights[i].position, mesh_impl->_model[parent].world_xform, mesh_impl->_lights[i].position);
+        }
+    }
+
+    uint32_t num_lights = mesh_impl->_num_lights;
+    if (num_lights) {
+        bdesc.size = lbuf_size;
+        bdesc.stride = sizeof(k3lightBufferData);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        mesh_impl->_lb = CreateBuffer(&bdesc);
+
+        k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
+
+        for (i = 0; i < num_lights; i++) {
+            lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
+            lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
+            lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
+            lb_data[i].intensity = mesh_impl->_lights[i].intensity;
+            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
+            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
+            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+            lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
+            lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
+            lb_data[i].light_type = mesh_impl->_lights[i].light_type;
+            lb_data[i].cast_shadows = (mesh_impl->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
+            lb_data[i].spot_angle = 45.0f;
         }
     }
 
