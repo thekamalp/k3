@@ -615,28 +615,28 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB
                 axis = (mod_vec[0] > 0.0f) ? 0 : 4;
                 if (!(axis_mask & (1 << axis))) {
                     vec[0] -= mod_vec[0];
-                    collide_axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_X : K3_AXIS_DIR_FLAG_NEG_X;
                 }
+                collide_axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_X : K3_AXIS_DIR_FLAG_NEG_X;
             } else {
                 axis = (mod_vec[2] > 0.0f) ? 2 : 6;
                 if (!(axis_mask & (1 << axis))) {
                     vec[2] -= mod_vec[2];
-                    collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
                 }
+                collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
             }
         } else {
             if (fabsf(mod_vec[1]) < fabsf(mod_vec[2])) {
                 axis = (mod_vec[1] > 0.0f) ? 1 : 5;
                 if (!(axis_mask & (1 << axis))) {
                     vec[1] -= mod_vec[1];
-                    collide_axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Y : K3_AXIS_DIR_FLAG_NEG_Y;
                 }
+                collide_axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Y : K3_AXIS_DIR_FLAG_NEG_Y;
             } else {
                 axis = (mod_vec[2] > 0.0f) ? 2 : 6;
                 if (!(axis_mask & (1 << axis))) {
                     vec[2] -= mod_vec[2];
-                    collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
                 }
+                collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
             }
         }
     }
