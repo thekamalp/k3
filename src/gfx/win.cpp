@@ -556,7 +556,7 @@ bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
     return x_collision && y_collision && z_collision;
 }
 
-uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority)
+uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority, uint32_t axis_mask)
 {
     uint32_t axis;
     bool collision = true;
@@ -612,19 +612,31 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB
             collide_axis = collide_axis << axis2;
         } else if (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) {
             if (fabsf(mod_vec[0]) < fabsf(mod_vec[2])) {
-                vec[0] -= mod_vec[0];
-                collide_axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_X : K3_AXIS_DIR_FLAG_NEG_X;
+                axis = (mod_vec[0] > 0.0f) ? 0 : 4;
+                if (!(axis_mask & (1 << axis))) {
+                    vec[0] -= mod_vec[0];
+                    collide_axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_X : K3_AXIS_DIR_FLAG_NEG_X;
+                }
             } else {
-                vec[2] -= mod_vec[2];
-                collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
+                axis = (mod_vec[2] > 0.0f) ? 2 : 6;
+                if (!(axis_mask & (1 << axis))) {
+                    vec[2] -= mod_vec[2];
+                    collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
+                }
             }
         } else {
             if (fabsf(mod_vec[1]) < fabsf(mod_vec[2])) {
-                vec[1] -= mod_vec[1];
-                collide_axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Y : K3_AXIS_DIR_FLAG_NEG_Y;
+                axis = (mod_vec[1] > 0.0f) ? 1 : 5;
+                if (!(axis_mask & (1 << axis))) {
+                    vec[1] -= mod_vec[1];
+                    collide_axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Y : K3_AXIS_DIR_FLAG_NEG_Y;
+                }
             } else {
-                vec[2] -= mod_vec[2];
-                collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
+                axis = (mod_vec[2] > 0.0f) ? 2 : 6;
+                if (!(axis_mask & (1 << axis))) {
+                    vec[2] -= mod_vec[2];
+                    collide_axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_FLAG_POS_Z : K3_AXIS_DIR_FLAG_NEG_Z;
+                }
             }
         }
     }

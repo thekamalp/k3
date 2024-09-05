@@ -1902,7 +1902,7 @@ static const uint32_t K3_AXIS_PRIORITY_YXZ = 0x201;
 static const uint32_t K3_AXIS_PRIORITY_YZX = 0x021;
 static const uint32_t K3_AXIS_PRIORITY_ZXY = 0x102;
 static const uint32_t K3_AXIS_PRIORITY_ZYX = 0x012;
-uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority);
+uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB* slip_bounds, uint32_t axis_priority, uint32_t axis_mask);
 
 // Modify AABB by scaling and offsetting
 void k3bvh_ScaleOffsetAABB(k3AABB* d, const float* scale, const float* offset);
