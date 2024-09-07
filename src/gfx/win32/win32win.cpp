@@ -464,6 +464,9 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                 return 0;
             }
             break;
+        case WM_CHAR:
+        case WM_SYSCHAR:
+            return 0;
         }
     }
 
