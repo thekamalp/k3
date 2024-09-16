@@ -3571,8 +3571,13 @@ void insertFbxModelToSortedList(uint32_t model_id, k3fbxData* fbx, uint32_t* sor
     if (parent_model_id < fbx->num_models) {
         // Make sure parent model has been sorted
         insertFbxModelToSortedList(parent_model_id, fbx, sorted_model_id, num_static_models);
-        // insert child just after parent
-        sorted_model_id[model_id] = sorted_model_id[parent_model_id] + 1;
+        // if the parent model is static, and child is dynamic, add child to the dynamic region
+        if (sorted_model_id[parent_model_id] < num_static_models && fbx->model[model_id].dynamic) {
+            sorted_model_id[model_id] = num_static_models;
+        } else {
+            // otherwise, insert child just after parent
+            sorted_model_id[model_id] = sorted_model_id[parent_model_id] + 1;
+        }
     } else if (fbx->model[model_id].dynamic) {
         // if there is no parent, and the model is dynamic, insert the first after the static models
         sorted_model_id[model_id] = num_static_models;
