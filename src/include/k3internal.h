@@ -189,6 +189,7 @@ public:
     uint32_t _num_meshes;
     uint32_t _num_models;
     uint32_t _num_model_custom_props;
+    uint32_t _num_custom_prop_strings;
     uint32_t _num_tris;
     uint32_t _num_verts;
     uint32_t _num_textures;
@@ -203,6 +204,7 @@ public:
     uint32_t* _mesh_start;
     k3meshModel* _model;
     k3flint32* _model_custom_props;
+    char** _custom_prop_strings;
     k3surf* _textures;
     k3camera* _cameras;
     k3light* _lights;

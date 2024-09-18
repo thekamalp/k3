@@ -666,6 +666,7 @@ k3meshImpl::k3meshImpl()
 {
     _num_meshes = 0;
     _num_model_custom_props = 0;
+    _num_custom_prop_strings = 0;
     _num_models = 0;
     _num_tris = 0;
     _num_textures = 0;
@@ -679,6 +680,7 @@ k3meshImpl::k3meshImpl()
     _mesh_start = NULL;
     _model = NULL;
     _model_custom_props = NULL;
+    _custom_prop_strings = NULL;
     _textures = NULL;
     _cameras = NULL;
     _lights = NULL;
@@ -710,6 +712,17 @@ k3meshImpl::~k3meshImpl()
         delete[] _model_custom_props;
         _model_custom_props = NULL;
     }
+    if (_custom_prop_strings) {
+        uint32_t i;
+        for (i = 0; i < _num_custom_prop_strings; i++) {
+            if (_custom_prop_strings[i]) {
+                delete[] _custom_prop_strings[i];
+            }
+        }
+        delete[] _custom_prop_strings;
+        _num_custom_prop_strings = 0;
+        _custom_prop_strings = NULL;
+    }
     if (_textures) {
         delete[] _textures;
         _textures = NULL;
@@ -738,6 +751,7 @@ k3meshImpl::~k3meshImpl()
             if (_anim[i].anim_objs) delete[] _anim[i].anim_objs;
         }
         delete[] _anim;
+        _num_anims = 0;
         _anim = NULL;
     }
 }
@@ -944,6 +958,17 @@ K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_inde
         n.i = 0;
         return n;
     }
+}
+
+K3API const char* k3meshObj::getCustomPropString(uint32_t obj, uint32_t custom_prop_index)
+{
+    if (obj < _data->_num_models && custom_prop_index < _data->_num_model_custom_props) {
+        uint32_t str_index = _data->_model_custom_props[obj * _data->_num_model_custom_props + custom_prop_index].ui - 1;
+        if (str_index < _data->_num_custom_prop_strings) {
+            return _data->_custom_prop_strings[str_index];
+        }
+    }
+    return NULL;
 }
 
 K3API uint32_t k3meshObj::getParent(uint32_t obj)
@@ -2032,6 +2057,7 @@ struct k3fbxData {
     uint32_t num_anim_curve_time_elements;
     uint32_t num_anim_curve_data_elements;
     uint32_t num_bind_pose_nodes;
+    uint32_t num_custom_prop_strings;
     k3fbxDeformer deformer_type;
     k3fbxPoseType pose_type;
     k3fbxReference last_normal_reference;
@@ -2040,6 +2066,7 @@ struct k3fbxData {
     k3fbxMeshData* mesh;
     k3fbxModelData* model;
     k3flint32* model_custom_prop;
+    char** custom_prop_strings;
     k3fbxMaterialData* material;
     k3fbxTextureData* texture;
     k3fbxContentData* content_data;
@@ -2406,6 +2433,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
         fbx->num_anim_curve_time_elements = 0;
         fbx->num_anim_curve_data_elements = 0;
         fbx->num_bind_pose_nodes = 0;
+        fbx->num_custom_prop_strings = 0;
         if(K3_FBX_DEBUG) printf("----------starting fbx parse ---------------\n");
     }
 
@@ -3396,6 +3424,25 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                                 printf("%s\n", str);
                             }
                         }
+                    } else if (fbx_property == k3fbxProperty::CUSTOM_PROP) {
+                        if (fbx->custom_prop_strings) {
+                            uint32_t str_len = strlen(str) + 1;
+                            if (fbx_property_argument == 2) {
+                                if (str_len > K3_FBX_MAX_NAME_LENGTH) str_len = K3_FBX_MAX_NAME_LENGTH;
+                                fbx->custom_prop_strings[fbx->num_custom_prop_strings - 1] = new char[str_len];
+                                strncpy(fbx->custom_prop_strings[fbx->num_custom_prop_strings - 1], str, str_len);
+                                fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].ui = fbx->num_custom_prop_strings;
+                            }
+                            if (fbx_property_argument > 0 && str_len > 1) {
+                                fbx_property_argument++;
+                            }
+                        }
+                        if (fbx_property_argument == 0) {
+                            if (!strncmp(str, "KString", 8)) {
+                                fbx_property_argument++;
+                                fbx->num_custom_prop_strings++;
+                            }
+                        }
                     }
                 } else if (node_type == k3fbxNodeType::CONNECT) {
                     if (connect_params == 0) {
@@ -3756,6 +3803,13 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.num_anim_curve_data_elements) fbx.anim_curve_data = new float[fbx.num_anim_curve_data_elements];
     if (fbx.num_tangent_bytes) fbx.tangents = new char[fbx.num_tangent_bytes];
     if (fbx.num_bind_pose_nodes) fbx.bind_pose_node = new k3fbxPoseNode[fbx.num_bind_pose_nodes];
+    if (fbx.num_custom_prop_strings) {
+        fbx.custom_prop_strings = new char* [fbx.num_custom_prop_strings];
+        uint32_t i;
+        for (i = 0; i < fbx.num_custom_prop_strings; i++) {
+            fbx.custom_prop_strings[i] = NULL;
+        }
+    }
     fbx.normals = new char[fbx.num_normal_bytes];
     fbx.uvs = new char[fbx.num_uv_bytes];
     fseek(in_file, node_start, SEEK_SET);
@@ -3911,6 +3965,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     } else {
         mesh_impl->_model_custom_props = NULL;
     }
+    mesh_impl->_num_custom_prop_strings = fbx.num_custom_prop_strings;
+    mesh_impl->_custom_prop_strings = fbx.custom_prop_strings;
     mesh_impl->_num_models = 0;  // reset the count, and count again, but this time with allocated entries which are filled in
     float mat[16];
     float x_axis[3] = { 1.0f, 0.0f, 0.0f };

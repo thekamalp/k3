@@ -1972,6 +1972,7 @@ public:
     K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API float getVisibility(uint32_t obj);
     K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
+    K3API const char* getCustomPropString(uint32_t obj, uint32_t custom_prop_index);
     K3API uint32_t getParent(uint32_t obj);
     K3API uint32_t getRootParent(uint32_t obj);
     K3API float* getEmptyTransform(uint32_t empty);
