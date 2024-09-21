@@ -4293,9 +4293,18 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
         // Normalize skin weights
         uint32_t v_id;
+        float sum;
         for (v_id = 0; v_id < num_verts; v_id++) {
             if (*(alloc_skin_f + 8 * v_id + 4) >= 0.1f) {
-                k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
+                sum  = *(alloc_skin_f + 8 * v_id + 4);
+                sum += *(alloc_skin_f + 8 * v_id + 5);
+                sum += *(alloc_skin_f + 8 * v_id + 6);
+                sum += *(alloc_skin_f + 8 * v_id + 7);
+                *(alloc_skin_f + 8 * v_id + 4) /= sum;
+                *(alloc_skin_f + 8 * v_id + 5) /= sum;
+                *(alloc_skin_f + 8 * v_id + 6) /= sum;
+                *(alloc_skin_f + 8 * v_id + 7) /= sum;
+                //k3v4_Normalize(alloc_skin_f + 8 * v_id + 4);
             }
         }
         mesh_impl->_num_static_models = mesh_impl->_num_models;
