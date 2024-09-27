@@ -1917,6 +1917,8 @@ struct k3meshPartitions {
     float part_inc[3];
     float part_size[3];
     K3API k3meshPartitions();
+    // find the partition on the given axis into which the position falls
+    K3API uint32_t getPartitionIndex(float position, uint32_t axis);
     // loops through all of the partitions and the object index to each partition the object AABB intersects
     K3API void insertObject(uint32_t obj_index, k3AABB* obj_aabb);
 };

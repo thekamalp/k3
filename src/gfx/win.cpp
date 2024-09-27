@@ -1654,25 +1654,30 @@ K3API k3meshPartitions::k3meshPartitions()
     part_size[2] = 0.0f;
 }
 
+K3API uint32_t k3meshPartitions::getPartitionIndex(float position, uint32_t axis)
+{
+    float fl_index = (position - start[axis]) / part_inc[axis];
+    if (fl_index < 0.0f) fl_index = 0.0f;
+    if (fl_index >= parts[axis]) fl_index = parts[axis] - 1;
+    uint32_t index = (uint32_t)fl_index;
+    return index;
+}
+
 K3API void k3meshPartitions::insertObject(uint32_t obj_index, k3AABB* obj_aabb)
 {
-    k3AABB part_aabb;
-    uint32_t p_index = 0;
-    uint32_t x, y, z;
-    for (z = 0; z < parts[2]; z++) {
-        part_aabb.min[2] = start[2] + z * part_inc[2];
-        part_aabb.max[2] = part_aabb.min[2] + part_size[2];
-        for (y = 0; y < parts[1]; y++) {
-            part_aabb.min[1] = start[1] + y * part_inc[1];
-            part_aabb.max[1] = part_aabb.min[1] + part_size[1];
-            for (x = 0; x < parts[0]; x++) {
-                part_aabb.min[0] = start[0] + x * part_inc[0];
-                part_aabb.max[0] = part_aabb.min[0] + part_size[0];
-                // Check if obj collides partition
-                if (k3bvh_CheckCollision(obj_aabb, &part_aabb)) {
-                    llists[p_index]->AddTail(obj_index);
-                }
-                p_index++;
+    uint32_t axis;
+    uint32_t start_index[3];
+    uint32_t end_index[3];
+    for (axis = 0; axis < 3; axis++) {
+        start_index[axis] = getPartitionIndex(obj_aabb->min[axis], axis);
+        end_index[axis] = getPartitionIndex(obj_aabb->max[axis], axis);
+    }
+    uint32_t x, y, z, p_index;
+    for (z = start_index[2]; z <= end_index[2]; z++) {
+        for (y = start_index[1]; y <= end_index[1]; y++) {
+            for (x = start_index[0]; x <= end_index[0]; x++) {
+                p_index = (z * parts[1] + y) * parts[0] + x;
+                llists[p_index]->AddTail(obj_index);
             }
         }
     }
