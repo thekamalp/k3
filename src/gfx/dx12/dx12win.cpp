@@ -2432,6 +2432,12 @@ const k3gfxImpl* k3gfxObj::getImpl() const
     return _data;
 }
 
+void k3gfxObj::WinCreated(k3win w)
+{
+    k3win32WinImpl* win_impl = (k3win32WinImpl*)w->getImpl();
+    k3gfxImpl::_factory->MakeWindowAssociation(win_impl->_hwnd, DXGI_MWA_NO_ALT_ENTER);
+}
+
 void k3gfxObj::GetFontShaders(k3shader& vs, k3shader& ps)
 {
     if (_data->_font_vs == NULL) {

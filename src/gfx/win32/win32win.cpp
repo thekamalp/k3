@@ -646,6 +646,7 @@ K3API k3win k3winObj::Create(const char* title,
         win = NULL;
         return NULL;
     } else {
+        d->gfx->WinCreated(win);
         d->_hdc = GetDC(d->_hwnd);
         SetWindowText(d->_hwnd, d->_title);
         k3win32WinImpl::_win_map[k3win32WinImpl::_win_count] = win;

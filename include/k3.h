@@ -2554,6 +2554,10 @@ public:
 
 const uint32_t K3_MEM_FLAG_MSAA = 0x1;
 
+class k3winImpl;
+class k3winObj;
+typedef k3ptr<k3winObj> k3win;
+
 class k3gfxObj : public k3obj
 {
 private:
@@ -2566,6 +2570,7 @@ public:
     virtual ~k3gfxObj();
     k3gfxImpl* getImpl();
     const k3gfxImpl* getImpl() const;
+    void WinCreated(k3win w);
 
     virtual K3API k3objType getObjType() const
     {
@@ -2623,9 +2628,6 @@ typedef void (K3CALLBACK* k3win_joystick_move_ptr)(void* data, uint32_t joystick
 typedef void (K3CALLBACK* k3win_joystick_button_ptr)(void* data, uint32_t joystick, uint32_t button, k3keyState state);
 typedef void (K3CALLBACK* k3win_destroy_ptr)(void* data);
 
-class k3winImpl;
-class k3winObj;
-typedef k3ptr<k3winObj> k3win;
 class k3winObj : public k3obj
 {
 private:
@@ -2690,6 +2692,8 @@ public:
     K3API uint32_t GetVsyncInterval() const;
     K3API k3surf GetBackBuffer();
 
+    k3winImpl* getImpl();
+    const k3winImpl* getImpl() const;
     static void WindowLoop();
     static void ExitLoop();
 };

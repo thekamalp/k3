@@ -5185,3 +5185,13 @@ K3API uint32_t k3winObj::GetVsyncInterval() const
 {
     return _data->_vsync_interval;
 }
+
+k3winImpl* k3winObj::getImpl()
+{
+    return _data;
+}
+
+const k3winImpl* k3winObj::getImpl() const
+{
+    return _data;
+}
