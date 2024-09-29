@@ -869,6 +869,43 @@ K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float
     return d;
 }
 
+#ifdef _WIN32
+#include <xmmintrin.h>
+K3API float* k3m4_Mul(float* d, const float* s1, const float* s2)
+{
+    uint64_t s1_addr = (uint64_t)s1;
+    uint64_t s2_addr = (uint64_t)s2;
+    if ((s1_addr & 0xf) || (s2_addr & 0xf)) {
+        return k3m_Mul(4, 4, 4, (d), (s1), (s2));
+    }
+    __m128 row1 = _mm_load_ps(&s2[0]);
+    __m128 row2 = _mm_load_ps(&s2[4]);
+    __m128 row3 = _mm_load_ps(&s2[8]);
+    __m128 row4 = _mm_load_ps(&s2[12]);
+    uint32_t i;
+    for (i = 0; i < 4; i++) {
+        __m128 brod1 = _mm_set1_ps(s1[4 * i + 0]);
+        __m128 brod2 = _mm_set1_ps(s1[4 * i + 1]);
+        __m128 brod3 = _mm_set1_ps(s1[4 * i + 2]);
+        __m128 brod4 = _mm_set1_ps(s1[4 * i + 3]);
+        __m128 row = _mm_add_ps(
+            _mm_add_ps(
+                _mm_mul_ps(brod1, row1),
+                _mm_mul_ps(brod2, row2)),
+            _mm_add_ps(
+                _mm_mul_ps(brod3, row3),
+                _mm_mul_ps(brod4, row4)));
+        _mm_store_ps(&d[4 * i], row);
+    }
+    return d;
+}
+#else
+K3API float* k3m4_Mul(float* d, const float* s1, const float* s2)
+{
+    return k3m_Mul(4, 4, 4, (d), (s1), (s2));
+}
+#endif
+
 K3API float* k3m_QuatToMat(uint32_t cols, float* d, const float* s)
 {
     // cols must >= 3

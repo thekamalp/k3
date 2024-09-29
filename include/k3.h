@@ -521,7 +521,8 @@ inline float* k3m4_SetLookAtRH(float* d, const float* e, const float* a, const f
 
 inline float* k3m2_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 2, 2, 2, (d), (s1), (s2) ); }
 inline float* k3m3_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 3, 3, 3, (d), (s1), (s2) ); }
-inline float* k3m4_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 4, 4, 4, (d), (s1), (s2) ); }
+//inline float* k3m4_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 4, 4, 4, (d), (s1), (s2) ); }
+K3API float* k3m4_Mul(float* d, const float* s1, const float* s2);
 
 inline float* k3vm2_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 1, 2, 2, (d), (s1), (s2) ); }
 inline float* k3vm3_Mul(float* d, const float* s1, const float* s2) { return k3m_Mul( 1, 3, 3, (d), (s1), (s2) ); }

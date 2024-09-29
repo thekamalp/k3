@@ -88,21 +88,22 @@ struct k3fontCBuffer {
 struct k3meshModel {
     static const uint32_t FLAG_DYNAMIC = 0x1;
 
-    uint32_t parent;
+    float world_xform[16];
     char name[K3_FBX_MAX_NAME_LENGTH];
+    uint32_t parent;
     uint32_t mesh_index;
     uint32_t prim_start;
     uint32_t num_prims;
     float position[3];
     float rotation[3];
     float scaling[3];
-    uint32_t flags;
-    float world_xform[16];
     float diffuse_color[3];
     float emissive_factor;
     float visibility;
     uint32_t diffuse_map_index;
     uint32_t normal_map_index;
+    uint32_t flags;
+    uint32_t padding[3];
 };
 
 struct k3camera {
@@ -123,15 +124,16 @@ struct k3light {
     static const uint32_t FLAG_DYNAMIC = 0x1;
     static const uint32_t FLAG_CAST_SHADOWS = 0x2;
 
-    uint32_t parent;
     char name[K3_FBX_MAX_NAME_LENGTH];
     float position[4];
     float color[3];
     float intensity;
+    uint32_t parent;
     uint32_t light_type;
     uint32_t decay_type;
-    float decay_start;
     uint32_t flags;
+    float decay_start;
+    uint32_t padding[3];
 };
 
 struct k3emptyModel {
@@ -140,11 +142,12 @@ struct k3emptyModel {
 };
 
 struct k3bone {
-    uint32_t parent;    // parent bone id, or ~0x0 if root
     char name[K3_FBX_MAX_NAME_LENGTH];
     float rot_quat[4];  // quaternion representation of bone rotation
+    uint32_t parent;    // parent bone id, or ~0x0 if root
     float scaling[3];   // bone scaling
     float position[3];  // bone location
+    uint32_t dummy;
     float inv_bind_pose[16];  // inverse of the global bind pose
 };
 
@@ -152,6 +155,7 @@ struct k3boneData {
     float rot_quat[4];  // quaternion representation of bone rotation
     float scaling[3];     // bone scaling
     float position[3];  // bone location
+    uint32_t padding[2];
 };
 
 static const uint32_t K3_BONE_FLAG_NONE = 0x0;
