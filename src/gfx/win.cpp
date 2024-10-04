@@ -1760,6 +1760,60 @@ K3API void k3meshObj::genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id)
     }
 }
 
+K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id)
+{
+    if (bone_id >= _data->_num_bones) {
+        k3error::Handler("Invalid bone id", "k3meshObj::genBoneAABB");
+        return;
+    }
+
+    bone_aabb->min[0] = INFINITY;
+    bone_aabb->min[1] = INFINITY;
+    bone_aabb->min[2] = INFINITY;
+    bone_aabb->max[0] = -INFINITY;
+    bone_aabb->max[1] = -INFINITY;
+    bone_aabb->max[2] = -INFINITY;
+
+    uint32_t i, w;
+    bool vert_in_bone;
+    const float* verts = _data->_geom_data;
+    const float* skin_f = _data->_geom_data + 11 * _data->_num_verts;
+    const uint32_t* skin_i = (const uint32_t*)(skin_f);
+    float pos[4];
+    float xform_pos[4];
+    for (i = 0; i < _data->_num_verts; i++) {
+        vert_in_bone = false;
+        for (w = 0; w < 4; w++) {
+            if (skin_i[w] == bone_id) {
+                vert_in_bone = true;
+            }
+        }
+        if (vert_in_bone) {
+            pos[0] = verts[0];
+            pos[1] = verts[1];
+            pos[2] = verts[2];
+            pos[3] = 1.0f;
+            k3mv4_Mul(xform_pos, _data->_bones[bone_id].inv_bind_pose, pos);
+            if (xform_pos[0] < bone_aabb->min[0]) bone_aabb->min[0] = xform_pos[0];
+            if (xform_pos[1] < bone_aabb->min[1]) bone_aabb->min[1] = xform_pos[1];
+            if (xform_pos[2] < bone_aabb->min[2]) bone_aabb->min[2] = xform_pos[2];
+            if (xform_pos[0] > bone_aabb->max[0]) bone_aabb->max[0] = xform_pos[0];
+            if (xform_pos[1] > bone_aabb->max[1]) bone_aabb->max[1] = xform_pos[1];
+            if (xform_pos[2] > bone_aabb->max[2]) bone_aabb->max[2] = xform_pos[2];
+        }
+        verts += 3;
+        skin_i += 8;
+    }
+    // move aabb to origin of inv bone pose
+    bone_aabb->min[0] -= _data->_bones[bone_id].inv_bind_pose[3];
+    bone_aabb->max[0] -= _data->_bones[bone_id].inv_bind_pose[3];
+    bone_aabb->min[1] -= _data->_bones[bone_id].inv_bind_pose[7];
+    bone_aabb->max[1] -= _data->_bones[bone_id].inv_bind_pose[7];
+    bone_aabb->min[2] -= _data->_bones[bone_id].inv_bind_pose[11];
+    bone_aabb->max[2] -= _data->_bones[bone_id].inv_bind_pose[11];
+}
+
+
 
 #define K3_FBX_DEBUG 0
 

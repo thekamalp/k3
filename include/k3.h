@@ -2021,6 +2021,7 @@ public:
     K3API void createMeshPartitions(k3meshPartitions* p, float overlap);
     K3API void createLightPartitions(k3meshPartitions* p, float overlap);
     K3API void genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id);
+    K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
@@ -2065,6 +2066,8 @@ public:
     K3API void DownloadImage(k3downloadImage img, k3resource resource);
     K3API void UploadBuffer(k3uploadBuffer buf, k3resource resource, uint64_t start = 0);
     K3API void UploadBufferSrcRange(k3uploadBuffer buf, k3resource resource, uint64_t src_start, uint64_t size, uint64_t dst_start = 0);
+    K3API void CopyBuffer(k3buffer buf, k3resource resource, uint64_t start = 0);
+    K3API void CopyBufferSrcRange(k3buffer buf, k3resource resource, uint64_t src_start, uint64_t size, uint64_t dst_start = 0);
     K3API void GetCurrentViewport(k3rect* viewport);
 
     K3API void SetGfxState(k3gfxState state);

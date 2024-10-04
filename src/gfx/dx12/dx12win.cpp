@@ -647,6 +647,27 @@ K3API void k3cmdBufObj::UploadBufferSrcRange(k3uploadBuffer buf, k3resource reso
     _data->_cmd_list->CopyBufferRegion(dst_resource_impl->_dx12_resource, dst_start, src_buffer_impl->_resource, src_start, src_size);
 }
 
+K3API void k3cmdBufObj::CopyBuffer(k3buffer buf, k3resource resource, uint64_t start)
+{
+    k3bufferImpl* src_buffer_impl = buf->getImpl();
+    k3resourceImpl* src_resource_impl = src_buffer_impl->_resource->getImpl();
+    k3resourceImpl* dst_resource_impl = resource->getImpl();
+    uint64_t size = src_resource_impl->_width - start;
+    if (dst_resource_impl->_width - start < size) size = dst_resource_impl->_width - start;
+    _data->_cmd_list->CopyBufferRegion(dst_resource_impl->_dx12_resource, start, src_resource_impl->_dx12_resource, 0, size);
+}
+
+K3API void k3cmdBufObj::CopyBufferSrcRange(k3buffer buf, k3resource resource, uint64_t src_start, uint64_t size, uint64_t dst_start)
+{
+    k3bufferImpl* src_buffer_imp = buf->getImpl();
+    k3resourceImpl* src_resource_impl = src_buffer_imp->_resource->getImpl();
+    k3resourceImpl* dst_resource_impl = resource->getImpl();
+    uint64_t src_size = src_resource_impl->_width - src_start;
+    if (size < src_size) src_size = size;
+    if (dst_resource_impl->_width - dst_start < src_size) src_size = dst_resource_impl->_width - dst_start;
+    _data->_cmd_list->CopyBufferRegion(dst_resource_impl->_dx12_resource, dst_start, src_resource_impl->_dx12_resource, src_start, src_size);
+}
+
 K3API void k3cmdBufObj::GetCurrentViewport(k3rect* viewport)
 {
     *viewport = _data->_cur_viewport;
