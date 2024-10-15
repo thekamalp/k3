@@ -1760,7 +1760,7 @@ K3API void k3meshObj::genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id)
     }
 }
 
-K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id)
+K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned)
 {
     if (bone_id >= _data->_num_bones) {
         k3error::Handler("Invalid bone id", "k3meshObj::genBoneAABB");
@@ -1779,8 +1779,34 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id)
     const float* verts = _data->_geom_data;
     const float* skin_f = _data->_geom_data + 11 * _data->_num_verts;
     const uint32_t* skin_i = (const uint32_t*)(skin_f);
-    float pos[4];
     float xform_pos[4];
+    float cur_mat[16];
+    float* xform_mat;
+    if (bone_aligned) {
+        xform_mat = _data->_bones[bone_id].inv_bind_pose;
+    } else {
+        float rot_xlat_mat[16];
+        float xlat_mat[16];
+        uint32_t b;
+        //k3m4_SetIdentity(cur_mat);
+        memcpy(cur_mat, _data->_bones[bone_id].inv_bind_pose, 16 * sizeof(float));
+
+        for (b = bone_id; b < _data->_num_bones; b = _data->_bones[b].parent) {
+            k3m4_QuatToMat(rot_xlat_mat, _data->_bones[b].rot_quat);
+            k3m4_SetIdentity(xlat_mat);
+            xlat_mat[3] = _data->_bones[b].position[0];
+            xlat_mat[7] = _data->_bones[b].position[1];
+            xlat_mat[11] = _data->_bones[b].position[2];
+            k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
+            k3m4_SetIdentity(xlat_mat);
+            xlat_mat[0] = _data->_bones[b].scaling[0];
+            xlat_mat[5] = _data->_bones[b].scaling[1];
+            xlat_mat[10] = _data->_bones[b].scaling[2];
+            k3m4_Mul(xlat_mat, rot_xlat_mat, xlat_mat);
+            k3m4_Mul(cur_mat, xlat_mat, cur_mat);
+        }
+        xform_mat = cur_mat;
+    }
     for (i = 0; i < _data->_num_verts; i++) {
         vert_in_bone = false;
         for (w = 0; w < 4; w++) {
@@ -1789,11 +1815,11 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id)
             }
         }
         if (vert_in_bone) {
-            pos[0] = verts[0];
-            pos[1] = verts[1];
-            pos[2] = verts[2];
-            pos[3] = 1.0f;
-            k3mv4_Mul(xform_pos, _data->_bones[bone_id].inv_bind_pose, pos);
+            xform_pos[0] = verts[0];
+            xform_pos[1] = verts[1];
+            xform_pos[2] = verts[2];
+            xform_pos[3] = 1.0f;
+            k3mv4_Mul(xform_pos, xform_mat, xform_pos);
             if (xform_pos[0] < bone_aabb->min[0]) bone_aabb->min[0] = xform_pos[0];
             if (xform_pos[1] < bone_aabb->min[1]) bone_aabb->min[1] = xform_pos[1];
             if (xform_pos[2] < bone_aabb->min[2]) bone_aabb->min[2] = xform_pos[2];
@@ -1804,13 +1830,15 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id)
         verts += 3;
         skin_i += 8;
     }
-    // move aabb to origin of inv bone pose
-    bone_aabb->min[0] -= _data->_bones[bone_id].inv_bind_pose[3];
-    bone_aabb->max[0] -= _data->_bones[bone_id].inv_bind_pose[3];
-    bone_aabb->min[1] -= _data->_bones[bone_id].inv_bind_pose[7];
-    bone_aabb->max[1] -= _data->_bones[bone_id].inv_bind_pose[7];
-    bone_aabb->min[2] -= _data->_bones[bone_id].inv_bind_pose[11];
-    bone_aabb->max[2] -= _data->_bones[bone_id].inv_bind_pose[11];
+    if (bone_aligned) {
+        // move aabb to origin of inv bone pose
+        bone_aabb->min[0] -= _data->_bones[bone_id].inv_bind_pose[3];
+        bone_aabb->max[0] -= _data->_bones[bone_id].inv_bind_pose[3];
+        bone_aabb->min[1] -= _data->_bones[bone_id].inv_bind_pose[7];
+        bone_aabb->max[1] -= _data->_bones[bone_id].inv_bind_pose[7];
+        bone_aabb->min[2] -= _data->_bones[bone_id].inv_bind_pose[11];
+        bone_aabb->max[2] -= _data->_bones[bone_id].inv_bind_pose[11];
+    }
 }
 
 

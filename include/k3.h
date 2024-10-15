@@ -2021,7 +2021,7 @@ public:
     K3API void createMeshPartitions(k3meshPartitions* p, float overlap);
     K3API void createLightPartitions(k3meshPartitions* p, float overlap);
     K3API void genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id);
-    K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id);
+    K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
