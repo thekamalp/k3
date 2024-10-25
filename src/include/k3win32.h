@@ -153,9 +153,13 @@ public:
 	static uint32_t _num_joy;
 	static k3win32Joy _joy_map[MAX_JOY];
 	static bool _win32_cursor_visible;
+	static STICKYKEYS _start_sticky_keys;
+	static TOGGLEKEYS _start_toggle_keys;
+	static FILTERKEYS _start_filter_keys;
 
 	static void Initialize();
 	static void Uninitialize();
+	static void AllowAccesibilityKeys(bool allow);
 	static bool PollJoysticks();
 	static LRESULT CALLBACK KeyboardLowLevelProc(int ncode, WPARAM wparam, LPARAM lparam);
 	static LRESULT WINAPI MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);

@@ -15,6 +15,9 @@ k3win32WinImpl* k3win32WinImpl::_winimpl_map[MAX_WIN] = { NULL };
 uint32_t k3win32WinImpl::_num_joy = 0;
 k3win32Joy k3win32WinImpl::_joy_map[MAX_JOY] = { NULL };
 bool k3win32WinImpl::_win32_cursor_visible = true;
+STICKYKEYS k3win32WinImpl::_start_sticky_keys = { sizeof(STICKYKEYS), 0 };
+TOGGLEKEYS k3win32WinImpl::_start_toggle_keys = { sizeof(TOGGLEKEYS), 0 };
+FILTERKEYS k3win32WinImpl::_start_filter_keys = { sizeof(FILTERKEYS), 0 };
 
 uint32_t k3soundBufImpl::_num_sbuf = 0;
 LPDIRECTSOUND8 k3soundBufImpl::_dsound = NULL;
@@ -221,6 +224,13 @@ void k3win32WinImpl::Initialize()
 
     RegisterClassEx(&_win_class);
 
+    // Get initial sticky/toggle/filter key state
+    SystemParametersInfo(SPI_GETSTICKYKEYS, sizeof(STICKYKEYS), &_start_sticky_keys, 0);
+    SystemParametersInfo(SPI_GETTOGGLEKEYS, sizeof(TOGGLEKEYS), &_start_toggle_keys, 0);
+    SystemParametersInfo(SPI_GETFILTERKEYS, sizeof(FILTERKEYS), &_start_filter_keys, 0);
+
+    // Disable accesibility keys
+    AllowAccesibilityKeys(false);
 }
 
 void k3win32WinImpl::Uninitialize()
@@ -236,6 +246,41 @@ void k3win32WinImpl::Uninitialize()
     RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
 
     UnregisterClass(k3win32WinImpl::_win_class_name, GetModuleHandle(NULL));
+
+    // Restore accesibility keys
+    AllowAccesibilityKeys(true);
+}
+
+void k3win32WinImpl::AllowAccesibilityKeys(bool allow)
+{
+    if (allow) {
+        // Restore original sticky key settings
+        SystemParametersInfo(SPI_SETSTICKYKEYS, sizeof(STICKYKEYS), &_start_sticky_keys, 0);
+        SystemParametersInfo(SPI_SETTOGGLEKEYS, sizeof(TOGGLEKEYS), &_start_toggle_keys, 0);
+        SystemParametersInfo(SPI_SETFILTERKEYS, sizeof(FILTERKEYS), &_start_filter_keys, 0);
+    } else {
+        // Disable sticky keys, but if accesibility settings are enabled, then leave it on
+        STICKYKEYS sk_off = _start_sticky_keys;
+        sk_off.dwFlags &= ~SKF_CONFIRMHOTKEY;
+        if ((sk_off.dwFlags & SKF_STICKYKEYSON) == 0) {
+            sk_off.dwFlags &= ~SKF_HOTKEYACTIVE;
+        }
+        SystemParametersInfo(SPI_SETSTICKYKEYS, sizeof(STICKYKEYS), &sk_off, 0);
+
+        TOGGLEKEYS tk_off = _start_toggle_keys;
+        tk_off.dwFlags &= ~TKF_CONFIRMHOTKEY;
+        if ((tk_off.dwFlags & TKF_TOGGLEKEYSON)) {
+            tk_off.dwFlags &= ~TKF_HOTKEYSOUND;
+        }
+        SystemParametersInfo(SPI_SETTOGGLEKEYS, sizeof(TOGGLEKEYS), &tk_off, 0);
+
+        FILTERKEYS fk_off = _start_filter_keys;
+        fk_off.dwFlags &= ~FKF_CONFIRMHOTKEY;
+        if ((fk_off.dwFlags & FKF_FILTERKEYSON)) {
+            fk_off.dwFlags &= ~FKF_HOTKEYACTIVE;
+        }
+        SystemParametersInfo(SPI_SETFILTERKEYS, sizeof(FILTERKEYS), &fk_off, 0);
+    }
 }
 
 bool k3win32WinImpl::PollJoysticks()
