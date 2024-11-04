@@ -1176,6 +1176,32 @@ public:
         }
     }
 
+    void RemoveNode(node_t node, node_t prev_node)
+    {
+        if (prev_node == NULL) {
+            // we should be removing the head
+            if (node != head) {
+                k3error::Handler("Incorrectly removing head of linked list", "k3llist::RemoveNode");
+                return;
+            }
+            RemoveHead();
+        } else {
+            if (node != prev_node->next) {
+                k3error::Handler("previous node not connected to current node", "k3llst::RemoveNode");
+                return;
+            }
+            if (node->next == NULL) {
+                // we should be removing the tail
+                if (node != tail) {
+                    k3error::Handler("Incorrectly removing tail of linked list", "k3llist::RemoveNode");
+                    return;
+                }
+                tail = prev_node;
+            }
+            prev_node->next = node->next;
+        }
+    }
+
     void RemoveAll()
     {
         tail = NULL;
