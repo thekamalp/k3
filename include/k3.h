@@ -1069,7 +1069,7 @@ public:
     T data;
     k3ptr<k3llistNodeObj<T>> next;
 
-    virtual K3API k3objType getObjType() const
+    virtual k3objType getObjType() const
     {
         return k3objType::LLIST_NODE;
     }
@@ -1091,7 +1091,7 @@ public:
         head = NULL;
     }
 
-    virtual K3API k3objType getObjType() const
+    virtual k3objType getObjType() const
     {
         return k3objType::LLIST;
     }
