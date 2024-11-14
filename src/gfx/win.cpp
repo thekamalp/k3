@@ -1760,6 +1760,33 @@ K3API void k3meshObj::genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id)
     }
 }
 
+K3API void k3meshObj::genBoneMatrix(float* mat, uint32_t bone_id, bool with_inverse)
+{
+    float rot_xlat_mat[16];
+    float xlat_mat[16];
+    uint32_t b;
+    if (with_inverse) {
+        memcpy(mat, _data->_bones[bone_id].inv_bind_pose, 16 * sizeof(float));
+    } else {
+        k3m4_SetIdentity(mat);
+    }
+
+    for (b = bone_id; b < _data->_num_bones; b = _data->_bones[b].parent) {
+        k3m4_QuatToMat(rot_xlat_mat, _data->_bones[b].rot_quat);
+        k3m4_SetIdentity(xlat_mat);
+        xlat_mat[3] = _data->_bones[b].position[0];
+        xlat_mat[7] = _data->_bones[b].position[1];
+        xlat_mat[11] = _data->_bones[b].position[2];
+        k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
+        k3m4_SetIdentity(xlat_mat);
+        xlat_mat[0] = _data->_bones[b].scaling[0];
+        xlat_mat[5] = _data->_bones[b].scaling[1];
+        xlat_mat[10] = _data->_bones[b].scaling[2];
+        k3m4_Mul(xlat_mat, rot_xlat_mat, xlat_mat);
+        k3m4_Mul(mat, xlat_mat, mat);
+    }
+}
+
 K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned)
 {
     if (bone_id >= _data->_num_bones) {
@@ -1785,26 +1812,7 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
     if (bone_aligned) {
         xform_mat = _data->_bones[bone_id].inv_bind_pose;
     } else {
-        float rot_xlat_mat[16];
-        float xlat_mat[16];
-        uint32_t b;
-        //k3m4_SetIdentity(cur_mat);
-        memcpy(cur_mat, _data->_bones[bone_id].inv_bind_pose, 16 * sizeof(float));
-
-        for (b = bone_id; b < _data->_num_bones; b = _data->_bones[b].parent) {
-            k3m4_QuatToMat(rot_xlat_mat, _data->_bones[b].rot_quat);
-            k3m4_SetIdentity(xlat_mat);
-            xlat_mat[3] = _data->_bones[b].position[0];
-            xlat_mat[7] = _data->_bones[b].position[1];
-            xlat_mat[11] = _data->_bones[b].position[2];
-            k3m4_Mul(rot_xlat_mat, xlat_mat, rot_xlat_mat);
-            k3m4_SetIdentity(xlat_mat);
-            xlat_mat[0] = _data->_bones[b].scaling[0];
-            xlat_mat[5] = _data->_bones[b].scaling[1];
-            xlat_mat[10] = _data->_bones[b].scaling[2];
-            k3m4_Mul(xlat_mat, rot_xlat_mat, xlat_mat);
-            k3m4_Mul(cur_mat, xlat_mat, cur_mat);
-        }
+        genBoneMatrix(cur_mat, bone_id, true);
         xform_mat = cur_mat;
     }
     for (i = 0; i < _data->_num_verts; i++) {
