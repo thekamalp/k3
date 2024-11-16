@@ -562,6 +562,36 @@ K3API float* k3m_SetRotation(uint32_t rows, float* d, float angle, const float* 
     return d;
 }
 
+K3API float* k3m_AxisAlign(uint32_t rows, uint32_t cols, float* d, const float* s)
+{
+    const float* src = s;
+    float* dest = d;
+    uint32_t r, c, biggest_col;
+    uint32_t num_rows = (rows > 3) ? 4 : rows;
+    uint32_t num_cols = (cols > 3) ? 3 : cols;
+    for (r = 0; r < rows; r++) {
+        if (r >= num_rows) {
+            for (c = 0; c < cols; c++) {
+                dest[c] = src[c];
+            }
+        } else {
+            biggest_col = 0;
+            for (c = 1; c < num_cols; c++) {
+                if (fabsf(src[c]) > fabsf(src[biggest_col])) {
+                    biggest_col = c;
+                }
+            }
+            for (c = 0; c < cols; c++) {
+                dest[c] = (c >= num_cols) ? src[c] : ((c == biggest_col) ? ((src[c] < 0.0f) ? -1.0f : 1.0f) : 0.0f);
+            }
+        }
+        src += cols;
+        dest += cols;
+    }
+    return d;
+}
+
+
 /* operations on a single 4x4 matrix */
 K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z)
 {

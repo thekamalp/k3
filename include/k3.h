@@ -283,6 +283,7 @@ K3API float* k3m_Inverse(uint32_t rows, float* d);
 K3API float* k3m_Swizzle(uint32_t rows, uint32_t cols, float* d, const uint32_t* row_indices, const uint32_t* col_indices);
 K3API float* k3m_SetIdentity(uint32_t rows, float* d);
 K3API float* k3m_SetRotation(uint32_t rows, float* d, float angle, const float* axis);
+K3API float* k3m_AxisAlign(uint32_t rows, uint32_t cols, float* d, const float* s);
 
 /* operations on a single 4x4 matrix */
 K3API float* k3m4_SetPerspectiveOffCenter(float* d, float left, float right, float bottom, float top, float znear, float zfar, bool left_handed, bool dx_style, bool reverse_z);
@@ -452,6 +453,9 @@ inline float* k3m4_SetIdentity(float* d) { return k3m_SetIdentity( 4, (d) ); }
 inline float* k3m2_SetRotation(float* d, float a)                 { return k3m_SetRotation( 2, (d), (a), NULL ); }
 inline float* k3m3_SetRotation(float* d, float a, const float* x) { return k3m_SetRotation( 3, (d), (a), (x)  ); }
 inline float* k3m4_SetRotation(float* d, float a, const float* x) { return k3m_SetRotation( 4, (d), (a), (x)  ); }
+inline float* k3m2_AxisAlign(float* d, const float* s) { return k3m_AxisAlign(2, 2, d, s); }
+inline float* k3m3_AxisAlign(float* d, const float* s) { return k3m_AxisAlign(3, 3, d, s); }
+inline float* k3m4_AxisAlign(float* d, const float* s) { return k3m_AxisAlign(4, 4, d, s); }
 
 inline float* k3m4_SetPerspectiveOffCenterLH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), true, (s), false  ); }
 inline float* k3m4_SetPerspectiveOffCenterRH(float* d, float l, float r, float b, float t, float n, float f, bool s) { return k3m4_SetPerspectiveOffCenter( (d), (l), (r), (b), (t), (n), (f), false, (s), false); }
