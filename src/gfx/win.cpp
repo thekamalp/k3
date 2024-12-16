@@ -2076,7 +2076,7 @@ struct k3fbxClusterNode {
     uint32_t bone_index;
 };
 
-static const uint32_t K3_FBX_BONE_TO_ANIM_MULTIPLIER = 4;
+static const uint32_t K3_FBX_BONE_TO_ANIM_MULTIPLIER = 5;
 
 struct k3fbxAnimLayer {
     uint64_t id;

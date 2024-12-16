@@ -567,7 +567,7 @@ K3API float* k3m_AxisAlign(uint32_t rows, uint32_t cols, float* d, const float* 
     const float* src = s;
     float* dest = d;
     uint32_t r, c, biggest_col;
-    uint32_t num_rows = (rows > 3) ? 4 : rows;
+    uint32_t num_rows = (rows > 3) ? 3 : rows;
     uint32_t num_cols = (cols > 3) ? 3 : cols;
     for (r = 0; r < rows; r++) {
         if (r >= num_rows) {
