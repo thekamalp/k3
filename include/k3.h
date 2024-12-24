@@ -2053,6 +2053,9 @@ public:
     K3API void genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id);
     K3API void genBoneMatrix(float* mat, uint32_t bone_id, bool with_inverse);
     K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned);
+    K3API const float* getVertPosition(uint32_t model, uint32_t vert);
+    K3API const float* getVertAttrib(uint32_t model, uint32_t vert);
+    K3API const float* getVertSkin(uint32_t model, uint32_t vert);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();

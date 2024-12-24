@@ -603,9 +603,9 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB
 
         axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_POS_X : K3_AXIS_DIR_NEG_X;
         bool collide_x = (fabsf(mod_vec[0]) < fabsf(mod_vec[1])) && (fabsf(mod_vec[0]) < fabsf(mod_vec[2])) && !(axis_mask & (1 << axis));
-        axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_POS_X : K3_AXIS_DIR_NEG_X;
+        axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_POS_Y : K3_AXIS_DIR_NEG_Y;
         bool collide_y = !collide_x && (fabsf(mod_vec[1]) < fabsf(mod_vec[2])) && !(axis_mask & (1 << axis));
-        axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_POS_X : K3_AXIS_DIR_NEG_X;
+        axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_POS_Z : K3_AXIS_DIR_NEG_Z;
         bool collide_z = !collide_x && !collide_y && !(axis_mask & (1 << axis));
 
         if (slip_done[axis0]) {
@@ -626,7 +626,7 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* vec, k3AABB
         } else if (collide_y) {
             vec[1] -= mod_vec[1];
             collide_axis = (mod_vec[1] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_Y : ((mod_vec[1] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_Y : 0);
-        } else {
+        } else if (collide_z) {
             vec[2] -= mod_vec[2];
             collide_axis = (mod_vec[2] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_Z : ((mod_vec[2] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_Z : 0);
         }
@@ -1836,6 +1836,72 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
         bone_aabb->min[2] -= _data->_bones[bone_id].inv_bind_pose[11];
         bone_aabb->max[2] -= _data->_bones[bone_id].inv_bind_pose[11];
     }
+}
+
+K3API const float* k3meshObj::getVertPosition(uint32_t model, uint32_t vert)
+{
+    if (model >= _data->_num_models) {
+        k3error::Handler("Model out of range", "k3mesh_obj::getVertPosition");
+        return NULL;
+    }
+    uint32_t mesh = _data->_model[model].mesh_index;
+    uint32_t v_start = _data->_mesh_start[mesh];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    v_start *= 3;
+    v_end *= 3;
+
+    uint32_t v_index = v_start + vert;
+
+    if (v_index >= v_end) {
+        k3error::Handler("Vert out of range", "k3meshObj::getVertPosition");
+        return NULL;
+    }
+
+    return _data->_geom_data + 3 * v_index;
+}
+
+K3API const float* k3meshObj::getVertAttrib(uint32_t model, uint32_t vert)
+{
+    if (model >= _data->_num_models) {
+        k3error::Handler("Model out of range", "k3mesh_obj::getVertAttrib");
+        return NULL;
+    }
+    uint32_t mesh = _data->_model[model].mesh_index;
+    uint32_t v_start = _data->_mesh_start[mesh];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    v_start *= 3;
+    v_end *= 3;
+
+    uint32_t v_index = v_start + vert;
+
+    if (v_index >= v_end) {
+        k3error::Handler("Vert out of range", "k3meshObj::getVertAttrib");
+        return NULL;
+    }
+
+    return _data->_geom_data + 3 * _data->_num_verts + 8 * v_index;
+}
+
+K3API const float* k3meshObj::getVertSkin(uint32_t model, uint32_t vert)
+{
+    if (model >= _data->_num_models) {
+        k3error::Handler("Model out of range", "k3mesh_obj::getVertSkin");
+        return NULL;
+    }
+    uint32_t mesh = _data->_model[model].mesh_index;
+    uint32_t v_start = _data->_mesh_start[mesh];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    v_start *= 3;
+    v_end *= 3;
+
+    uint32_t v_index = v_start + vert;
+
+    if (v_index >= v_end) {
+        k3error::Handler("Vert out of range", "k3meshObj::getVertSkin");
+        return NULL;
+    }
+
+    return _data->_geom_data + 11 * _data->_num_verts + 8 * v_index;
 }
 
 
