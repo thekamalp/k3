@@ -29,7 +29,7 @@ static const char K3_FBX_TYPECODE_BOOL_ARRAY = 'b';
 static const char K3_FBX_TYPECODE_STRING = 'S';
 static const char K3_FBX_TYPECODE_RAW = 'R';
 
-static const uint64_t K3_FBX_TICKS_PER_MSEC = 41950000ULL;// 46186158ULL;
+static const uint64_t K3_FBX_TICKS_PER_MSEC = 46186158ULL;
 static const uint32_t K3_FBX_MAX_NAME_LENGTH = K3_MAX_NAME_LENGTH;
 
 static const uint32_t K3_FBX_PROJECTION_PERSPECTIVE = 0;
