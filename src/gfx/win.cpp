@@ -679,6 +679,7 @@ k3meshImpl::k3meshImpl()
     _mesh_start = NULL;
     _model = NULL;
     _model_custom_props = NULL;
+    _empty_custom_props = NULL;
     _custom_prop_strings = NULL;
     _textures = NULL;
     _cameras = NULL;
@@ -710,6 +711,10 @@ k3meshImpl::~k3meshImpl()
     if (_model_custom_props) {
         delete[] _model_custom_props;
         _model_custom_props = NULL;
+    }
+    if (_empty_custom_props) {
+        delete[] _empty_custom_props;
+        _empty_custom_props = NULL;
     }
     if (_custom_prop_strings) {
         uint32_t i;
@@ -963,6 +968,28 @@ K3API const char* k3meshObj::getCustomPropString(uint32_t obj, uint32_t custom_p
 {
     if (obj < _data->_num_models && custom_prop_index < _data->_num_model_custom_props) {
         uint32_t str_index = _data->_model_custom_props[obj * _data->_num_model_custom_props + custom_prop_index].ui - 1;
+        if (str_index < _data->_num_custom_prop_strings) {
+            return _data->_custom_prop_strings[str_index];
+        }
+    }
+    return NULL;
+}
+
+K3API k3flint32 k3meshObj::getEmptyCustomProp(uint32_t empty, uint32_t custom_prop_index)
+{
+    if (empty < _data->_num_empties && custom_prop_index < _data->_num_model_custom_props) {
+        return _data->_empty_custom_props[empty * _data->_num_model_custom_props + custom_prop_index];
+    } else {
+        k3flint32 n;
+        n.i = 0;
+        return n;
+    }
+}
+
+K3API const char* k3meshObj::getEmptyCustomPropString(uint32_t empty, uint32_t custom_prop_index)
+{
+    if (empty < _data->_num_empties && custom_prop_index < _data->_num_model_custom_props) {
+        uint32_t str_index = _data->_empty_custom_props[empty * _data->_num_model_custom_props + custom_prop_index].ui - 1;
         if (str_index < _data->_num_custom_prop_strings) {
             return _data->_custom_prop_strings[str_index];
         }
@@ -4125,6 +4152,11 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     } else {
         mesh_impl->_model_custom_props = NULL;
     }
+    if (mesh_impl->_num_model_custom_props && mesh_impl->_num_empties) {
+        mesh_impl->_empty_custom_props = new k3flint32[mesh_impl->_num_empties * mesh_impl->_num_model_custom_props];
+    } else {
+        mesh_impl->_empty_custom_props = NULL;
+    }
     mesh_impl->_num_custom_prop_strings = fbx.num_custom_prop_strings;
     mesh_impl->_custom_prop_strings = fbx.custom_prop_strings;
     mesh_impl->_num_models = 0;  // reset the count, and count again, but this time with allocated entries which are filled in
@@ -4272,6 +4304,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 fbx.model[i].scaling,
                 fbx.model[i].rotation,
                 fbx.model[i].translation);
+            memcpy(mesh_impl->_empty_custom_props + mesh_impl->_num_empties * mesh_impl->_num_model_custom_props, fbx.model_custom_prop + i * custom_props.num_model_custom_props, custom_props.num_model_custom_props * sizeof(k3flint32));
             mesh_impl->_num_empties++;
         }
     }

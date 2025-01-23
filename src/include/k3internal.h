@@ -208,6 +208,7 @@ public:
     uint32_t* _mesh_start;
     k3meshModel* _model;
     k3flint32* _model_custom_props;
+    k3flint32* _empty_custom_props;
     char** _custom_prop_strings;
     k3surf* _textures;
     k3camera* _cameras;
