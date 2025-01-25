@@ -2004,6 +2004,9 @@ public:
     K3API uint32_t getDiffuseMapIndex(uint32_t obj);
     K3API uint32_t getNormalMapIndex(uint32_t obj);
     K3API float getVisibility(uint32_t obj);
+    K3API void setVisibility(uint32_t obj, float v);
+    K3API float getEmptyVisibility(uint32_t empty);
+    K3API void setEmptyVisibility(uint32_t empty, float v);
     K3API k3flint32 getCustomProp(uint32_t obj, uint32_t custom_prop_index);
     K3API const char* getCustomPropString(uint32_t obj, uint32_t custom_prop_index);
     K3API k3flint32 getEmptyCustomProp(uint32_t empty, uint32_t custom_prop_index);

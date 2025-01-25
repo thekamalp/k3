@@ -139,6 +139,7 @@ struct k3light {
 struct k3emptyModel {
     char name[K3_FBX_MAX_NAME_LENGTH];
     float world_xform[16];
+    float visibility;
 };
 
 struct k3bone {

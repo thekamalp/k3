@@ -953,6 +953,29 @@ K3API float k3meshObj::getVisibility(uint32_t obj)
     }
 }
 
+K3API void k3meshObj::setVisibility(uint32_t obj, float v)
+{
+    if (obj < _data->_num_models) {
+        _data->_model[obj].visibility = v;
+    }
+}
+
+K3API float k3meshObj::getEmptyVisibility(uint32_t empty)
+{
+    if (empty < _data->_num_empties) {
+        return _data->_empties[empty].visibility;
+    } else {
+        return 0.0f;
+    }
+}
+
+K3API void k3meshObj::setEmptyVisibility(uint32_t empty, float v)
+{
+    if (empty < _data->_num_empties) {
+        _data->_empties[empty].visibility = v;
+    }
+}
+
 K3API k3flint32 k3meshObj::getCustomProp(uint32_t obj, uint32_t custom_prop_index)
 {
     if (obj < _data->_num_models && custom_prop_index < _data->_num_model_custom_props) {
@@ -4305,6 +4328,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 fbx.model[i].rotation,
                 fbx.model[i].translation);
             memcpy(mesh_impl->_empty_custom_props + mesh_impl->_num_empties * mesh_impl->_num_model_custom_props, fbx.model_custom_prop + i * custom_props.num_model_custom_props, custom_props.num_model_custom_props * sizeof(k3flint32));
+            mesh_impl->_empties[mesh_impl->_num_empties].visibility = fbx.model[i].visibility;
             mesh_impl->_num_empties++;
         }
     }
