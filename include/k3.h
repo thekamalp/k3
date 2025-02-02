@@ -1904,9 +1904,6 @@ struct k3AABB {
     float max[3];
 };
 
-// Checks if AABB's ovelap
-bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
-
 static const uint32_t K3_AXIS_DIR_POS_X = 0x00;
 static const uint32_t K3_AXIS_DIR_POS_Y = 0x01;
 static const uint32_t K3_AXIS_DIR_POS_Z = 0x02;
@@ -1921,6 +1918,11 @@ static const uint32_t K3_AXIS_DIR_FLAG_POS_Z = 0x04;
 static const uint32_t K3_AXIS_DIR_FLAG_NEG_X = 0x08;
 static const uint32_t K3_AXIS_DIR_FLAG_NEG_Y = 0x10;
 static const uint32_t K3_AXIS_DIR_FLAG_NEG_Z = 0x20;
+static const uint32_t K3_AXIS_DIR_FLAG_ALL = (K3_AXIS_DIR_FLAG_POS_X | K3_AXIS_DIR_FLAG_POS_Y | K3_AXIS_DIR_FLAG_POS_Z | K3_AXIS_DIR_FLAG_NEG_X | K3_AXIS_DIR_FLAG_NEG_Y | K3_AXIS_DIR_FLAG_NEG_Z);
+
+// Checks if AABB's ovelap
+// returns the axis flags for s1 which the overlap occurs, or 0 if not overlapping
+uint32_t k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2);
 
 // Check if AABB's overlap if s1 moves in vec direction; if so, modifies direction vector so there would be no overlap
 // Returns the axis (positive or negative) in which the overlap occurs

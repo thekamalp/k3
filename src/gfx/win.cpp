@@ -548,12 +548,21 @@ K3API void k3cmdBufObj::DrawText(const char* text, k3font font, const float fg_c
 // ------------------------------------------------------------
 // BVH functions
 
-bool k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
+uint32_t k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)
 {
     bool x_collision = (s1->max[0] >= s2->min[0]) && (s2->max[0] >= s1->min[0]);
     bool y_collision = (s1->max[1] >= s2->min[1]) && (s2->max[1] >= s1->min[1]);
     bool z_collision = (s1->max[2] >= s2->min[2]) && (s2->max[2] >= s1->min[2]);
-    return x_collision && y_collision && z_collision;
+    uint32_t overlap_flags;
+    overlap_flags = (s2->max[0] >= s1->max[0]) << K3_AXIS_DIR_POS_X;
+    overlap_flags |= (s2->max[1] >= s1->max[1]) << K3_AXIS_DIR_POS_Y;
+    overlap_flags |= (s2->max[2] >= s1->max[2]) << K3_AXIS_DIR_POS_Z;
+    overlap_flags |= (s2->min[0] <= s1->min[0]) << K3_AXIS_DIR_NEG_X;
+    overlap_flags |= (s2->min[1] <= s1->min[1]) << K3_AXIS_DIR_NEG_Y;
+    overlap_flags |= (s2->min[2] <= s1->min[2]) << K3_AXIS_DIR_NEG_Z;
+    overlap_flags = (overlap_flags) ? overlap_flags : K3_AXIS_DIR_FLAG_ALL;
+
+    return (x_collision && y_collision && z_collision) ? overlap_flags : K3_AXIS_DIR_FLAG_NONE;
 }
 
 uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* s1_vec, const float* s2_vec, k3AABB* slip_bounds, uint32_t axis_priority, uint32_t axis_mask)
