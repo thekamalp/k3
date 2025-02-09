@@ -1222,12 +1222,44 @@ K3API float* k3meshObj::getLightColor(uint32_t light)
     return NULL;
 }
 
+K3API uint32_t k3meshObj::getLightType(uint32_t light)
+{
+    if (light < _data->_num_lights) {
+        return _data->_lights[light].light_type;
+    }
+    return ~0x0;
+}
+
+K3API float k3meshObj::getLightIntensity(uint32_t light)
+{
+    if (light < _data->_num_lights) {
+        return _data->_lights[light].intensity;
+    }
+    return 0.0f;
+}
+
+K3API void k3meshObj::setLightIntensity(uint32_t light, float intensity)
+{
+    if (light < _data->_num_lights) {
+        _data->_lights[light].intensity = intensity;
+    }
+}
+
 K3API void k3meshObj::getLightData(uint32_t light, k3lightBufferData* lb_data)
 {
     if (light < _data->_num_lights && lb_data != NULL) {
-        lb_data->position[0] = _data->_lights[light].position[0];
-        lb_data->position[1] = _data->_lights[light].position[1];
-        lb_data->position[2] = _data->_lights[light].position[2];
+        if (_data->_lights[light].light_type == k3lightBufferData::DIRECTIONAL) {
+            float mat[16];
+            lb_data->position[0] = 0.0f;
+            lb_data->position[1] = 1.0f;
+            lb_data->position[2] = 0.0f;
+            k3m4_QuatToMat(mat, _data->_lights[light].rot_quat);
+            k3mv4_Mul(lb_data->position, mat, lb_data->position);
+        } else {
+            lb_data->position[0] = _data->_lights[light].position[0];
+            lb_data->position[1] = _data->_lights[light].position[1];
+            lb_data->position[2] = _data->_lights[light].position[2];
+        }
         lb_data->intensity = _data->_lights[light].intensity;
         lb_data->color[0] = _data->_lights[light].color[0];
         lb_data->color[1] = _data->_lights[light].color[1];
@@ -1480,6 +1512,7 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
             dest_quat_ptr = _data->_bones[obj_id].rot_quat;
         } else if (obj_type == k3fbxObjType::LIGHT) {
             dest_pos_ptr = _data->_lights[obj_id].position;
+            dest_quat_ptr = _data->_lights[obj_id].rot_quat;
         }
 
         obj_bone_flag = (bone_flag) ? bone_flag[obj_id] : K3_BONE_FLAG_MORPH;
@@ -1546,6 +1579,10 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
                 if (parent < _data->_num_models) {
                     float* parent_xform = _data->_model[parent].world_xform;
                     k3mv4_Mul(dest_pos_ptr, parent_xform, dest_pos_ptr);
+                    float mat[16];
+                    k3m4_QuatToMat(mat, dest_quat_ptr);
+                    k3m4_Mul(mat, parent_xform, mat);
+                    k3m4_MatToQuat(dest_quat_ptr, mat);
                 }
             }
         }
@@ -4282,25 +4319,22 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 if (fbx.model[i].dynamic) {
                     mesh_impl->_lights[dest_index].flags |= k3light::FLAG_DYNAMIC;
                 }
-                if (light_node->light_type == k3lightBufferData::DIRECTIONAL) {
-                    float mat[16];
-                    float x_axis[3] = { 1.0f, 0.0f, 0.0f };
-                    float y_axis[3] = { 0.0f, 1.0f, 0.0f };
-                    float z_axis[3] = { 0.0f, 0.0f, 1.0f };
-                    float* light_dir = mesh_impl->_lights[dest_index].position;
-                    light_dir[0] = 0.0f; light_dir[1] = 1.0f; light_dir[2] = 0.0f; light_dir[3] = 0.0f;
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[0]), x_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[1]), y_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                    k3m4_SetRotation(mat, -deg2rad(fbx.model[i].rotation[2]), z_axis);
-                    k3mv4_Mul(light_dir, mat, light_dir);
-                } else {
-                    mesh_impl->_lights[dest_index].position[0] = fbx.model[i].translation[0];
-                    mesh_impl->_lights[dest_index].position[1] = fbx.model[i].translation[1];
-                    mesh_impl->_lights[dest_index].position[2] = fbx.model[i].translation[2];
-                    mesh_impl->_lights[dest_index].position[3] = 1.0f;
-                }
+                mesh_impl->_lights[dest_index].position[0] = fbx.model[i].translation[0];
+                mesh_impl->_lights[dest_index].position[1] = fbx.model[i].translation[1];
+                mesh_impl->_lights[dest_index].position[2] = fbx.model[i].translation[2];
+                mesh_impl->_lights[dest_index].position[3] = 1.0f;
+
+                float mat1[16], mat2[16];
+                float x_axis[3] = { 1.0f, 0.0f, 0.0f };
+                float y_axis[3] = { 0.0f, 1.0f, 0.0f };
+                float z_axis[3] = { 0.0f, 0.0f, 1.0f };
+                k3m4_SetRotation(mat1, -deg2rad(fbx.model[i].rotation[0]), x_axis);
+                k3m4_SetRotation(mat2, -deg2rad(fbx.model[i].rotation[1]), y_axis);
+                k3m4_Mul(mat1, mat2, mat1);
+                k3m4_SetRotation(mat2, -deg2rad(fbx.model[i].rotation[2]), z_axis);
+                k3m4_Mul(mat1, mat2, mat1);
+                k3m4_MatToQuat(mesh_impl->_lights[dest_index].rot_quat, mat1);
+
                 if (fbx.model[i].index.light.parent < fbx.num_models) {
                     uint32_t parent = sorted_model_id[fbx.model[i].index.light.parent];
                     mesh_impl->_lights[dest_index].parent = parent;
@@ -4745,21 +4779,25 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                         obj_id = mesh_impl->_anim[anim_id].anim_objs[obj_index].id;
                         for (k = 0; k < mesh_impl->_anim[anim_id].num_keyframes; k++) {
                             bd_index = k * num_anim_objs + obj_index;
-                            for (axis = 0; axis < 3; axis++) {
-                                switch (obj_type) {
-                                case k3fbxObjType::MESH:
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_model[obj_id].position[axis];
-                                    // this gets converted to a quat later
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = mesh_impl->_model[obj_id].rotation[axis];
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = mesh_impl->_model[obj_id].scaling[axis];
-                                    break;
-                                case k3fbxObjType::LIGHT:
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_lights[obj_id].position[axis];
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = 0.0f;
-                                    mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = 1.0f;
-                                    break;
-                                }
-                            }
+                             switch (obj_type) {
+                             case k3fbxObjType::MESH:
+                                 for (axis = 0; axis < 3; axis++) {
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_model[obj_id].position[axis];
+                                     // this gets converted to a quat later
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = mesh_impl->_model[obj_id].rotation[axis];
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = mesh_impl->_model[obj_id].scaling[axis];
+                                 }
+                                 break;
+                             case k3fbxObjType::LIGHT:
+                                 // this gets converted to a quat later
+                                 k3v3_GetQuatEuler(mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat, mesh_impl->_lights[obj_id].rot_quat);
+                                 for (axis = 0; axis < 3; axis++) {
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].position[axis] = mesh_impl->_lights[obj_id].position[axis];
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis] = rad2deg(mesh_impl->_anim[anim_id].bone_data[bd_index].rot_quat[axis]);
+                                     mesh_impl->_anim[anim_id].bone_data[bd_index].scaling[axis] = 1.0f;
+                                 }
+                                 break;
+                             }
                         }
                     }
                 }
@@ -4871,6 +4909,10 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         uint32_t parent = mesh_impl->_lights[i].parent;
         if (parent < mesh_impl->_num_models) {
             k3mv4_Mul(mesh_impl->_lights[i].position, mesh_impl->_model[parent].world_xform, mesh_impl->_lights[i].position);
+            float mat[16];
+            k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
+            k3m4_Mul(mat, mesh_impl->_model[parent].world_xform, mat);
+            k3m4_MatToQuat(mesh_impl->_lights[i].rot_quat, mat);
         }
     }
 
@@ -4890,9 +4932,18 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
             lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
             lb_data[i].intensity = mesh_impl->_lights[i].intensity;
-            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
-            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
-            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+            if (mesh_impl->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
+                float mat[16];
+                lb_data[i].position[0] = 0.0f;
+                lb_data[i].position[1] = 1.0f;
+                lb_data[i].position[2] = 0.0f;
+                k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
+                k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
+            } else {
+                lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
+                lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
+                lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+            }
             lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
             lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
             lb_data[i].light_type = mesh_impl->_lights[i].light_type;

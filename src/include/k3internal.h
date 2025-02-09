@@ -128,6 +128,7 @@ struct k3light {
     float position[4];
     float color[3];
     float intensity;
+    float rot_quat[4];
     uint32_t parent;
     uint32_t light_type;
     uint32_t decay_type;
