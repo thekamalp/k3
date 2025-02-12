@@ -1080,3 +1080,89 @@ K3API float* k3v4_QuatMul(float* d, const float* s1, const float* s2)
 
     return d;
 }
+
+K3API float* k3v3_RGBtoHSV(float* d, const float* s)
+{
+    bool r_gt_g = (s[0] > s[1]);
+    bool r_gt_b = (s[0] > s[2]);
+    bool g_gt_b = (s[1] > s[2]);
+    bool max_is_r = r_gt_g && r_gt_b;
+    bool max_is_g = !r_gt_g && g_gt_b;
+    bool min_is_r = !r_gt_g && !r_gt_b;
+    bool min_is_g = r_gt_g && !g_gt_b;
+
+    float max = (max_is_r) ? s[0] : ((max_is_g) ? s[1] : s[2]);
+    float min = (min_is_r) ? s[0] : ((min_is_g) ? s[1] : s[2]);
+
+    d[2] = max;
+    float delta = max - min;
+    if (delta < 0.00001f || max <= 0.0f) {
+        d[0] = 0.0f;
+        d[1] = 0.0f;
+        return d;
+    }
+    d[1] = delta / max;
+    if (max_is_r) {
+        d[0] = (s[1] - s[2]) / delta;
+    } else if (max_is_g) {
+        d[0] = 2.0f + (s[2] - s[0]) / delta;
+    } else {
+        d[0] = 4.0f + (s[0] - s[1]) / delta;
+    }
+    d[0] /= 6.0f;
+    d[0] += (d[0] < 0.0f) ? 1.0f : 0.0f;
+    return d;
+}
+
+K3API float* k3v3_HSVtoRGB(float* d, const float* s)
+{
+    if (s[1] <= 0.0f) {
+        d[0] = s[2];
+        d[1] = s[2];
+        d[2] = s[2];
+        return d;
+    }
+    uint32_t ipart = (uint32_t)s[0];
+    float hh = s[0] - (float)ipart;
+    hh += (hh < 0.0f) ? 1.0f : 0.0f;
+    hh *= 6.0f;
+    uint32_t i = (uint32_t)(hh);
+    float ff = hh - (float)i;
+    float p = s[2] * (1.0f - s[1]);
+    float q = s[2] * (1.0f - (s[1] * ff));
+    float t = s[2] * (1.0f - (s[1] * (1.0f - ff)));
+    switch (i) {
+    case 0:
+        d[0] = s[2];
+        d[1] = t;
+        d[2] = p;
+        break;
+    case 1:
+        d[0] = q;
+        d[1] = s[2];
+        d[2] = p;
+        break;
+    case 2:
+        d[0] = p;
+        d[1] = s[2];
+        d[2] = p;
+        break;
+    case 3:
+        d[0] = p;
+        d[1] = q;
+        d[2] = s[2];
+        break;
+    case 4:
+        d[0] = t;
+        d[1] = p;
+        d[2] = s[2];
+        break;
+    case 5:
+    default:
+        d[0] = s[2];
+        d[1] = p;
+        d[2] = q;
+        break;
+    }
+    return d;
+}

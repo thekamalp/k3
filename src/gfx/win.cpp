@@ -1576,6 +1576,14 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
                 }
             } else if (obj_type == k3fbxObjType::LIGHT) {
                 uint32_t parent = _data->_lights[obj_id].parent;
+                float ipart;
+                float hsv[3];
+                hsv[0] = modff(_data->_lights[obj_id].base_hsv[0] + dest_scale_ptr[0], &ipart);
+                hsv[1] = _data->_lights[obj_id].base_hsv[1] * dest_scale_ptr[2];
+                hsv[2] = _data->_lights[obj_id].base_hsv[2];
+                _data->_lights[obj_id].intensity = _data->_lights[obj_id].base_intensity * dest_scale_ptr[1];
+                k3v3_HSVtoRGB(_data->_lights[obj_id].color, hsv);
+
                 if (parent < _data->_num_models) {
                     float* parent_xform = _data->_model[parent].world_xform;
                     k3mv4_Mul(dest_pos_ptr, parent_xform, dest_pos_ptr);
@@ -4355,6 +4363,17 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
                 mesh_impl->_lights[dest_index].decay_start = light_node->decay_start;
                 if (light_node->cast_shadows) {
                     mesh_impl->_lights[dest_index].flags |= k3light::FLAG_CAST_SHADOWS;
+                }
+                k3v3_RGBtoHSV(mesh_impl->_lights[dest_index].base_hsv, light_node->color);
+                mesh_impl->_lights[dest_index].base_intensity = light_node->intensity;
+                if (mesh_impl->_lights[dest_index].base_hsv[1] < 1.0f / 1024.0f) {
+                    mesh_impl->_lights[dest_index].base_hsv[1] = 1.0f / 1024.0f;
+                }
+                if (mesh_impl->_lights[dest_index].base_hsv[2] < 1.0f / 1024.0f) {
+                    mesh_impl->_lights[dest_index].base_hsv[2] = 1.0f / 1024.0f;
+                }
+                if (mesh_impl->_lights[dest_index].base_intensity < 1.0f / 1024.0f) {
+                    mesh_impl->_lights[dest_index].base_intensity = 1.0f / 1024.0f;
                 }
             }
         }

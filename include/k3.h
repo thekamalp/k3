@@ -551,6 +551,10 @@ inline float* k3m4_QuatToMat(float* d, const float* s) { return k3m_QuatToMat(4,
 inline float* k3m3_MatToQuat(float* d, const float* s) { return k3m_MatToQuat(3, d, s); }
 inline float* k3m4_MatToQuat(float* d, const float* s) { return k3m_MatToQuat(4, d, s); }
 
+/* Color space conversions */
+K3API float* k3v3_RGBtoHSV(float* d, const float* s);
+K3API float* k3v3_HSVtoRGB(float* d, const float* s);
+
 // ------------------------------------------------------------
 // k3 image classes
 

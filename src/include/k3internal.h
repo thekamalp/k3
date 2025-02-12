@@ -134,6 +134,8 @@ struct k3light {
     uint32_t decay_type;
     uint32_t flags;
     float decay_start;
+    float base_hsv[3];
+    float base_intensity;
     uint32_t padding[3];
 };
 
