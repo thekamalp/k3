@@ -1222,6 +1222,15 @@ K3API float* k3meshObj::getLightColor(uint32_t light)
     return NULL;
 }
 
+K3API void k3meshObj::setLightColor(uint32_t light, float* color)
+{
+    if (light < _data->_num_lights) {
+        _data->_lights[light].color[0] = color[0];
+        _data->_lights[light].color[1] = color[1];
+        _data->_lights[light].color[2] = color[2];
+    }
+}
+
 K3API uint32_t k3meshObj::getLightType(uint32_t light)
 {
     if (light < _data->_num_lights) {

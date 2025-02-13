@@ -2038,6 +2038,7 @@ public:
     K3API void setCameraFarPlane(uint32_t camera, float far);
     K3API float* getLightPosition(uint32_t light);
     K3API float* getLightColor(uint32_t light);
+    K3API void setLightColor(uint32_t light, float* color);
     K3API uint32_t getLightType(uint32_t light);
     K3API float getLightIntensity(uint32_t light);
     K3API void setLightIntensity(uint32_t light, float intensity);
