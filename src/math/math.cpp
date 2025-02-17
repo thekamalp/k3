@@ -842,6 +842,52 @@ K3API float* k3m4_SetScaleRotAngleXlat(float* d, const float* s3, const float* r
     return d;
 }
 
+#define MakeShuffleMask(x, y, z, w)  ((x) | ((y) << 2) | ((z) << 4) | ((w) << 6))
+
+#define VecSwizzleMask(vec, mask)    _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(vec), mask))
+#define VecSwizzle(vec, x, y, z, w) VecSwizzleMask(vec, MakeShuffleMask(x, y, z, w))
+#define VecSwizzle1(vec, x)         VecSwizzleMask(vec, MakeShuffleMask(x, x, x, x))
+#define VecSwizzle_0022(vec)        _mm_moveldup_ps(vec)
+#define VecSwizzle_1133(vec)        _mm_movehdup_ps(vec)
+#define VecShuffle(vec1, vec2, x, y, z, w)  _mm_shuffle_ps(vec1, vec2, MakeShuffleMask(x, y, z, w))
+#define VecShuffle_0101(vec1, vec2) _mm_movelh_ps(vec1, vec2)
+#define VecShuffle_2323(vec1, vec2) _mm_movehl_ps(vec2, vec1)
+
+#define SMALL_FLOAT     (1.0e-8f)
+
+K3API float* k3m4_InverseTransform(float* d)
+{
+    __m128* m = (__m128*)d;
+    __m128 t0 = VecShuffle_0101(m[0], m[1]);
+    __m128 t1 = VecShuffle_2323(m[0], m[1]);
+    m[0] = VecShuffle(t0, m[2], 0, 2, 0, 3);
+    m[1] = VecShuffle(t0, m[2], 1, 3, 1, 3);
+    m[2] = VecShuffle(t1, m[2], 0, 2, 2, 3);
+
+    __m128 size_sqr = _mm_mul_ps(m[0], m[0]);
+    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[1], m[1]));
+    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[2], m[2]));
+
+    __m128 one = _mm_set_ps1(1.0f);
+    __m128 r_size_sqr = _mm_blendv_ps(
+        _mm_div_ps(one, size_sqr),
+        one,
+        _mm_cmplt_ps(size_sqr, _mm_set_ps1(SMALL_FLOAT))
+    );
+
+    m[0] = _mm_mul_ps(m[0], r_size_sqr);
+    m[1] = _mm_mul_ps(m[1], r_size_sqr);
+    m[2] = _mm_mul_ps(m[2], r_size_sqr);
+
+    __m128 last_row = m[3];
+    m[3] = _mm_mul_ps(m[0], VecSwizzle1(last_row, 0));
+    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[1], VecSwizzle1(last_row, 1)));
+    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[2], VecSwizzle1(last_row, 2)));
+    m[3] = _mm_sub_ps(_mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f), m[3]);
+
+    return d;
+}
+
 
 /* operations on 2 matrices */
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2)

@@ -292,6 +292,7 @@ K3API float* k3m4_SetOrthoOffCenter(float* d, float left, float right, float bot
 K3API float* k3m4_SetLookAt(float* d, const float* eye, const float* at, const float* up_dir, bool left_handed);
 K3API float* k3m4_SetRotAngleScaleXlat(float* d, const float* r3, const float* s3, const float* t3);
 K3API float* k3m4_SetScaleRotAngleXlat(float* d, const float* s3, const float* r3, const float* t3);
+K3API float* k3m4_InverseTransform(float* d);
 
 /* operations on 2 matrices */
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2);

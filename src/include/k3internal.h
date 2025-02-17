@@ -10,6 +10,10 @@
 
 #include "k3.h"
 
+#ifdef _WIN32
+#include <intrin.h>
+#endif
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 

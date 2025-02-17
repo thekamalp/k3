@@ -1325,7 +1325,7 @@ K3API void k3meshObj::genBoneMatrices(float* mat, bool gen_inv)
         k3m4_Mul(cur_mat, cur_mat, _data->_bones[bone_id].inv_bind_pose);
         if (gen_inv) {
             k3m4_Mul(cur_mat + 16, cur_mat + 16, _data->_bones[bone_id].inv_bind_pose);
-            k3m4_Inverse(cur_mat + 16);
+            k3m4_InverseTransform(cur_mat + 16);
         }
     }
 }
