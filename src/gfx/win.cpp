@@ -1474,6 +1474,12 @@ K3API uint32_t k3meshObj::getAnimLength(uint32_t a)
 
 K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags)
 {
+    struct alignas(16) sse4_data_t {
+        float sse_data[4];
+    };
+    sse4_data_t model_position;
+    sse4_data_t model_scaling;
+    sse4_data_t model_quat;
     if (anim_index >= _data->_num_anims) {
         k3error::Handler("Invalid animation index", "k3meshObj::setAnimation");
         return;
@@ -1499,12 +1505,9 @@ K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint
     bool force_anim = (flags & ANIM_FLAG_INCREMENTAL) ? false : true;
     bool overwrite_morphed = (~flags & ANIM_FLAG_MORPHED) ? false : true;
     uint32_t obj_bone_flag;
-    float model_position[3];
-    float model_scaling[3];
-    float model_quat[4];
-    dest_pos_ptr = model_position;
-    dest_scale_ptr = model_scaling;
-    dest_quat_ptr = model_quat;
+    dest_pos_ptr = model_position.sse_data;
+    dest_scale_ptr = model_scaling.sse_data;
+    dest_quat_ptr = model_quat.sse_data;
 
     for (obj_index = 0; obj_index < num_anim_objs; obj_index++) {
         if (_data->_anim[anim_index].anim_objs) {

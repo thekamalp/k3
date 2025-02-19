@@ -842,53 +842,6 @@ K3API float* k3m4_SetScaleRotAngleXlat(float* d, const float* s3, const float* r
     return d;
 }
 
-#define MakeShuffleMask(x, y, z, w)  ((x) | ((y) << 2) | ((z) << 4) | ((w) << 6))
-
-#define VecSwizzleMask(vec, mask)    _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(vec), mask))
-#define VecSwizzle(vec, x, y, z, w) VecSwizzleMask(vec, MakeShuffleMask(x, y, z, w))
-#define VecSwizzle1(vec, x)         VecSwizzleMask(vec, MakeShuffleMask(x, x, x, x))
-#define VecSwizzle_0022(vec)        _mm_moveldup_ps(vec)
-#define VecSwizzle_1133(vec)        _mm_movehdup_ps(vec)
-#define VecShuffle(vec1, vec2, x, y, z, w)  _mm_shuffle_ps(vec1, vec2, MakeShuffleMask(x, y, z, w))
-#define VecShuffle_0101(vec1, vec2) _mm_movelh_ps(vec1, vec2)
-#define VecShuffle_2323(vec1, vec2) _mm_movehl_ps(vec2, vec1)
-
-#define SMALL_FLOAT     (1.0e-8f)
-
-K3API float* k3m4_InverseTransform(float* d)
-{
-    __m128* m = (__m128*)d;
-    __m128 t0 = VecShuffle_0101(m[0], m[1]);
-    __m128 t1 = VecShuffle_2323(m[0], m[1]);
-    m[0] = VecShuffle(t0, m[2], 0, 2, 0, 3);
-    m[1] = VecShuffle(t0, m[2], 1, 3, 1, 3);
-    m[2] = VecShuffle(t1, m[2], 0, 2, 2, 3);
-
-    __m128 size_sqr = _mm_mul_ps(m[0], m[0]);
-    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[1], m[1]));
-    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[2], m[2]));
-
-    __m128 one = _mm_set_ps1(1.0f);
-    __m128 r_size_sqr = _mm_blendv_ps(
-        _mm_div_ps(one, size_sqr),
-        one,
-        _mm_cmplt_ps(size_sqr, _mm_set_ps1(SMALL_FLOAT))
-    );
-
-    m[0] = _mm_mul_ps(m[0], r_size_sqr);
-    m[1] = _mm_mul_ps(m[1], r_size_sqr);
-    m[2] = _mm_mul_ps(m[2], r_size_sqr);
-
-    __m128 last_row = m[3];
-    m[3] = _mm_mul_ps(m[0], VecSwizzle1(last_row, 0));
-    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[1], VecSwizzle1(last_row, 1)));
-    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[2], VecSwizzle1(last_row, 2)));
-    m[3] = _mm_sub_ps(_mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f), m[3]);
-
-    return d;
-}
-
-
 /* operations on 2 matrices */
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2)
 {
@@ -946,7 +899,7 @@ K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float
 }
 
 #ifdef _WIN32
-#include <xmmintrin.h>
+#include <intrin.h>
 K3API float* k3m4_Mul(float* d, const float* s1, const float* s2)
 {
     uint64_t s1_addr = (uint64_t)s1;
@@ -975,11 +928,110 @@ K3API float* k3m4_Mul(float* d, const float* s1, const float* s2)
     }
     return d;
 }
+
+#define MakeShuffleMask(x, y, z, w)  ((x) | ((y) << 2) | ((z) << 4) | ((w) << 6))
+
+#define VecSwizzleMask(vec, mask)    _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(vec), mask))
+#define VecSwizzle(vec, x, y, z, w) VecSwizzleMask(vec, MakeShuffleMask(x, y, z, w))
+#define VecSwizzle1(vec, x)         VecSwizzleMask(vec, MakeShuffleMask(x, x, x, x))
+#define VecSwizzle_0022(vec)        _mm_moveldup_ps(vec)
+#define VecSwizzle_1133(vec)        _mm_movehdup_ps(vec)
+#define VecShuffle(vec1, vec2, x, y, z, w)  _mm_shuffle_ps(vec1, vec2, MakeShuffleMask(x, y, z, w))
+#define VecShuffle_0101(vec1, vec2) _mm_movelh_ps(vec1, vec2)
+#define VecShuffle_2323(vec1, vec2) _mm_movehl_ps(vec2, vec1)
+
+#define SMALL_FLOAT     (1.0e-8f)
+
+K3API float* k3m4_InverseTransform(float* d)
+{
+    __m128* m = (__m128*)d;
+    __m128 t0 = VecShuffle_0101(m[0], m[1]);
+    __m128 t1 = VecShuffle_2323(m[0], m[1]);
+    m[0] = VecShuffle(t0, m[2], 0, 2, 0, 3);
+    m[1] = VecShuffle(t0, m[2], 1, 3, 1, 3);
+    m[2] = VecShuffle(t1, m[2], 0, 2, 2, 3);
+
+    __m128 size_sqr = _mm_mul_ps(m[0], m[0]);
+    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[1], m[1]));
+    size_sqr = _mm_add_ps(size_sqr, _mm_mul_ps(m[2], m[2]));
+
+    __m128 one = _mm_set_ps1(1.0f);
+    __m128 r_size_sqr = _mm_blendv_ps(
+        _mm_div_ps(one, size_sqr),
+        one,
+        _mm_cmplt_ps(size_sqr, _mm_set_ps1(SMALL_FLOAT))
+    );
+
+    m[0] = _mm_mul_ps(m[0], r_size_sqr);
+    m[1] = _mm_mul_ps(m[1], r_size_sqr);
+    m[2] = _mm_mul_ps(m[2], r_size_sqr);
+
+    __m128 last_row = m[3];
+    m[3] = _mm_mul_ps(m[0], VecSwizzle1(last_row, 0));
+    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[1], VecSwizzle1(last_row, 1)));
+    m[3] = _mm_add_ps(m[3], _mm_mul_ps(m[2], VecSwizzle1(last_row, 2)));
+    m[3] = _mm_sub_ps(_mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f), m[3]);
+
+    return d;
+}
+
+#define K3_NORMALIZE_DP_MASK(l) (~(0xf0 << l) & 0xff)
+#define K3_NORMALIZE_WR_MASK(l) (~(0xf << l) & 0xf)
+K3API float* k3v_Normalize(uint32_t l, float* d) {
+    if ((((uint32_t)d) & 0xf) == 0) {
+        // if 16B aligned, use SSE code
+        float norm_array[4];
+        static const __m128 near_zero = _mm_set1_ps(SMALL_FLOAT);
+        __m128* v = (__m128*)d;
+        static const int dp_mask2 = K3_NORMALIZE_DP_MASK(2);
+        static const int dp_mask3 = K3_NORMALIZE_DP_MASK(3);
+        static const int dp_mask4 = K3_NORMALIZE_DP_MASK(4);
+        static const int wr_mask2 = K3_NORMALIZE_WR_MASK(2);
+        static const int wr_mask3 = K3_NORMALIZE_WR_MASK(3);
+        static const int wr_mask4 = K3_NORMALIZE_WR_MASK(4);
+
+        __m128 dp;
+        switch (l) {
+        case 2: dp = _mm_dp_ps(*v, *v, dp_mask2); break;
+        case 3: dp = _mm_dp_ps(*v, *v, dp_mask3); break;
+        case 4: dp = _mm_dp_ps(*v, *v, dp_mask4); break;
+        }
+
+        __m128 cmp = _mm_cmpgt_ps(dp, near_zero);
+        dp = _mm_rsqrt_ps(dp);
+        __m128* norm = (__m128*)norm_array;
+        *norm = _mm_mul_ps(*v, _mm_and_ps(dp, cmp));
+        switch (l) {
+        case 4: d[3] = norm_array[3];
+        case 3: d[2] = norm_array[2];
+        default: d[1] = norm_array[1];
+            d[0] = norm_array[0];
+        }
+        return d;
+    } else {
+        float f = k3v_Length((l), (d));
+        f = (f == 0.0f) ? 0.0f : (1.0f / f);
+        return k3sv_Mul((l), (d), f, (d));
+    }
+}
+
 #else
 K3API float* k3m4_Mul(float* d, const float* s1, const float* s2)
 {
     return k3m_Mul(4, 4, 4, (d), (s1), (s2));
 }
+
+K3API float* k3m4_InverseTransform(float* d)
+{
+    return k3m_Inverse(4, (d));
+}
+
+K3API float* k3v_Normalize(uint32_t l, float* d) {
+    float f = k3v_Length((l), (d));
+    f = (f == 0.0f) ? 0.0f : (1.0f / f);
+    return k3sv_Mul((l), (d), f, (d));
+}
+
 #endif
 
 K3API float* k3m_QuatToMat(uint32_t cols, float* d, const float* s)

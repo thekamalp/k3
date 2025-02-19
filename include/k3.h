@@ -298,11 +298,7 @@ K3API float* k3m4_InverseTransform(float* d);
 K3API float* k3m_Mul(uint32_t s1_rows, uint32_t s2_rows, uint32_t s2_cols, float* d, const float* s1, const float* s2);
 
 /* shortcuts to normalize vector */
-inline float* k3v_Normalize(uint32_t l, float* d) {
-    float f = k3v_Length((l), (d));
-    f = (f == 0.0f) ? 0.0f : (1.0f / f);
-    return k3sv_Mul((l), (d), f, (d));
-}
+K3API float* k3v_Normalize(uint32_t l, float* d);
 
 /* shortcuts for vector to scalar operations */
 inline float* k3vs_Add(uint32_t l, float* d, const float* s1, float s2) { return k3sv_Add((l), (d), (s2), (s1)); }

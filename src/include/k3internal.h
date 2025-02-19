@@ -10,10 +10,6 @@
 
 #include "k3.h"
 
-#ifdef _WIN32
-#include <intrin.h>
-#endif
-
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -99,15 +95,17 @@ struct k3meshModel {
     uint32_t prim_start;
     uint32_t num_prims;
     float position[3];
+    uint32_t padding0;
     float rotation[3];
+    uint32_t padding1;
     float scaling[3];
+    uint32_t padding2;
     float diffuse_color[3];
     float emissive_factor;
     float visibility;
     uint32_t diffuse_map_index;
     uint32_t normal_map_index;
     uint32_t flags;
-    uint32_t padding[3];
 };
 
 struct k3camera {
@@ -152,8 +150,8 @@ struct k3emptyModel {
 struct k3bone {
     char name[K3_FBX_MAX_NAME_LENGTH];
     float rot_quat[4];  // quaternion representation of bone rotation
-    uint32_t parent;    // parent bone id, or ~0x0 if root
     float scaling[3];   // bone scaling
+    uint32_t parent;    // parent bone id, or ~0x0 if root
     float position[3];  // bone location
     uint32_t dummy;
     float inv_bind_pose[16];  // inverse of the global bind pose
@@ -162,8 +160,9 @@ struct k3bone {
 struct k3boneData {
     float rot_quat[4];  // quaternion representation of bone rotation
     float scaling[3];     // bone scaling
+    uint32_t padding0;
     float position[3];  // bone location
-    uint32_t padding[2];
+    uint32_t padding1;
 };
 
 static const uint32_t K3_BONE_FLAG_NONE = 0x0;
