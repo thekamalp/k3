@@ -1919,6 +1919,7 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
     const float* verts = _data->_geom_data;
     const float* skin_f = _data->_geom_data + 11 * _data->_num_verts;
     const uint32_t* skin_i = (const uint32_t*)(skin_f);
+    skin_f += 4;
     float xform_pos[4];
     float cur_mat[16];
     float* xform_mat;
@@ -1929,12 +1930,20 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
         xform_mat = cur_mat;
     }
     for (i = 0; i < _data->_num_verts; i++) {
-        vert_in_bone = false;
-        for (w = 0; w < 4; w++) {
-            if (skin_i[w] == bone_id) {
-                vert_in_bone = true;
-            }
-        }
+        // The commented out code identifies a vertex in the bone based on relative weight
+        //vert_in_bone = false;
+        //float w_sum = 0.0f;
+        //for (w = 0; w < 4; w++) {
+        //    w_sum += skin_f[w];
+        //}
+        //for (w = 0; w < 4; w++) {
+        //    if (skin_i[w] == bone_id && ((skin_f[w] / w_sum) >= 0.5f)) {
+        //        vert_in_bone = true;
+        //    }
+        //}
+        // This code only uses the highest weight to identify vertex in the bone
+        vert_in_bone = (skin_i[0] == bone_id);
+
         if (vert_in_bone) {
             xform_pos[0] = verts[0];
             xform_pos[1] = verts[1];
