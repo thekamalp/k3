@@ -618,12 +618,9 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* s1_vec, con
         relative_move_mag[1] = fabsf(mod_vec[1] + s2_vec[1]);
         relative_move_mag[2] = fabsf(mod_vec[2] + s2_vec[2]);
 
-        axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_POS_X : K3_AXIS_DIR_NEG_X;
-        bool collide_x = (relative_move_mag[0] < relative_move_mag[1]) && (relative_move_mag[0] < relative_move_mag[2]) && !(axis_mask & (1 << axis));
-        axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_POS_Y : K3_AXIS_DIR_NEG_Y;
-        bool collide_y = !collide_x && (relative_move_mag[1] < relative_move_mag[2]) && !(axis_mask & (1 << axis));
-        axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_POS_Z : K3_AXIS_DIR_NEG_Z;
-        bool collide_z = !collide_x && !collide_y && !(axis_mask & (1 << axis));
+        bool collide_x = (relative_move_mag[0] < relative_move_mag[1]) && (relative_move_mag[0] < relative_move_mag[2]);
+        bool collide_y = !collide_x && (relative_move_mag[1] < relative_move_mag[2]);
+        bool collide_z = !collide_x && !collide_y;
 
         if (slip_done[axis0]) {
             s1_vec[axis0] -= mod_vec[axis0];
@@ -638,13 +635,16 @@ uint32_t k3bvh_CheckDirectedCollision(k3AABB* s1, k3AABB* s2, float* s1_vec, con
             collide_axis = (mod_vec[axis2] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_X : ((mod_vec[axis2] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_X : 0);
             collide_axis = collide_axis << axis2;
         } else if (collide_x) {
-            s1_vec[0] -= mod_vec[0];
+            axis = (mod_vec[0] > 0.0f) ? K3_AXIS_DIR_POS_X : K3_AXIS_DIR_NEG_X;
+            if (!(axis_mask & (1 << axis))) s1_vec[0] -= mod_vec[0];
             collide_axis = (mod_vec[0] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_X : ((mod_vec[0] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_X : 0);
         } else if (collide_y) {
-            s1_vec[1] -= mod_vec[1];
+            axis = (mod_vec[1] > 0.0f) ? K3_AXIS_DIR_POS_Y : K3_AXIS_DIR_NEG_Y;
+            if (!(axis_mask & (1 << axis))) s1_vec[1] -= mod_vec[1];
             collide_axis = (mod_vec[1] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_Y : ((mod_vec[1] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_Y : 0);
         } else if (collide_z) {
-            s1_vec[2] -= mod_vec[2];
+            axis = (mod_vec[2] > 0.0f) ? K3_AXIS_DIR_POS_Z : K3_AXIS_DIR_NEG_Z;
+            if (!(axis_mask & (1 << axis))) s1_vec[2] -= mod_vec[2];
             collide_axis = (mod_vec[2] > COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_POS_Z : ((mod_vec[2] < -COLLIDE_MOVEMENT) ? K3_AXIS_DIR_FLAG_NEG_Z : 0);
         }
     }
