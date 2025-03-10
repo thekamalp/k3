@@ -63,11 +63,13 @@ K3API void k3bitTrackerObj::Resize(uint32_t size)
 
 K3API void k3bitTrackerObj::SetAll(bool value)
 {
-    uint32_t elem_size = (_data->_size + 63) / 64;
+    uint32_t arr_size = (_data->_size + 63) / 64;
+    uint64_t last_elem_mask = ~(0xffffffffffffffffULL << (_data->_size & 63));
     uint32_t i;
-    for (i = 0; i < elem_size; i++) {
+    for (i = 0; i < arr_size; i++) {
         _data->_array[i] = (value) ? 0xffffffffffffffffULL : 0x0;
     }
+    _data->_array[arr_size - 1] &= last_elem_mask;
 }
 
 K3API void k3bitTrackerObj::SetBit(uint32_t bit, bool value)
@@ -96,6 +98,51 @@ K3API bool k3bitTrackerObj::GetBit(uint32_t bit)
     uint64_t flag = 1;
     flag <<= (bit & 63);
     return (_data->_array[elem_index] & flag) ? true : false;
+}
+
+K3API void k3bitTrackerObj::Negate()
+{
+    uint32_t arr_size = (_data->_size + 63) / 64;
+    uint64_t last_elem_mask = ~(0xffffffffffffffffULL << (_data->_size & 63));
+    uint32_t i;
+    for (i = 0; i < arr_size; i++) {
+        _data->_array[i] = ~_data->_array[i];
+    }
+    _data->_array[arr_size - 1] &= last_elem_mask;
+}
+
+K3API void k3bitTrackerObj::SetUnion(k3bitTracker src)
+{
+    uint32_t min_size = (_data->_size < src->_data->_size) ? _data->_size : src->_data->_size;
+    uint32_t arr_size = (min_size + 63) / 64;
+    uint64_t last_elem_mask = ~(0xffffffffffffffffULL << (_data->_size & 63));
+    uint32_t i;
+    for (i = 0; i < arr_size; i++) {
+        _data->_array[i] |= src->_data->_array[i];
+    }
+    _data->_array[arr_size - 1] &= last_elem_mask;
+}
+
+K3API void k3bitTrackerObj::SetIntersection(k3bitTracker src)
+{
+    uint32_t arr_size = (_data->_size + 63) / 64;
+    uint32_t src_arr_size = (src->_data->_size + 63) / 64;
+    uint32_t i;
+    for (i = 0; i < arr_size; i++) {
+        _data->_array[i] &= (i < src_arr_size) ? src->_data->_array[i] : 0x0;
+    }
+}
+
+K3API void k3bitTrackerObj::SetExclude(k3bitTracker src)
+{
+    uint32_t min_size = (_data->_size < src->_data->_size) ? _data->_size : src->_data->_size;
+    uint32_t arr_size = (min_size + 63) / 64;
+    uint64_t last_elem_mask = ~(0xffffffffffffffffULL << (_data->_size & 63));
+    uint32_t i;
+    for (i = 0; i < arr_size; i++) {
+        _data->_array[i] &= ~(src->_data->_array[i]);
+    }
+    _data->_array[arr_size - 1] &= last_elem_mask;
 }
 
 // ------------------------------------------------------------
@@ -1472,6 +1519,62 @@ K3API uint32_t k3meshObj::getAnimLength(uint32_t a)
     return 0;
 }
 
+K3API void k3meshObj::getBonePosition(uint32_t bone_id, float* position)
+{
+    if (position && bone_id <_data->_num_bones) {
+        position[0] = _data->_bones[bone_id].position[0];
+        position[1] = _data->_bones[bone_id].position[1];
+        position[2] = _data->_bones[bone_id].position[2];
+    }
+}
+
+K3API void k3meshObj::getBoneRotation(uint32_t bone_id, float* rot_quat)
+{
+    if (rot_quat && bone_id < _data->_num_bones) {
+        rot_quat[0] = _data->_bones[bone_id].rot_quat[0];
+        rot_quat[1] = _data->_bones[bone_id].rot_quat[1];
+        rot_quat[2] = _data->_bones[bone_id].rot_quat[2];
+        rot_quat[3] = _data->_bones[bone_id].rot_quat[3];
+    }
+}
+
+K3API void k3meshObj::getBoneScaling(uint32_t bone_id, float* scaling)
+{
+    if (scaling && bone_id < _data->_num_bones) {
+        scaling[0] = _data->_bones[bone_id].scaling[0];
+        scaling[1] = _data->_bones[bone_id].scaling[1];
+        scaling[2] = _data->_bones[bone_id].scaling[2];
+    }
+}
+
+K3API void k3meshObj::setBonePosition(uint32_t bone_id, const float* position)
+{
+    if (position && bone_id < _data->_num_bones) {
+        _data->_bones[bone_id].position[0] = position[0];
+        _data->_bones[bone_id].position[1] = position[1];
+        _data->_bones[bone_id].position[2] = position[2];
+    }
+}
+
+K3API void k3meshObj::setBoneRotation(uint32_t bone_id, const float* rot_quat)
+{
+    if (rot_quat && bone_id < _data->_num_bones) {
+        _data->_bones[bone_id].rot_quat[0] = rot_quat[0];
+        _data->_bones[bone_id].rot_quat[1] = rot_quat[1];
+        _data->_bones[bone_id].rot_quat[2] = rot_quat[2];
+        _data->_bones[bone_id].rot_quat[3] = rot_quat[3];
+    }
+}
+
+K3API void k3meshObj::setBoneScaling(uint32_t bone_id, const float* scaling)
+{ 
+    if (scaling && bone_id < _data->_num_bones) {
+        _data->_bones[bone_id].scaling[0] = scaling[0];
+        _data->_bones[bone_id].scaling[1] = scaling[1];
+        _data->_bones[bone_id].scaling[2] = scaling[2];
+    }
+}
+
 K3API void k3meshObj::setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags)
 {
     struct alignas(16) sse4_data_t {
@@ -1900,11 +2003,18 @@ K3API void k3meshObj::genBoneMatrix(float* mat, uint32_t bone_id, bool with_inve
     }
 }
 
-K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned)
+K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned, k3bitTracker bone_exclude)
 {
     if (bone_id >= _data->_num_bones) {
         k3error::Handler("Invalid bone id", "k3meshObj::genBoneAABB");
         return;
+    }
+
+    k3bitTracker bone_mask = k3bitTrackerObj::Create(_data->_num_bones);
+    bone_mask->SetAll(false);
+    genBoneHierarchyMask(bone_mask, bone_id);
+    if (bone_exclude != NULL) {
+        bone_mask->SetExclude(bone_exclude);
     }
 
     bone_aabb->min[0] = INFINITY;
@@ -1914,7 +2024,7 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
     bone_aabb->max[1] = -INFINITY;
     bone_aabb->max[2] = -INFINITY;
 
-    uint32_t i, w;
+    uint32_t i;
     bool vert_in_bone;
     const float* verts = _data->_geom_data;
     const float* skin_f = _data->_geom_data + 11 * _data->_num_verts;
@@ -1942,7 +2052,8 @@ K3API void k3meshObj::genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone
         //    }
         //}
         // This code only uses the highest weight to identify vertex in the bone
-        vert_in_bone = (skin_i[0] == bone_id);
+        //vert_in_bone = (skin_i[0] == bone_id);
+        vert_in_bone = bone_mask->GetBit(skin_i[0]);
 
         if (vert_in_bone) {
             xform_pos[0] = verts[0];

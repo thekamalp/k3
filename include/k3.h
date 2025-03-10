@@ -1065,6 +1065,10 @@ public:
     K3API void SetAll(bool value);
     K3API void SetBit(uint32_t bit, bool value);
     K3API bool GetBit(uint32_t bit);
+    K3API void Negate();                           // this = ~this
+    K3API void SetUnion(k3bitTracker src);         // this = this | src
+    K3API void SetIntersection(k3bitTracker src);  // this = this & src
+    K3API void SetExclude(k3bitTracker src);       // this = this & ~src
 };
 
 // ------------------------------------------------------------
@@ -2056,6 +2060,12 @@ public:
     K3API uint32_t getAnimLength(uint32_t a);
     K3API uint32_t getAnimNumObjs(uint32_t a);
     K3API uint32_t getAnimObj(uint32_t a, uint32_t i);
+    K3API void getBonePosition(uint32_t bone_id, float* position);
+    K3API void getBoneRotation(uint32_t bone_id, float* rot_quat);
+    K3API void getBoneScaling(uint32_t bone_id, float* scaling);
+    K3API void setBonePosition(uint32_t bone_id, const float* position);
+    K3API void setBoneRotation(uint32_t bone_id, const float* rot_quat);
+    K3API void setBoneScaling(uint32_t bone_id, const float* scaling);
     K3API void setAnimation(uint32_t anim_index, uint32_t time_msec, uint32_t flags);
     K3API void getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_exclude_mask);
     K3API void getLightAABB(k3AABB* aabb, uint32_t light);
@@ -2064,7 +2074,7 @@ public:
     K3API void createLightPartitions(k3meshPartitions* p, float overlap);
     K3API void genBoneHierarchyMask(k3bitTracker b, uint32_t bone_id);
     K3API void genBoneMatrix(float* mat, uint32_t bone_id, bool with_inverse);
-    K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned);
+    K3API void genBoneAABB(k3AABB* bone_aabb, uint32_t bone_id, bool bone_aligned, k3bitTracker bone_exclude);
     K3API const float* getVertPosition(uint32_t model, uint32_t vert);
     K3API const float* getVertAttrib(uint32_t model, uint32_t vert);
     K3API const float* getVertSkin(uint32_t model, uint32_t vert);
