@@ -197,6 +197,7 @@ k3win32WinImpl::k3win32WinImpl()
     _hwnd = NULL;
     _hdc = NULL;
     _mouse_in_nc = false;
+    _hdev_notify = NULL;
 }
 
 k3win32WinImpl::~k3win32WinImpl()
@@ -236,14 +237,14 @@ void k3win32WinImpl::Initialize()
 void k3win32WinImpl::Uninitialize()
 {
     // Unregister input devices
-    RAWINPUTDEVICE rid[1];
-
-    // For joysticks
-    rid[0].usUsagePage = 0x01;
-    rid[0].usUsage = 0x05;
-    rid[0].dwFlags = 0;
-    rid[0].hwndTarget = NULL; // follow keyboard focus
-    RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
+    //RAWINPUTDEVICE rid[1];
+    //
+    //// For joysticks
+    //rid[0].usUsagePage = 0x01;
+    //rid[0].usUsage = 0x05;
+    //rid[0].dwFlags = 0;
+    //rid[0].hwndTarget = NULL; // follow keyboard focus
+    //RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
 
     UnregisterClass(k3win32WinImpl::_win_class_name, GetModuleHandle(NULL));
 
@@ -280,6 +281,75 @@ void k3win32WinImpl::AllowAccesibilityKeys(bool allow)
             fk_off.dwFlags &= ~FKF_HOTKEYACTIVE;
         }
         SystemParametersInfo(SPI_SETFILTERKEYS, sizeof(FILTERKEYS), &fk_off, 0);
+    }
+}
+
+void k3win32WinImpl::SyncAttachedJoystickes()
+{
+    UINT dev_list_count = 0;
+    UINT dev_count = GetRawInputDeviceList(NULL, &dev_list_count, sizeof(RAWINPUTDEVICELIST));
+    uint32_t n, j;
+    uint32_t joy_seen = 0;
+    if (dev_list_count) {
+        RAWINPUTDEVICELIST* dev_list = new RAWINPUTDEVICELIST[dev_list_count];
+        RID_DEVICE_INFO dev_info = { 0 };
+        UINT data_size;
+        dev_count = GetRawInputDeviceList(dev_list, &dev_list_count, sizeof(RAWINPUTDEVICELIST));
+        for (n = 0; n < dev_count; n++) {
+            // Make sure the device is an HID (not a keyboard or mouse)
+            if (dev_list[n].dwType == RIM_TYPEHID) {
+                uint32_t dev_id = (uint32_t)dev_list[n].hDevice;
+                // get device info,  to make sure its the right usage
+                dev_info.cbSize = sizeof(RID_DEVICE_INFO);
+                data_size = sizeof(RID_DEVICE_INFO);
+                GetRawInputDeviceInfo(dev_list[n].hDevice, RIDI_DEVICEINFO, &dev_info, &data_size);
+                // Should be HID, but double check
+                if (dev_info.dwType == RIM_TYPEHID) {
+                    // Check usage page/usage for joystick or game controller
+                    if (dev_info.hid.usUsagePage == 0x1 && (dev_info.hid.usUsage == 0x4 || dev_info.hid.usUsage == 0x5)) {
+                        // Check if the device is in our list already
+                        bool cur_joy_seen = false;
+                        for (j = 0; j < _num_joy; j++) {
+                            if (_joy_map[j] != NULL) {
+                                if (_joy_map[j]->getDevId() == dev_id) {
+                                    // mark this joystick as being seen
+                                    joy_seen |= (1 << j);
+                                    cur_joy_seen = true;
+                                }
+                            }
+                        }
+                        // if the current joystick hasn't been seen, it's new, so add it
+                        if (!cur_joy_seen) {
+                            // Add the joystick
+                            _joy_map[_num_joy] = k3win32JoyObj::Create(dev_list[n].hDevice, dev_id);
+                            uint32_t w2;
+                            for (w2 = 0; w2 < _win_count; w2++) {
+                                if (_winimpl_map[w2]->JoystickAdded) _winimpl_map[w2]->JoystickAdded(_winimpl_map[w2]->_data, dev_id, _joy_map[_num_joy]->getJoyInfo(), _joy_map[_num_joy]->getJoyState());
+                            }
+                            joy_seen |= (1 << _num_joy);
+                            _num_joy++;
+                        }
+                    }
+                }
+            }
+        }
+        delete[] dev_list;
+    }
+    // If any joysticks are no longer seen, remove them
+    for (j = 0; j < _num_joy; j++) {
+        if (!(joy_seen & (1 << j))) {
+            uint32_t w2;
+            for (w2 = 0; w2 < _win_count; w2++) {
+                if (_winimpl_map[w2]->JoystickRemoved) _winimpl_map[w2]->JoystickRemoved(_winimpl_map[w2]->_data, _joy_map[j]->getDevId());
+            }
+            _num_joy--;
+            _joy_map[j] = _joy_map[_num_joy];
+            _joy_map[_num_joy] = NULL;
+            if (!(joy_seen & (1 << _num_joy))) {
+                // if the new joystick is laos not seen, decrement j, so that we can remove this device in the next iteration of the loop
+                j--;
+            }
+        }
     }
 }
 
@@ -426,9 +496,18 @@ LRESULT WINAPI k3win32WinImpl::MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
                 }
             }
             break;
-            //case WM_DEVICECHANGE:
+        case WM_DEVICECHANGE:
+            if (wparam == DBT_DEVICEARRIVAL || wparam == DBT_DEVICEREMOVECOMPLETE) {
+                DEV_BROADCAST_HDR* hdr = (DEV_BROADCAST_HDR*)lparam;
+                if (hdr->dbch_devicetype == DBT_DEVTYP_DEVICEINTERFACE) {
+                    DEV_BROADCAST_DEVICEINTERFACE* dev_intf = (DEV_BROADCAST_DEVICEINTERFACE*)hdr;
+                    if (dev_intf->dbcc_classguid == GUID_DEVINTERFACE_HID) {
+                        SyncAttachedJoystickes();
+                    }
+                }
+            }
             //  InitializeJoysticks();
-            //  break;
+            break;
         case WM_NCMOUSEMOVE:
             SetWin32CursorState(true);
             winimpl->_mouse_in_nc = true;
@@ -700,18 +779,27 @@ K3API k3win k3winObj::Create(const char* title,
     }
 
     // Register input devices
-    RAWINPUTDEVICE rid[2];
 
-    // For joysticks
-    rid[0].usUsagePage = 0x01;
-    rid[0].usUsage = 0x05;
-    rid[0].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
-    rid[0].hwndTarget = d->_hwnd;
-    rid[1].usUsagePage = 0x01;
-    rid[1].usUsage = 0x04;
-    rid[1].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
-    rid[1].hwndTarget = d->_hwnd;
-    RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+
+    //RAWINPUTDEVICE rid[2];
+    //
+    //// For joysticks
+    //rid[0].usUsagePage = 0x01;
+    //rid[0].usUsage = 0x05;
+    //rid[0].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
+    //rid[0].hwndTarget = d->_hwnd;
+    //rid[1].usUsagePage = 0x01;
+    //rid[1].usUsage = 0x04;
+    //rid[1].dwFlags = RIDEV_DEVNOTIFY | RIDEV_INPUTSINK;
+    //rid[1].hwndTarget = d->_hwnd;
+    //RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+
+    DEV_BROADCAST_DEVICEINTERFACE notification_filter;
+    ZeroMemory(&notification_filter, sizeof(notification_filter));
+    notification_filter.dbcc_size = sizeof(notification_filter);
+    notification_filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+    notification_filter.dbcc_classguid = GUID_DEVINTERFACE_HID;
+    d->_hdev_notify = RegisterDeviceNotification(d->_hwnd, &notification_filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
     ShowWindow( d->_hwnd, ((d->_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
     //ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
@@ -726,6 +814,12 @@ K3API k3win k3winObj::Create(const char* title,
 
 K3API void k3winObj::Destroy(k3win win)
 {
+    k3win32WinImpl* d = static_cast<k3win32WinImpl*>(win->_data);
+    if (d->_hdev_notify) {
+        UnregisterDeviceNotification(d->_hdev_notify);
+        d->_hdev_notify = NULL;
+    }
+
     uint32_t w;
     for (w = 0; w < k3win32WinImpl::_win_count; w++) {
         if (k3win32WinImpl::_win_map[w] == win) {
@@ -890,6 +984,7 @@ void k3winObj::WindowLoop()
         }
         if (winimpl->Idle != NULL) got_idle = true;
     }
+    k3win32WinImpl::SyncAttachedJoystickes();
 
     ZeroMemory(&msg, sizeof(MSG));
 

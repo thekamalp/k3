@@ -4,9 +4,12 @@
 
 #include "k3internal.h"
 
+#include <initguid.h>
 #include <Windows.h>
 #include <dsound.h>
 #include <hidsdi.h>
+#include <dbt.h>
+#include <hidclass.h>
 
 struct k3win32JoyAxisRange
 {
@@ -137,6 +140,7 @@ public:
 	virtual ~k3win32WinImpl();
 	HWND _hwnd;
 	HDC _hdc;
+	HDEVNOTIFY _hdev_notify;
 
 	bool _mouse_in_nc;
 	static const uint32_t MAX_WIN = 32;
@@ -160,6 +164,7 @@ public:
 	static void Initialize();
 	static void Uninitialize();
 	static void AllowAccesibilityKeys(bool allow);
+	static void SyncAttachedJoystickes();
 	static bool PollJoysticks();
 	static LRESULT CALLBACK KeyboardLowLevelProc(int ncode, WPARAM wparam, LPARAM lparam);
 	static LRESULT WINAPI MsgProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
