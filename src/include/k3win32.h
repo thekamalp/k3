@@ -118,18 +118,15 @@ public:
 	static const uint32_t VENDOR_ID = 1356;
 };
 
-class k3soundBufImpl
+class k3soundBufWin32Impl : public k3soundBufImpl
 {
 public:
-	k3soundBufImpl();
-	virtual ~k3soundBufImpl();
+	k3soundBufWin32Impl();
+	virtual ~k3soundBufWin32Impl();
 	static uint32_t _num_sbuf;
 	static LPDIRECTSOUND8 _dsound;
 
 	LPDIRECTSOUNDBUFFER8 _buf;
-	uint32_t _write_pos;
-	uint32_t _buf_size;
-	bool _is_playing;
 	void* _last_aux;
 };
 

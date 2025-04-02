@@ -23,6 +23,8 @@ private:
     k3sampler sampler;
     k3font font;
     k3soundBuf sbuf;
+    k3sampleData sound_sample0;
+    k3sampleData sound_sample1;
     k3uploadBuffer cb_upload_move;
     k3buffer cb_move[NUM_VERSIONS];
     uint32_t cb_move_version;
@@ -63,7 +65,11 @@ void App::Setup()
     win->SetDataPtr(this);
 
     gfx = win->GetGfx();
-    sbuf = win->CreateSoundBuffer(1, 44100, 16, 11025);
+    sbuf = win->CreateSoundBuffer(2, 44100, 32, 8192, 2);
+    sound_sample0 = k3sampleDataObj::Create();
+    sound_sample1 = k3sampleDataObj::Create();
+    sound_sample0->LoadFromFile("..\\test\\assets\\144862.flac");
+    sound_sample1->LoadFromFile("..\\test\\assets\\59992.flac");
     printf("Adapter: %s\n", gfx->AdapterName());
     printf("Raytracing Tier supported: %d\n", gfx->GetRayTracingSupport());
 
@@ -243,6 +249,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[1] += 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
+            sbuf->AttachSampleStream(0, sound_sample0);
             break;
         case k3key::DOWN:
             cb_move_data = (float*)cb_upload_move->MapForWrite(4 * sizeof(float));
@@ -255,6 +262,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[0] -= 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
+            sbuf->AttachSampleStream(1, sound_sample1);
             break;
         case k3key::RIGHT:
             cb_move_data = (float*)cb_upload_move->MapForWrite(4 * sizeof(float));
@@ -268,6 +276,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
 
 void App::Display()
 {
+    sbuf->PlayStreams();
     k3surf back_buffer = win->GetBackBuffer();
     k3resource back_buffer_resource = back_buffer->GetResource();
     float clear_color[] = { 0.5f, 0.0f, 0.5f, 1.0f };

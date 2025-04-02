@@ -593,6 +593,225 @@ K3API void k3cmdBufObj::DrawText(const char* text, k3font font, const float fg_c
 }
 
 // ------------------------------------------------------------
+// sound classes
+k3sampleDataImpl::k3sampleDataImpl()
+{
+    _total_size = 0;
+    _sample_data = NULL;
+}
+
+k3sampleDataImpl::~k3sampleDataImpl()
+{
+    if (_sample_data) {
+        delete[] _sample_data;
+        _sample_data = NULL;
+    }
+}
+
+k3sampleDataObj::k3sampleDataObj()
+{
+    _data = new k3sampleDataImpl;
+}
+
+k3sampleDataObj::~k3sampleDataObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3sampleDataImpl* k3sampleDataObj::getImpl()
+{
+    return _data;
+}
+
+const k3sampleDataImpl* k3sampleDataObj::getImpl() const
+{
+    return _data;
+}
+
+K3API k3sampleData k3sampleDataObj::Create()
+{
+    k3sampleData sample = new k3sampleDataObj;
+    return sample;
+}
+
+void k3sampleDataObj::LoadFromFile(const char* filename)
+{
+    FILE* fh = fopen(filename, "r");
+    if (fh == NULL) {
+        k3error::Handler("Could not open file", "k3sampleDataObj::LoadFromFile");
+        return;
+    }
+    fseek(fh, 0, SEEK_END);
+    uint32_t size = ftell(fh);
+    fseek(fh, 0, SEEK_SET);
+    LoadFromFileHandle(fh, size);
+    fclose(fh);
+}
+
+void k3sampleDataObj::LoadFromFileHandle(FILE* fh, uint32_t size)
+{
+    _data->_total_size = size;
+    if (_data->_sample_data) {
+        delete[] _data->_sample_data;
+    }
+    _data->_sample_data = new uint8_t[_data->_total_size];
+    fread(_data->_sample_data, 1, _data->_total_size, fh);
+}
+
+uint32_t k3sampleDataObj::getDataLength() const
+{
+    return _data->_total_size;
+}
+
+const void* k3sampleDataObj::getData() const
+{
+    return _data->_sample_data;
+}
+
+k3soundBufImpl::k3soundBufImpl()
+{
+    _write_pos = 0;
+    _buf_size = 0;
+    _is_playing = false;
+
+    _num_streams = 0;
+    _stream = NULL;
+    _bits_per_sample = 0;
+    _num_channels = 0;
+}
+
+k3soundBufImpl::~k3soundBufImpl()
+{
+    if (_stream) {
+        uint32_t s;
+        uint8_t* flac_data = NULL;
+        for (s = 0; s < _num_streams; s++) {
+            flac_data = (uint8_t*)_stream[s].flac;
+            if (flac_data) {
+                delete[] flac_data;
+            }
+        }
+        delete[] _stream;
+        _stream = NULL;
+    }
+}
+
+k3soundBufObj::~k3soundBufObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3soundBufImpl* k3soundBufObj::getImpl()
+{
+    return _data;
+}
+
+const k3soundBufImpl* k3soundBufObj::getImpl() const
+{
+    return _data;
+}
+
+K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sample)
+{
+    if (stream >= _data->_num_streams) {
+        k3error::Handler("Invalid stream", "k3soundBufObj::AttachSampleStream");
+        return;
+    }
+    const uint32_t* sample_data = (const uint32_t*)sample->getData();
+    _data->_stream[stream].stype = k3streamType::NONE;
+    if (sample_data) {
+        if (sample_data[0] == K3_STREAM_KEY_FLAC) {
+            _data->_stream[stream].stype = k3streamType::FLAC;
+        }
+    }
+    _data->_stream[stream].sample = sample;
+    _data->_stream[stream].sample_offset = 0;
+    _data->_stream[stream].data_left = sample->getDataLength();
+    fx_flac_reset(_data->_stream[stream].flac);
+}
+
+K3API void k3soundBufObj::PlayStreams()
+{
+    bool streams_to_play = false;
+    uint32_t s;
+    for (s = 0; s < _data->_num_streams; s++) {
+        streams_to_play = streams_to_play || (_data->_stream[s].data_left);
+    }
+
+    uint32_t bytes_per_sample = _data->_bits_per_sample / 8;
+    uint32_t half_buf_size = _data->_buf_size / 2;
+    // align half block to bytes per sample
+    half_buf_size &= ~(bytes_per_sample - 1);
+    if (streams_to_play) {
+        uint32_t play_pos = (_data->_is_playing) ? GetPlayPosition() : half_buf_size;
+        uint32_t wr_pos = (_data->_is_playing) ? _data->_write_pos : 0;
+        bool can_write = (wr_pos >= half_buf_size) != (play_pos >= half_buf_size);
+        if (can_write) {
+            uint32_t min_out_buf_size = half_buf_size;
+            uint32_t output_processed_samples, output_processed_size, input_processed_size;
+            uint32_t aux_size;
+            void* aux;
+            int32_t* orig_out_buf = (int32_t*)MapForWrite(wr_pos, half_buf_size, &aux, &aux_size);
+            int32_t* out_buf;
+            const uint8_t* in_buf;
+            bool first_stream = true;
+            uint32_t s;
+            for (s = 0; s < _data->_num_streams; s++) {
+                if (_data->_stream[s].sample != NULL && _data->_stream[s].stype != k3streamType::NONE) {
+                    uint32_t out_buf_size = half_buf_size;
+                    in_buf = ((const uint8_t*)_data->_stream[s].sample->getData()) + _data->_stream[s].sample_offset;
+                    out_buf = orig_out_buf;
+                    while (_data->_stream[s].data_left && out_buf_size) {
+                        input_processed_size = _data->_stream[s].data_left;
+                        output_processed_samples = out_buf_size / bytes_per_sample;
+                        switch (_data->_stream[s].stype) {
+                        case k3streamType::FLAC:
+                            fx_flac_set_flag(_data->_stream[s].flac, FLAC_FLAG_BLEND_OUTPUT, !first_stream);
+                            fx_flac_process(_data->_stream[s].flac, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            break;
+                        default:
+                            k3error::Handler("Unsupported stream type", "k3soundObj::PlayStreams");
+                            break;
+                        }
+                        first_stream = false;
+                        output_processed_size = bytes_per_sample * output_processed_samples;
+                        in_buf += input_processed_size;
+                        _data->_stream[s].sample_offset += input_processed_size;
+                        _data->_stream[s].data_left = (input_processed_size > _data->_stream[s].data_left) ? 0 : _data->_stream[s].data_left - input_processed_size;
+                        out_buf += output_processed_samples;
+                        out_buf_size = (output_processed_size > out_buf_size) ? 0 : out_buf_size - output_processed_size;
+                    }
+                    min_out_buf_size = (out_buf_size < min_out_buf_size) ? out_buf_size : min_out_buf_size;
+                }
+            }
+            uint32_t end_offset = (min_out_buf_size < half_buf_size) ? half_buf_size - min_out_buf_size : 0;
+            _data->_write_pos = (wr_pos) ? 0 : half_buf_size;
+            if (min_out_buf_size) {
+                // clear out the remainder of the half buffer
+                memset(((uint8_t*)orig_out_buf) + end_offset, 0, min_out_buf_size);
+            }
+            Unmap(orig_out_buf, wr_pos, half_buf_size);
+            if (!_data->_is_playing) {
+                PlaySBuffer(wr_pos);
+            }
+        }
+    } else if (_data->_is_playing) {
+        uint32_t play_pos = GetPlayPosition();
+        uint32_t wr_pos = _data->_write_pos;
+        bool done = (play_pos >= wr_pos);
+        if (done) {
+            StopSBuffer();
+        }
+    }
+}
+
+// ------------------------------------------------------------
 // BVH functions
 
 uint32_t k3bvh_CheckCollision(k3AABB* s1, k3AABB* s2)

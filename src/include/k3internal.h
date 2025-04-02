@@ -14,6 +14,7 @@
 #include FT_FREETYPE_H
 
 #include "fbx.h"
+#include "../flac/foxen-flac.h"
 
 const uint32_t K3_MATH_STATIC_ARRAY_SIZE = 16;
 
@@ -70,6 +71,49 @@ public:
     uint16_t _char_height[NUM_CHARS];
     int16_t _char_offset_x[NUM_CHARS][NUM_CHARS];
     int16_t _char_offset_y[NUM_CHARS];
+};
+
+class k3sampleDataImpl
+{
+public:
+    k3sampleDataImpl();
+    virtual ~k3sampleDataImpl();
+    uint32_t _total_size;
+    void* _sample_data;
+};
+
+static const uint32_t K3_STREAM_KEY_FLAC = 0x43614c66;  // "fLaC"
+
+enum class k3streamType {
+    NONE,
+    WAV,
+    FLAC,
+    MIDI
+};
+
+struct k3streamDecoder
+{
+    fx_flac_t* flac;
+    k3streamType stype;
+    k3sampleData sample;
+    uint32_t sample_offset;
+    uint32_t data_left;
+};
+
+class k3soundBufImpl
+{
+public:
+    k3soundBufImpl();
+    virtual ~k3soundBufImpl();
+
+    uint32_t _write_pos;
+    uint32_t _buf_size;
+    bool _is_playing;
+
+    uint32_t _num_streams;
+    k3streamDecoder* _stream;
+    uint32_t _bits_per_sample;
+    uint32_t _num_channels;
 };
 
 struct k3fontCBufferDynamic

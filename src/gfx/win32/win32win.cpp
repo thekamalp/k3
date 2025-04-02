@@ -19,8 +19,8 @@ STICKYKEYS k3win32WinImpl::_start_sticky_keys = { sizeof(STICKYKEYS), 0 };
 TOGGLEKEYS k3win32WinImpl::_start_toggle_keys = { sizeof(TOGGLEKEYS), 0 };
 FILTERKEYS k3win32WinImpl::_start_filter_keys = { sizeof(FILTERKEYS), 0 };
 
-uint32_t k3soundBufImpl::_num_sbuf = 0;
-LPDIRECTSOUND8 k3soundBufImpl::_dsound = NULL;
+uint32_t k3soundBufWin32Impl::_num_sbuf = 0;
+LPDIRECTSOUND8 k3soundBufWin32Impl::_dsound = NULL;
 
 // ------------------------------------------------------------
 // Message Box
@@ -31,12 +31,9 @@ void K3CALLBACK k3error_MsgBoxHandler(const char* error_msg, const char* title)
 
 // ------------------------------------------------------------
 // sound buffer
-k3soundBufImpl::k3soundBufImpl()
+k3soundBufWin32Impl::k3soundBufWin32Impl()
 {
     _buf = NULL;
-    _write_pos = 0;
-    _buf_size = 0;
-    _is_playing = false;
     _last_aux = NULL;
 
     if (_dsound == NULL) {
@@ -49,7 +46,7 @@ k3soundBufImpl::k3soundBufImpl()
     _num_sbuf++;
 }
 
-k3soundBufImpl::~k3soundBufImpl()
+k3soundBufWin32Impl::~k3soundBufWin32Impl()
 {
     if (_buf) {
         _buf->Release();
@@ -64,25 +61,7 @@ k3soundBufImpl::~k3soundBufImpl()
 
 k3soundBufObj::k3soundBufObj()
 {
-    _data = new k3soundBufImpl;
-}
-
-k3soundBufObj::~k3soundBufObj()
-{
-    if (_data) {
-        delete _data;
-        _data = NULL;
-    }
-}
-
-k3soundBufImpl* k3soundBufObj::getImpl()
-{
-    return _data;
-}
-
-const k3soundBufImpl* k3soundBufObj::getImpl() const
-{
-    return _data;
+    _data = new k3soundBufWin32Impl;
 }
 
 K3API void k3soundBufObj::UpdateSBuffer(uint32_t offset, const void* data, uint32_t size)
@@ -90,26 +69,28 @@ K3API void k3soundBufObj::UpdateSBuffer(uint32_t offset, const void* data, uint3
     LPVOID p0, p1;
     DWORD size0, size1;
 
-    if (_data->_buf == NULL) return;
-    if (offset != 0xFFFFFFFF) _data->_write_pos = offset % _data->_buf_size;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+
+    if (w32data->_buf == NULL) return;
+    if (offset != 0xFFFFFFFF) w32data->_write_pos = offset % w32data->_buf_size;
 
     HRESULT hr;
-    hr = _data->_buf->Lock(_data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
+    hr = w32data->_buf->Lock(w32data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
     if (hr == DSERR_BUFFERLOST) {
-        _data->_buf->Restore();
-        hr = _data->_buf->Lock(_data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
+        w32data->_buf->Restore();
+        hr = w32data->_buf->Lock(w32data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
     }
     if (SUCCEEDED(hr)) {
         memcpy(p0, data, size0);
         if (p1) {
             const void* s1 = static_cast<const void*>(static_cast<const uint8_t*>(data) + size0);
             memcpy(p1, s1, size1);
-            _data->_write_pos = size1;
+            w32data->_write_pos = size1;
         } else {
-            _data->_write_pos += size0;
-            _data->_write_pos = _data->_write_pos % _data->_buf_size;
+            w32data->_write_pos += size0;
+            w32data->_write_pos = w32data->_write_pos % w32data->_buf_size;
         }
-        _data->_buf->Unlock(p0, size0, p1, size1);
+        w32data->_buf->Unlock(p0, size0, p1, size1);
     }
 }
 
@@ -118,19 +99,21 @@ K3API void* k3soundBufObj::MapForWrite(uint32_t offset, uint32_t size, void** au
     LPVOID p0 = NULL, p1 = NULL;
     DWORD size0 = 0, size1 = 0;
 
-    if (_data->_buf == NULL) return NULL;
-    if (offset != 0xFFFFFFFF) _data->_write_pos = offset % _data->_buf_size;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+
+    if (w32data->_buf == NULL) return NULL;
+    if (offset != 0xFFFFFFFF) w32data->_write_pos = offset % w32data->_buf_size;
 
     HRESULT hr;
-    hr = _data->_buf->Lock(_data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
+    hr = w32data->_buf->Lock(w32data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
     if (hr == DSERR_BUFFERLOST) {
-        _data->_buf->Restore();
-        hr = _data->_buf->Lock(_data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
+        w32data->_buf->Restore();
+        hr = w32data->_buf->Lock(w32data->_write_pos, size, &p0, &size0, &p1, &size1, 0);
     }
     if (SUCCEEDED(hr)) {
         if (aux) *aux = p1;
         if (aux_size) *aux_size = size1;
-        _data->_last_aux = p1;
+        w32data->_last_aux = p1;
     }
     return p0;
 }
@@ -138,42 +121,48 @@ K3API void* k3soundBufObj::MapForWrite(uint32_t offset, uint32_t size, void** au
 K3API void k3soundBufObj::Unmap(void* p, uint32_t offset, uint32_t size)
 {
     uint32_t size0 = size;
-    if (offset + size > _data->_buf_size) size0 = _data->_buf_size - offset;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+
+    if (offset + size > w32data->_buf_size) size0 = w32data->_buf_size - offset;
     uint32_t size1 = size - size0;
-    _data->_buf->Unlock(p, size0, _data->_last_aux, size1);
+    w32data->_buf->Unlock(p, size0, w32data->_last_aux, size1);
 }
 
 K3API void k3soundBufObj::PlaySBuffer(uint32_t offset)
 {
-    if (_data->_buf == NULL) return;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+    if (w32data->_buf == NULL) return;
     if (offset != 0xFFFFFFFF) {
-        _data->_buf->SetCurrentPosition(offset % _data->_buf_size);
-        _data->_buf->Play(0, 0, DSBPLAY_LOOPING);
-    } else if (!_data->_is_playing) {
-        _data->_buf->Play(0, 0, DSBPLAY_LOOPING);
+        w32data->_buf->SetCurrentPosition(offset % w32data->_buf_size);
+        w32data->_buf->Play(0, 0, DSBPLAY_LOOPING);
+    } else if (!w32data->_is_playing) {
+        w32data->_buf->Play(0, 0, DSBPLAY_LOOPING);
     }
-    _data->_is_playing = true;
+    w32data->_is_playing = true;
 }
 
 K3API uint32_t k3soundBufObj::GetPlayPosition()
 {
-    if (_data->_buf == NULL) return 0;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+    if (w32data->_buf == NULL) return 0;
     DWORD cur_pos;//, wr_pos;
-    _data->_buf->GetCurrentPosition(&cur_pos, NULL);//&wr_pos);
+    w32data->_buf->GetCurrentPosition(&cur_pos, NULL);//&wr_pos);
     //printf("play_pos: %f wr_pos: %f\n", cur_pos / 1470.0f, wr_pos / 1470.0f);
     return cur_pos;
 }
 
 K3API uint32_t k3soundBufObj::GetWritePosition()
 {
-    return _data->_write_pos;
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+    return w32data->_write_pos;
 }
 
 K3API void k3soundBufObj::StopSBuffer()
 {
-    _data->_is_playing = false;
-    if (_data->_buf == NULL) return;
-    _data->_buf->Stop();
+    k3soundBufWin32Impl* w32data = (k3soundBufWin32Impl*)_data;
+    w32data->_is_playing = false;
+    if (w32data->_buf == NULL) return;
+    w32data->_buf->Stop();
 }
 
 // ------------------------------------------------------------
@@ -922,12 +911,12 @@ K3API k3timer k3winObj::CreateTimer()
 K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples)
 {
     k3soundBuf sbuf = new k3soundBufObj;
-    if (k3soundBufImpl::_dsound) {
+    if (k3soundBufWin32Impl::_dsound) {
         k3win32WinImpl* d = static_cast<k3win32WinImpl*>(_data);
-        k3soundBufImpl* sbuf_impl = sbuf->getImpl();
+        k3soundBufWin32Impl* sbuf_impl = (k3soundBufWin32Impl*)sbuf->getImpl();
 
         // Set sound cooperative level priority_queue
-        k3soundBufImpl::_dsound->SetCooperativeLevel(d->_hwnd, DSSCL_PRIORITY);
+        k3soundBufWin32Impl::_dsound->SetCooperativeLevel(d->_hwnd, DSSCL_PRIORITY);
 
         HRESULT hr;
         WAVEFORMATEX wfx;
@@ -948,15 +937,40 @@ K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t sam
         dsbuf_desc.dwBufferBytes = wfx.nBlockAlign * num_samples;
         dsbuf_desc.lpwfxFormat = &wfx;
 
-        hr = k3soundBufImpl::_dsound->CreateSoundBuffer(&dsbuf_desc, &buf, NULL);
+        hr = k3soundBufWin32Impl::_dsound->CreateSoundBuffer(&dsbuf_desc, &buf, NULL);
         if (SUCCEEDED(hr)) {
             buf->QueryInterface(IID_IDirectSoundBuffer8, (LPVOID*) &sbuf_impl->_buf);
             buf->Release();
         }
         sbuf_impl->_buf_size = dsbuf_desc.dwBufferBytes;
+        sbuf_impl->_bits_per_sample = bits_per_sample;
+        sbuf_impl->_num_channels = num_channels;
         return sbuf;
     }
     return NULL;
+}
+
+K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples, uint32_t num_streams)
+{
+    k3soundBuf sbuf = CreateSoundBuffer(num_channels, samples_per_second, bits_per_sample, num_samples);
+    if (sbuf != NULL) {
+        k3soundBufImpl* sbuf_impl = sbuf->getImpl();
+        sbuf_impl->_num_streams = num_streams;
+        if (sbuf_impl->_num_streams) {
+            uint32_t s;
+            sbuf_impl->_stream = new k3streamDecoder[sbuf_impl->_num_streams];
+            for (s = 0; s < sbuf_impl->_num_streams; s++) {
+                uint32_t fx_flac_data_size = fx_flac_size(FLAC_SUBSET_MAX_BLOCK_SIZE_48KHZ, 2);
+                uint8_t* fx_flac_data = new uint8_t[fx_flac_data_size];
+                sbuf_impl->_stream[s].flac = fx_flac_init(fx_flac_data, FLAC_SUBSET_MAX_BLOCK_SIZE_48KHZ, 2);
+                sbuf_impl->_stream[s].sample = NULL;
+                sbuf_impl->_stream[s].sample_offset = 0;
+                sbuf_impl->_stream[s].data_left = 0;
+                fx_flac_output_channels(sbuf_impl->_stream[s].flac, 2);
+            }
+        }
+    }
+    return sbuf;
 }
 
 

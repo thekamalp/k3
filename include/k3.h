@@ -179,7 +179,8 @@ enum class k3objType {
     DOWNLOAD_IMAGE,
     BIT_TRACKER,
     LLIST,
-    LLIST_NODE
+    LLIST_NODE,
+    SAMPLE_DATA
 };
 
 class k3obj
@@ -1271,6 +1272,33 @@ class k3soundBufImpl;
 class k3soundBufObj;
 typedef k3ptr<k3soundBufObj> k3soundBuf;
 
+class k3sampleDataImpl;
+class k3sampleDataObj;
+typedef k3ptr<k3sampleDataObj> k3sampleData;
+
+class k3sampleDataObj : public k3obj
+{
+private:
+    k3sampleDataImpl* _data;
+
+public:
+    k3sampleDataObj();
+    virtual ~k3sampleDataObj();
+    k3sampleDataImpl* getImpl();
+    const k3sampleDataImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SAMPLE_DATA;
+    }
+
+    static K3API k3sampleData Create();
+    void LoadFromFile(const char* filename);
+    void LoadFromFileHandle(FILE* fh, uint32_t size);
+    uint32_t getDataLength() const;
+    const void* getData() const;
+};
+
 class k3soundBufObj : public k3obj
 {
 private:
@@ -1294,6 +1322,9 @@ public:
     K3API uint32_t GetPlayPosition();
     K3API uint32_t GetWritePosition();
     K3API void StopSBuffer();
+
+    K3API void AttachSampleStream(uint32_t stream, k3sampleData sample);
+    K3API void PlayStreams();
 };
 
 // ------------------------------------------------------------
@@ -2739,6 +2770,7 @@ public:
 
     static K3API k3timer CreateTimer();
     K3API k3soundBuf CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples);
+    K3API k3soundBuf CreateSoundBuffer(uint32_t num_channels, uint32_t samples_per_second, uint32_t bits_per_sample, uint32_t num_samples, uint32_t num_streams);
 
     K3API k3gfx GetGfx() const;
     K3API const char* GetTitle() const;
