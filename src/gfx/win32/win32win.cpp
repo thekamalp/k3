@@ -963,10 +963,13 @@ K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t sam
                 uint32_t fx_flac_data_size = fx_flac_size(FLAC_SUBSET_MAX_BLOCK_SIZE_48KHZ, 2);
                 uint8_t* fx_flac_data = new uint8_t[fx_flac_data_size];
                 sbuf_impl->_stream[s].flac = fx_flac_init(fx_flac_data, FLAC_SUBSET_MAX_BLOCK_SIZE_48KHZ, 2);
+                sbuf_impl->_stream[s].stype = k3streamType::NONE;
                 sbuf_impl->_stream[s].sample = NULL;
                 sbuf_impl->_stream[s].sample_offset = 0;
                 sbuf_impl->_stream[s].data_left = 0;
                 fx_flac_output_channels(sbuf_impl->_stream[s].flac, 2);
+                k3dspWavReset(&sbuf_impl->_stream[s].wav);
+                k3dspWavOutputChannels(&sbuf_impl->_stream[s].wav, 2);
             }
         }
     }

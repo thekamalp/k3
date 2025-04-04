@@ -728,12 +728,16 @@ K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sampl
     if (sample_data) {
         if (sample_data[0] == K3_STREAM_KEY_FLAC) {
             _data->_stream[stream].stype = k3streamType::FLAC;
+            fx_flac_reset(_data->_stream[stream].flac);
+        } else if (sample_data[0] == K3_DSP_RIFF_CHUNK_ID) {
+            _data->_stream[stream].stype = k3streamType::WAV;
+            k3dspWavReset(&_data->_stream[stream].wav);
+            k3dspWavOutputChannels(&_data->_stream[stream].wav, 2);
         }
     }
     _data->_stream[stream].sample = sample;
     _data->_stream[stream].sample_offset = 0;
     _data->_stream[stream].data_left = sample->getDataLength();
-    fx_flac_reset(_data->_stream[stream].flac);
 }
 
 K3API void k3soundBufObj::PlayStreams()
@@ -770,10 +774,22 @@ K3API void k3soundBufObj::PlayStreams()
                     while (_data->_stream[s].data_left && out_buf_size) {
                         input_processed_size = _data->_stream[s].data_left;
                         output_processed_samples = out_buf_size / bytes_per_sample;
+                        fx_flac_state_t flac_state;
+                        k3dspWavState wav_state;
                         switch (_data->_stream[s].stype) {
                         case k3streamType::FLAC:
                             fx_flac_set_flag(_data->_stream[s].flac, FLAC_FLAG_BLEND_OUTPUT, !first_stream);
-                            fx_flac_process(_data->_stream[s].flac, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            flac_state = fx_flac_process(_data->_stream[s].flac, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            if (flac_state == FLAC_ERR) {
+                                _data->_stream[s].stype = k3streamType::NONE;
+                            }
+                            break;
+                        case k3streamType::WAV:
+                            k3dspWavSetFlag(&_data->_stream[s].wav, K3_DSP_WAV_FLAG_BLEND_OUTPUT, !first_stream);
+                            wav_state = k3dspWaveProcess(&_data->_stream[s].wav, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            if (wav_state == k3dspWavState::ERROR) {
+                                _data->_stream[s].stype = k3streamType::NONE;
+                            }
                             break;
                         default:
                             k3error::Handler("Unsupported stream type", "k3soundObj::PlayStreams");

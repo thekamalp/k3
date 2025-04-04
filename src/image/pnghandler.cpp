@@ -12,24 +12,6 @@ const uint64_t PNG_SIGNATURE = 0x89504e470d0a1a0a;
 const uint64_t PNG_SIGNATURE = 0x0a1a0a0d474e5089;
 #endif
 
-uint32_t k3_endian_swap32(uint32_t in)
-{
-#ifdef K3_BIG_ENDIAN
-    return in;
-#else
-    return ((in & 0xff) << 24) | ((in & 0xff00) << 8) | ((in & 0xff0000) >> 8) | ((in & 0xff000000) >> 24);
-#endif
-}
-
-uint16_t k3_endian_swap16(uint16_t in)
-{
-#ifdef K3_BIG_ENDIAN
-    return in;
-#else
-    return ((in & 0xff) << 8) | ((in & 0xff00) >> 8);
-#endif
-}
-
 struct png_chunk_t {
     uint32_t length;
     uint32_t type;

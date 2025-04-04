@@ -14,6 +14,7 @@
 #include FT_FREETYPE_H
 
 #include "fbx.h"
+#include "dsp.h"
 #include "../flac/foxen-flac.h"
 
 const uint32_t K3_MATH_STATIC_ARRAY_SIZE = 16;
@@ -82,7 +83,30 @@ public:
     void* _sample_data;
 };
 
+inline uint32_t k3_endian_swap32(uint32_t in)
+{
+#ifdef K3_BIG_ENDIAN
+    return in;
+#else
+    return ((in & 0xff) << 24) | ((in & 0xff00) << 8) | ((in & 0xff0000) >> 8) | ((in & 0xff000000) >> 24);
+#endif
+}
+
+inline uint16_t k3_endian_swap16(uint16_t in)
+{
+#ifdef K3_BIG_ENDIAN
+    return in;
+#else
+    return ((in & 0xff) << 8) | ((in & 0xff00) >> 8);
+#endif
+}
+
+
+#ifdef K3_BIG_ENDIAN
+static const uint32_t K3_STREAM_KEY_FLAC = 0x664c6143;  // "fLaC"
+#else
 static const uint32_t K3_STREAM_KEY_FLAC = 0x43614c66;  // "fLaC"
+#endif
 
 enum class k3streamType {
     NONE,
@@ -93,6 +117,7 @@ enum class k3streamType {
 
 struct k3streamDecoder
 {
+    k3_dsp_wav_t wav;
     fx_flac_t* flac;
     k3streamType stype;
     k3sampleData sample;

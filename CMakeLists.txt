@@ -30,6 +30,7 @@ file (GLOB SOURCE_MATH   "src/math/*.cpp")
 file (GLOB SOURCE_COMMON "src/cmn/*.cpp")
 file (GLOB SOURCE_GFX    "src/gfx/*.cpp")
 file (GLOB SOURCE_FLAC   "src/flac/*.c")
+file (GLOB SOURCE_SOUND  "src/sound/*.cpp")
 
 if(WIN32)
 	file (GLOB SOURCE_WIN32 "src/gfx/win32/*.cpp")
@@ -39,7 +40,7 @@ if(WIN32)
 	set (LINK_LIB dsound hid dxguid winmm zlib ${FT_LIB} ${GFX_LINK_LIB})
 endif()
 
-add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_JPG} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_FLAC} ${SOURCE_PLATFORM})
+add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_JPG} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_FLAC} ${SOURCE_SOUND} ${SOURCE_PLATFORM})
 
 target_link_libraries(${PROJ} ${LINK_LIB})
 
