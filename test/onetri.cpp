@@ -249,7 +249,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[1] += 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
-            sbuf->AttachSampleStream(0, sound_sample0);
+            sbuf->AttachSampleStream(1, sound_sample0);
             break;
         case k3key::DOWN:
             cb_move_data = (float*)cb_upload_move->MapForWrite(4 * sizeof(float));
@@ -262,7 +262,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[0] -= 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
-            sbuf->AttachSampleStream(1, sound_sample1);
+            sbuf->AttachSampleStream(0, sound_sample1);
             break;
         case k3key::RIGHT:
             cb_move_data = (float*)cb_upload_move->MapForWrite(4 * sizeof(float));

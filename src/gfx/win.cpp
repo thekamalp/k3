@@ -757,7 +757,6 @@ K3API void k3soundBufObj::PlayStreams()
         uint32_t wr_pos = (_data->_is_playing) ? _data->_write_pos : 0;
         bool can_write = (wr_pos >= half_buf_size) != (play_pos >= half_buf_size);
         if (can_write) {
-            uint32_t min_out_buf_size = half_buf_size;
             uint32_t output_processed_samples, output_processed_size, input_processed_size;
             uint32_t aux_size;
             void* aux;
@@ -782,6 +781,7 @@ K3API void k3soundBufObj::PlayStreams()
                             flac_state = fx_flac_process(_data->_stream[s].flac, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (flac_state == FLAC_ERR) {
                                 _data->_stream[s].stype = k3streamType::NONE;
+                                _data->_stream[s].data_left = 0;
                             }
                             break;
                         case k3streamType::WAV:
@@ -789,13 +789,15 @@ K3API void k3soundBufObj::PlayStreams()
                             wav_state = k3dspWaveProcess(&_data->_stream[s].wav, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (wav_state == k3dspWavState::ERROR) {
                                 _data->_stream[s].stype = k3streamType::NONE;
+                                _data->_stream[s].data_left = 0;
                             }
                             break;
                         default:
                             k3error::Handler("Unsupported stream type", "k3soundObj::PlayStreams");
+                            _data->_stream[s].stype = k3streamType::NONE;
+                            _data->_stream[s].data_left = 0;
                             break;
                         }
-                        first_stream = false;
                         output_processed_size = bytes_per_sample * output_processed_samples;
                         in_buf += input_processed_size;
                         _data->_stream[s].sample_offset += input_processed_size;
@@ -803,15 +805,14 @@ K3API void k3soundBufObj::PlayStreams()
                         out_buf += output_processed_samples;
                         out_buf_size = (output_processed_size > out_buf_size) ? 0 : out_buf_size - output_processed_size;
                     }
-                    min_out_buf_size = (out_buf_size < min_out_buf_size) ? out_buf_size : min_out_buf_size;
+                    if (first_stream && out_buf_size) {
+                        // clear out the remainder of the half buffer
+                        memset(((uint8_t*)orig_out_buf) + half_buf_size - out_buf_size, 0, out_buf_size);
+                    }
+                    first_stream = false;
                 }
             }
-            uint32_t end_offset = (min_out_buf_size < half_buf_size) ? half_buf_size - min_out_buf_size : 0;
             _data->_write_pos = (wr_pos) ? 0 : half_buf_size;
-            if (min_out_buf_size) {
-                // clear out the remainder of the half buffer
-                memset(((uint8_t*)orig_out_buf) + end_offset, 0, min_out_buf_size);
-            }
             Unmap(orig_out_buf, wr_pos, half_buf_size);
             if (!_data->_is_playing) {
                 PlaySBuffer(wr_pos);
