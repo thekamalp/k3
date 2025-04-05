@@ -733,6 +733,10 @@ K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sampl
             _data->_stream[stream].stype = k3streamType::WAV;
             k3dspWavReset(&_data->_stream[stream].wav);
             k3dspWavOutputChannels(&_data->_stream[stream].wav, 2);
+        } else if ((sample_data[0] & K3_DSP_ID3_TAG_MASK) == K3_DSP_ID3_TAG) {
+            _data->_stream[stream].stype = k3streamType::MP3;
+            mp3dec_init(&_data->_stream[stream].mp3);
+            mp3dec_set_output_channels(&_data->_stream[stream].mp3, 2);
         }
     }
     _data->_stream[stream].sample = sample;
@@ -760,8 +764,8 @@ K3API void k3soundBufObj::PlayStreams()
             uint32_t output_processed_samples, output_processed_size, input_processed_size;
             uint32_t aux_size;
             void* aux;
-            int32_t* orig_out_buf = (int32_t*)MapForWrite(wr_pos, half_buf_size, &aux, &aux_size);
-            int32_t* out_buf;
+            int16_t* orig_out_buf = (int16_t*)MapForWrite(wr_pos, half_buf_size, &aux, &aux_size);
+            int16_t* out_buf;
             const uint8_t* in_buf;
             bool first_stream = true;
             uint32_t s;
@@ -788,6 +792,15 @@ K3API void k3soundBufObj::PlayStreams()
                             k3dspWavSetFlag(&_data->_stream[s].wav, K3_DSP_WAV_FLAG_BLEND_OUTPUT, !first_stream);
                             wav_state = k3dspWaveProcess(&_data->_stream[s].wav, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (wav_state == k3dspWavState::ERROR) {
+                                _data->_stream[s].stype = k3streamType::NONE;
+                                _data->_stream[s].data_left = 0;
+                            }
+                            break;
+                        case k3streamType::MP3:
+                            mp3dec_set_flag(&_data->_stream[s].mp3, MINIMP3_FLAG_BLEND, !first_stream);
+                            mp3dec_decode(&_data->_stream[s].mp3, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            if (output_processed_samples == 0 && input_processed_size == 0) {
+                                // insufficient space, error
                                 _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }

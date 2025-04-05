@@ -112,6 +112,7 @@ enum class k3streamType {
     NONE,
     WAV,
     FLAC,
+    MP3,
     MIDI
 };
 
@@ -119,6 +120,7 @@ struct k3streamDecoder
 {
     k3_dsp_wav_t wav;
     fx_flac_t* flac;
+    mp3dec_t mp3;
     k3streamType stype;
     k3sampleData sample;
     uint32_t sample_offset;

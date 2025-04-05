@@ -1,4 +1,37 @@
+#define MINIMP3_IMPLEMENTATION
 #include "k3internal.h"
+
+int16_t k3_dsp_blend_sample16(int16_t a, int16_t b)
+{
+    uint32_t a32 = (a ^ 0x8000) & 0xffff;
+    uint32_t b32 = (b ^ 0x8000) & 0xffff;
+    if (a32 < 0x8000 && b32 < 0x8000) {
+        a32 = (a32 * b32) >> 15;
+    } else {
+        a32 = 2 * (a32 + b32) - ((a32 * b32) >> 15) - 0x10000;
+    }
+    if (a32 >= 0x10000) {
+        a32 = 0xffff;
+    }
+    a32 ^= 0x8000;
+    return (int16_t)a32;
+}
+
+int32_t k3_dsp_blend_sample32(int32_t a, int32_t b)
+{
+    uint64_t a64 = (a ^ 0x80000000) & 0xffffffff;
+    uint64_t b64 = (b ^ 0x80000000) & 0xffffffff;
+    if (a64 < 0x80000000 && b64 < 0x80000000) {
+        a64 = (a64 * b64) >> 31;
+    } else {
+        a64 = 2 * (a64 + b64) - ((a64 * b64) >> 31) - 0x100000000ULL;
+    }
+    if (a64 >= 0x100000000ULL) {
+        a64 = 0xffffffff;
+    }
+    a64 ^= 0x80000000;
+    return (int32_t)a64;
+}
 
 void k3dspWavReset(k3_dsp_wav_t* wav)
 {
@@ -40,7 +73,7 @@ k3dspWavState k3dspWavGetState(const k3_dsp_wav_t* wav)
     }
 }
 
-k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint32_t* in_size, int32_t* out_stream, uint32_t* out_size)
+k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint32_t* in_size, int16_t* out_stream, uint32_t* out_size)
 {
     if (wav) {
         const uint8_t* cur_in_stream = in_stream;
@@ -49,7 +82,7 @@ k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint
         uint32_t written_samples = 0;
         uint32_t length, in_samples, in_bytes_per_sample, out_samples;
         uint32_t out_channels, channel, in_channel, byte;
-        int32_t sample;
+        int16_t sample = 0;
         uint32_t sample_index;
         bool done = false;
         while (!done) {
@@ -87,42 +120,30 @@ k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint
                         in_channel = (channel >= wav->fmt.num_channels) ? 0 : channel;
                         switch (in_bytes_per_sample) {
                         case 1:
-                            sample = *(cur_in_stream + channel);
+                            sample = *(cur_in_stream + in_channel);
                             // this is unsigned, so subtract 128 to make it signed
                             sample -= 128;
-                            sample <<= 24;
-                            break;
-                        case 2:
-                            sample = *(cur_in_stream + channel * 2);
-                            sample = k3_endian_swap16(sample);
-                            sample <<= 16;
-                            break;
-                        case 3:
-                            sample = *(cur_in_stream + channel * 3 + 0);
-                            sample |= *(cur_in_stream + channel * 3 + 1) << 8;
-                            sample |= *(cur_in_stream + channel * 3 + 2) << 8;
                             sample <<= 8;
                             break;
+                        case 2:
+                            sample = *(cur_in_stream + in_channel * 2 + 0);
+                            sample |= *(cur_in_stream + in_channel * 2 + 1) << 8;
+                            break;
+                        case 3:
+                            sample = *(cur_in_stream + in_channel * 3 + 1);
+                            sample |= *(cur_in_stream + in_channel * 3 + 2) << 8;
+                            break;
                         case 4:
-                            sample = *(cur_in_stream + channel * 4);
-                            sample = k3_endian_swap32(sample);
+                            sample = *(cur_in_stream + in_channel * 2 + 2);
+                            sample |= *(cur_in_stream + in_channel * 2 + 3) << 8;
                             break;
                         }
                         sample_index = written_samples * out_channels + channel;
                         if (wav->flags & (1 << K3_DSP_WAV_FLAG_BLEND_OUTPUT)) {
                             /* blended write */
-                            uint64_t a = out_stream[sample_index] ^ 0x80000000;
-                            uint64_t b = sample ^ 0x80000000;
-                            if (a < 0x80000000 && b < 0x80000000) {
-                                a = (a * b) >> 31;
-                            } else {
-                                a = 2 * (a + b) - ((a * b) >> 31) - 0x100000000ULL;
-                            }
-                            if (a >= 0x100000000ULL) {
-                                a = 0xffffffff;
-                            }
-                            a ^= 0x80000000;
-                            out_stream[sample_index] = a;
+                            int16_t a = out_stream[sample_index];
+                            int16_t b = sample;
+                            out_stream[sample_index] = k3_dsp_blend_sample16(a, b);
                         } else {
                             out_stream[sample_index] = sample;
                         }

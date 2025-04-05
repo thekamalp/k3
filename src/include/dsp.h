@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "minimp3.h"
+
 #ifdef K3_BIG_ENDIAN
 
 static const uint32_t K3_DSP_RIFF_CHUNK_ID         = 0x52494646;  // "RIFF" in big endian
@@ -32,6 +34,9 @@ static const uint32_t K3_DSP_SF2_INST_MOD_ID       = 0x696D6F64;  // "imod" in b
 static const uint32_t K3_DSP_SF2_INST_GEN_ID       = 0x6967656E;  // "igen" in big endian
 static const uint32_t K3_DSP_SF2_SAMPLE_HEADER_ID  = 0x73686472;  // "shdr" in big endian
 
+static const uint32_t K3_DSP_ID3_TAG               = 0x49443300;  // "ID3" in little endian, LSB mst be masked off
+static const uint32_t K3_DSP_ID3_TAG_MASK          = 0xFFFFFF00;
+
 #else
 
 static const uint32_t K3_DSP_RIFF_CHUNK_ID         = 0x46464952;  // "RIFF" in little endian
@@ -60,6 +65,9 @@ static const uint32_t K3_DSP_SF2_INST_BAG_ID       = 0x67616269;  // "ibag" in l
 static const uint32_t K3_DSP_SF2_INST_MOD_ID       = 0x646F6D69;  // "imod" in little endian
 static const uint32_t K3_DSP_SF2_INST_GEN_ID       = 0x6E656769;  // "igen" in little endian
 static const uint32_t K3_DSP_SF2_SAMPLE_HEADER_ID  = 0x72646873;  // "shdr" in little endian
+
+static const uint32_t K3_DSP_ID3_TAG               = 0x00334449;  // "ID3" in little endian, MSB mst be masked off
+static const uint32_t K3_DSP_ID3_TAG_MASK          = 0x00FFFFFF;
 
 #endif
 
@@ -254,4 +262,4 @@ void k3dspWavReset(k3_dsp_wav_t* wav);
 void k3dspWavSetFlag(k3_dsp_wav_t* wav, uint32_t flag, uint32_t value);
 void k3dspWavOutputChannels(k3_dsp_wav_t* wav, uint32_t num_output_channels);
 k3dspWavState k3dspWavGetState(const k3_dsp_wav_t* wav);
-k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint32_t* in_size, int32_t* out_stream, uint32_t* out_size);
+k3dspWavState k3dspWaveProcess(k3_dsp_wav_t* wav, const uint8_t* in_stream, uint32_t* in_size, int16_t* out_stream, uint32_t* out_size);

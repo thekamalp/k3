@@ -65,10 +65,10 @@ void App::Setup()
     win->SetDataPtr(this);
 
     gfx = win->GetGfx();
-    sbuf = win->CreateSoundBuffer(2, 44100, 32, 8192, 2);
+    sbuf = win->CreateSoundBuffer(2, 44100, 16, 8192, 2);
     sound_sample0 = k3sampleDataObj::Create();
     sound_sample1 = k3sampleDataObj::Create();
-    sound_sample0->LoadFromFile("..\\test\\assets\\144862.flac");
+    sound_sample0->LoadFromFile("..\\test\\assets\\144862.mp3");
     sound_sample1->LoadFromFile("..\\test\\assets\\59992.flac");
     printf("Adapter: %s\n", gfx->AdapterName());
     printf("Raytracing Tier supported: %d\n", gfx->GetRayTracingSupport());

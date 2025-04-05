@@ -38,6 +38,8 @@
 #endif /* __EMSCRIPTEN__ */
 #endif /* FX_EXPORT */
 
+#include "k3_dsp_blend.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -310,7 +312,7 @@ FX_EXPORT int64_t fx_flac_get_streaminfo(const fx_flac_t *inst,
  * has been read.
  */
 FX_EXPORT fx_flac_state_t fx_flac_process(fx_flac_t *inst, const uint8_t *in,
-                                          uint32_t *in_len, int32_t *out,
+                                          uint32_t *in_len, int16_t *out,
                                           uint32_t *out_len);
 
 #ifdef __cplusplus

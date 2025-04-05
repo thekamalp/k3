@@ -1758,7 +1758,7 @@ static bool _fx_flac_process_in_frame(fx_flac_t *inst) {
 	return true;
 }
 
-static bool _fx_flac_process_decoded_frame(fx_flac_t *inst, int32_t *out,
+static bool _fx_flac_process_decoded_frame(fx_flac_t *inst, int16_t *out,
                                            uint32_t *out_len) {
 	/* Fetch the current stream and frame info. */
 	const fx_flac_frame_header_t *fh = inst->frame_header;
@@ -1783,20 +1783,11 @@ static bool _fx_flac_process_decoded_frame(fx_flac_t *inst, int32_t *out,
 		/* Write to the output buffer */
 		if (inst->flags & (1 << FLAC_FLAG_BLEND_OUTPUT)) {
 			/* blended write */
-			uint64_t a = out[tar] ^ 0x80000000;
-			uint64_t b = inst->blkbuf[inp_ch][inst->blk_cur] ^ 0x80000000;
-			if (a < 0x80000000 && b < 0x80000000) {
-				a = (a * b) >> 31;
-			} else {
-				a = 2 * (a + b) - ((a * b) >> 31) - 0x100000000ULL;
-			}
-			if (a >= 0x100000000ULL) {
-				a = 0xffffffff;
-			}
-			a ^= 0x80000000;
-			out[tar] = a;
+			int16_t a = out[tar];
+			int16_t b = (inst->blkbuf[inp_ch][inst->blk_cur] >> 16);
+			out[tar] = k3_dsp_blend_sample16(a, b);
 		} else {
-			out[tar] = inst->blkbuf[inp_ch][inst->blk_cur];
+			out[tar] = inst->blkbuf[inp_ch][inst->blk_cur] >> 16;
 		}
 
 		/* Advance the read and write cursors */
@@ -1992,7 +1983,7 @@ int64_t fx_flac_get_streaminfo(fx_flac_t const *inst,
 }
 
 fx_flac_state_t fx_flac_process(fx_flac_t *inst, const uint8_t *in,
-                                uint32_t *in_len, int32_t *out,
+                                uint32_t *in_len, int16_t *out,
                                 uint32_t *out_len) {
 	inst = (fx_flac_t *)FX_ALIGN_ADDR(inst);
 
