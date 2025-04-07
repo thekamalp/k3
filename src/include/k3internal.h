@@ -120,6 +120,7 @@ struct k3streamDecoder
 {
     k3_dsp_wav_t wav;
     fx_flac_t* flac;
+    k3_dsp_midi_t midi;
     mp3dec_t mp3;
     k3streamType stype;
     k3sampleData sample;
@@ -141,6 +142,7 @@ public:
     k3streamDecoder* _stream;
     uint32_t _bits_per_sample;
     uint32_t _num_channels;
+    k3soundFont sf2;
 };
 
 struct k3fontCBufferDynamic

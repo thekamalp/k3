@@ -651,14 +651,35 @@ void k3sampleDataObj::LoadFromFile(const char* filename)
     fclose(fh);
 }
 
-void k3sampleDataObj::LoadFromFileHandle(FILE* fh, uint32_t size)
+uint32_t k3sampleDataObj::LoadFromFileHandle(FILE* fh, uint32_t size)
 {
     _data->_total_size = size;
     if (_data->_sample_data) {
         delete[] _data->_sample_data;
     }
     _data->_sample_data = new uint8_t[_data->_total_size];
-    fread(_data->_sample_data, 1, _data->_total_size, fh);
+    uint32_t read_bytes = fread(_data->_sample_data, 1, _data->_total_size, fh);
+    return read_bytes;
+}
+
+void* k3sampleDataObj::newWrite(uint32_t size)
+{
+    if (_data->_sample_data) {
+        delete[] _data->_sample_data;
+    }
+    _data->_total_size = size;
+    _data->_sample_data = new uint8_t[_data->_total_size];
+    return _data->_sample_data;
+}
+
+void k3sampleDataObj::LoadFromMemory(const void* mem, uint32_t size)
+{
+    _data->_total_size = size;
+    if (_data->_sample_data) {
+        delete[] _data->_sample_data;
+    }
+    _data->_sample_data = new uint8_t[_data->_total_size];
+    memcpy(_data->_sample_data, mem, size);
 }
 
 uint32_t k3sampleDataObj::getDataLength() const
@@ -717,6 +738,11 @@ const k3soundBufImpl* k3soundBufObj::getImpl() const
     return _data;
 }
 
+K3API void k3soundBufObj::setSoundFont(k3soundFont sf2)
+{
+    _data->sf2 = sf2;
+}
+
 K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sample)
 {
     if (stream >= _data->_num_streams) {
@@ -733,6 +759,15 @@ K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sampl
             _data->_stream[stream].stype = k3streamType::WAV;
             k3dspWavReset(&_data->_stream[stream].wav);
             k3dspWavOutputChannels(&_data->_stream[stream].wav, 2);
+        } else if(sample_data[0] == K3_MIDI_HEADER_CHUNK_ID) {
+            if (sample_data[1] == K3_MIDI_TRACK_CHUNK_ID) {
+                _data->_stream[stream].stype = k3streamType::MIDI;
+                k3dspMidiReset(&_data->_stream[stream].midi);
+                k3dspMidiSetSoundFont(&_data->_stream[stream].midi, _data->sf2);
+                k3dspMidiOutputChannels(&_data->_stream[stream].midi, 2);
+            } else {
+                k3error::Handler("Midi stream not parsed; use k3midiLoadFromFile", "k3soundBufObj::AttachSampleStream");
+            }
         } else if ((sample_data[0] & K3_DSP_ID3_TAG_MASK) == K3_DSP_ID3_TAG) {
             _data->_stream[stream].stype = k3streamType::MP3;
             mp3dec_init(&_data->_stream[stream].mp3);
@@ -779,6 +814,7 @@ K3API void k3soundBufObj::PlayStreams()
                         output_processed_samples = out_buf_size / bytes_per_sample;
                         fx_flac_state_t flac_state;
                         k3dspWavState wav_state;
+                        k3dspMidiState midi_state;
                         switch (_data->_stream[s].stype) {
                         case k3streamType::FLAC:
                             fx_flac_set_flag(_data->_stream[s].flac, FLAC_FLAG_BLEND_OUTPUT, !first_stream);
@@ -792,6 +828,14 @@ K3API void k3soundBufObj::PlayStreams()
                             k3dspWavSetFlag(&_data->_stream[s].wav, K3_DSP_WAV_FLAG_BLEND_OUTPUT, !first_stream);
                             wav_state = k3dspWaveProcess(&_data->_stream[s].wav, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (wav_state == k3dspWavState::ERROR) {
+                                _data->_stream[s].stype = k3streamType::NONE;
+                                _data->_stream[s].data_left = 0;
+                            }
+                            break;
+                        case k3streamType::MIDI:
+                            k3dspMidiSetFlag(&_data->_stream[s].midi, K3_DSP_MIDI_FLAG_BLEND_OUTPUT, !first_stream);
+                            midi_state = k3dspMidiProcess(&_data->_stream[s].midi, in_buf, &input_processed_size, out_buf, &output_processed_samples);
+                            if (midi_state == k3dspMidiState::ERROR) {
                                 _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }

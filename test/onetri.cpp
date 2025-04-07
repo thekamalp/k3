@@ -25,6 +25,8 @@ private:
     k3soundBuf sbuf;
     k3sampleData sound_sample0;
     k3sampleData sound_sample1;
+    k3soundFont sound_font;
+    k3sampleData midi;
     k3uploadBuffer cb_upload_move;
     k3buffer cb_move[NUM_VERSIONS];
     uint32_t cb_move_version;
@@ -70,6 +72,10 @@ void App::Setup()
     sound_sample1 = k3sampleDataObj::Create();
     sound_sample0->LoadFromFile("..\\test\\assets\\144862.mp3");
     sound_sample1->LoadFromFile("..\\test\\assets\\59992.flac");
+    sound_font = k3soundFontObj::Create();
+    sound_font->LoadFromFile("..\\test\\assets\\gm.sf2");
+    midi = k3midiLoadFromFile("..\\test\\assets\\mario1.mid");
+    sbuf->setSoundFont(sound_font);
     printf("Adapter: %s\n", gfx->AdapterName());
     printf("Raytracing Tier supported: %d\n", gfx->GetRayTracingSupport());
 
@@ -256,6 +262,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[1] -= 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
+            sbuf->AttachSampleStream(0, midi);
             break;
         case k3key::LEFT:
             cb_move_data = (float*)cb_upload_move->MapForWrite(4 * sizeof(float));

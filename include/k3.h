@@ -180,7 +180,8 @@ enum class k3objType {
     BIT_TRACKER,
     LLIST,
     LLIST_NODE,
-    SAMPLE_DATA
+    SAMPLE_DATA,
+    SOUND_FONT
 };
 
 class k3obj
@@ -1276,6 +1277,10 @@ class k3sampleDataImpl;
 class k3sampleDataObj;
 typedef k3ptr<k3sampleDataObj> k3sampleData;
 
+class k3soundFontImpl;
+class k3soundFontObj;
+typedef k3ptr<k3soundFontObj> k3soundFont;
+
 class k3sampleDataObj : public k3obj
 {
 private:
@@ -1294,10 +1299,36 @@ public:
 
     static K3API k3sampleData Create();
     void LoadFromFile(const char* filename);
-    void LoadFromFileHandle(FILE* fh, uint32_t size);
+    uint32_t LoadFromFileHandle(FILE* fh, uint32_t size);  // returns bytes read
+    void LoadFromMemory(const void* mem, uint32_t size);
+    void* newWrite(uint32_t size);
     uint32_t getDataLength() const;
     const void* getData() const;
 };
+
+class k3soundFontObj : public k3obj
+{
+private:
+    k3soundFontImpl* _data;
+
+public:
+    k3soundFontObj();
+    virtual ~k3soundFontObj();
+    k3soundFontImpl* getImpl();
+    const k3soundFontImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::SOUND_FONT;
+    }
+
+    static K3API k3soundFont Create();
+    void LoadFromFile(const char* filename);
+    void LoadFromFileHandle(FILE* fh);
+};
+
+K3API k3sampleData k3midiLoadFromFile(const char* filename);
+K3API k3sampleData k3midiLoadFromFileHandle(FILE* fh);
 
 class k3soundBufObj : public k3obj
 {
@@ -1323,6 +1354,7 @@ public:
     K3API uint32_t GetWritePosition();
     K3API void StopSBuffer();
 
+    K3API void setSoundFont(k3soundFont sf2);
     K3API void AttachSampleStream(uint32_t stream, k3sampleData sample);
     K3API void PlayStreams();
 };
