@@ -49,7 +49,7 @@ int k3_midi_parse_track(FILE* fh, k3_midi_header_t* header, k3_midi_event_t* tra
     uint32_t running_length = 0;
     uint32_t next_delta_time, delta_time = 0;
     int time = 0;
-    uint8_t i, c0, c1, event_type, meta_event_type, midi_channel, midi_event, ch;
+    uint8_t i, c0, c1, event_type = 0, meta_event_type, midi_channel, midi_event, ch;
     uint32_t length;
     int max_opl_channels = 16; // can go up to 18 in non-percussion mode, voice 15 is for percussion
     int num_opl_channel_used = 0;
@@ -310,17 +310,18 @@ void k3_midi_set_delta_time(k3_midi_event_t** e, uint32_t delta_time)
 }
 
 // combines 2 tracks into a single track
-void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, const k3_midi_event_t* src1, int* num_channels_used)
+void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, const k3_midi_event_t* src1, int* num_channels_used, uint32_t dest_size)
 {
-    bool src0_done = (src0->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
-    bool src1_done = (src1->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
     uint32_t src0_delta_time = k3_midi_get_delta_time(&src0);
     uint32_t src1_delta_time = k3_midi_get_delta_time(&src1);
+    bool src0_done = (src0->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
+    bool src1_done = (src1->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
     uint8_t channel_map[16];
     memset(channel_map, 0xFF, 16);
     channel_map[15] = 15;  // percussion must use this channel
     *num_channels_used = 0;
     uint32_t channels_used = 0x0;
+    uint32_t dest_written = 0;
 
     //printf("Start mix...\n");
     while (!src0_done || !src1_done) {
@@ -374,6 +375,10 @@ void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, cons
             }
         }
         dest++;
+        dest_written++;
+        if (dest_written >= dest_size) {
+            k3error::Handler("Dest overwritten", "k3_midi_mix_tracks");
+        }
     }
     // end the track
     dest->data = 0x0;
@@ -438,7 +443,7 @@ K3API k3sampleData k3midiLoadFromFileHandle(FILE* fh)
         mix_track0->f.command = K3_MIDI_META_EVENT_TYPE_END_TRACK;
         for (i = 0; i < midi_header.num_tracks; i++) {
             int num_events = k3_midi_parse_track(fh, &midi_header, new_track, &num_channels);
-            k3_midi_mix_tracks(mix_track1, mix_track0, new_track, &num_channels);
+            k3_midi_mix_tracks(mix_track1, mix_track0, new_track, &num_channels, total_events);
             final_track = mix_track1;
             mix_track1 = mix_track0;
             mix_track0 = final_track;
