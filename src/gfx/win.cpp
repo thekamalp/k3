@@ -784,7 +784,7 @@ K3API void k3soundBufObj::PlayStreams()
     bool streams_to_play = false;
     uint32_t s;
     for (s = 0; s < _data->_num_streams; s++) {
-        streams_to_play = streams_to_play || (_data->_stream[s].data_left);
+        streams_to_play = streams_to_play || (_data->_stream[s].stype != k3streamType::NONE);
     }
 
     uint32_t bytes_per_sample = _data->_bits_per_sample / 8;
@@ -820,7 +820,6 @@ K3API void k3soundBufObj::PlayStreams()
                             fx_flac_set_flag(_data->_stream[s].flac, FLAC_FLAG_BLEND_OUTPUT, !first_stream);
                             flac_state = fx_flac_process(_data->_stream[s].flac, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (flac_state == FLAC_ERR) {
-                                _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }
                             break;
@@ -828,7 +827,6 @@ K3API void k3soundBufObj::PlayStreams()
                             k3dspWavSetFlag(&_data->_stream[s].wav, K3_DSP_WAV_FLAG_BLEND_OUTPUT, !first_stream);
                             wav_state = k3dspWaveProcess(&_data->_stream[s].wav, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (wav_state == k3dspWavState::ERROR) {
-                                _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }
                             break;
@@ -836,7 +834,6 @@ K3API void k3soundBufObj::PlayStreams()
                             k3dspMidiSetFlag(&_data->_stream[s].midi, K3_DSP_MIDI_FLAG_BLEND_OUTPUT, !first_stream);
                             midi_state = k3dspMidiProcess(&_data->_stream[s].midi, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (midi_state == k3dspMidiState::ERROR) {
-                                _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }
                             break;
@@ -845,13 +842,11 @@ K3API void k3soundBufObj::PlayStreams()
                             mp3dec_decode(&_data->_stream[s].mp3, in_buf, &input_processed_size, out_buf, &output_processed_samples);
                             if (output_processed_samples == 0 && input_processed_size == 0) {
                                 // insufficient space, error
-                                _data->_stream[s].stype = k3streamType::NONE;
                                 _data->_stream[s].data_left = 0;
                             }
                             break;
                         default:
                             k3error::Handler("Unsupported stream type", "k3soundObj::PlayStreams");
-                            _data->_stream[s].stype = k3streamType::NONE;
                             _data->_stream[s].data_left = 0;
                             break;
                         }
@@ -859,6 +854,7 @@ K3API void k3soundBufObj::PlayStreams()
                         in_buf += input_processed_size;
                         _data->_stream[s].sample_offset += input_processed_size;
                         _data->_stream[s].data_left = (input_processed_size > _data->_stream[s].data_left) ? 0 : _data->_stream[s].data_left - input_processed_size;
+                        _data->_stream[s].stype = (_data->_stream[s].data_left) ? _data->_stream[s].stype : k3streamType::NONE;
                         out_buf += output_processed_samples;
                         out_buf_size = (output_processed_size > out_buf_size) ? 0 : out_buf_size - output_processed_size;
                     }
