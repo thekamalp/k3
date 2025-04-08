@@ -749,34 +749,44 @@ K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sampl
         k3error::Handler("Invalid stream", "k3soundBufObj::AttachSampleStream");
         return;
     }
-    const uint32_t* sample_data = (const uint32_t*)sample->getData();
+    const uint32_t* sample_data = NULL;
+    uint32_t sample_data_length = 0;
     _data->_stream[stream].stype = k3streamType::NONE;
-    if (sample_data) {
-        if (sample_data[0] == K3_STREAM_KEY_FLAC) {
-            _data->_stream[stream].stype = k3streamType::FLAC;
-            fx_flac_reset(_data->_stream[stream].flac);
-        } else if (sample_data[0] == K3_DSP_RIFF_CHUNK_ID) {
-            _data->_stream[stream].stype = k3streamType::WAV;
-            k3dspWavReset(&_data->_stream[stream].wav);
-            k3dspWavOutputChannels(&_data->_stream[stream].wav, 2);
-        } else if(sample_data[0] == K3_MIDI_HEADER_CHUNK_ID) {
-            if (sample_data[1] == K3_MIDI_TRACK_CHUNK_ID) {
-                _data->_stream[stream].stype = k3streamType::MIDI;
-                k3dspMidiReset(&_data->_stream[stream].midi);
-                k3dspMidiSetSoundFont(&_data->_stream[stream].midi, _data->sf2);
-                k3dspMidiOutputChannels(&_data->_stream[stream].midi, 2);
-            } else {
-                k3error::Handler("Midi stream not parsed; use k3midiLoadFromFile", "k3soundBufObj::AttachSampleStream");
+    if (sample != NULL) {
+        sample_data = (const uint32_t*)sample->getData();
+        if (sample_data) {
+            sample_data_length = sample->getDataLength();
+            if (sample_data[0] == K3_STREAM_KEY_FLAC) {
+                _data->_stream[stream].stype = k3streamType::FLAC;
+                fx_flac_reset(_data->_stream[stream].flac);
+            } else if (sample_data[0] == K3_DSP_RIFF_CHUNK_ID) {
+                _data->_stream[stream].stype = k3streamType::WAV;
+                k3dspWavReset(&_data->_stream[stream].wav);
+                k3dspWavOutputChannels(&_data->_stream[stream].wav, 2);
+            } else if (sample_data[0] == K3_MIDI_HEADER_CHUNK_ID) {
+                if (sample_data[1] == K3_MIDI_TRACK_CHUNK_ID) {
+                    _data->_stream[stream].stype = k3streamType::MIDI;
+                    k3dspMidiReset(&_data->_stream[stream].midi);
+                    k3dspMidiSetSoundFont(&_data->_stream[stream].midi, _data->sf2);
+                    k3dspMidiOutputChannels(&_data->_stream[stream].midi, 2);
+                } else {
+                    k3error::Handler("Midi stream not parsed; use k3midiLoadFromFile", "k3soundBufObj::AttachSampleStream");
+                }
+            } else if ((sample_data[0] & K3_DSP_ID3_TAG_MASK) == K3_DSP_ID3_TAG) {
+                _data->_stream[stream].stype = k3streamType::MP3;
+                mp3dec_init(&_data->_stream[stream].mp3);
+                mp3dec_set_output_channels(&_data->_stream[stream].mp3, 2);
             }
-        } else if ((sample_data[0] & K3_DSP_ID3_TAG_MASK) == K3_DSP_ID3_TAG) {
-            _data->_stream[stream].stype = k3streamType::MP3;
-            mp3dec_init(&_data->_stream[stream].mp3);
-            mp3dec_set_output_channels(&_data->_stream[stream].mp3, 2);
         }
     }
     _data->_stream[stream].sample = sample;
     _data->_stream[stream].sample_offset = 0;
-    _data->_stream[stream].data_left = sample->getDataLength();
+    _data->_stream[stream].data_left = sample_data_length;
+}
+
+K3API bool k3soundBufObj::isStreamPlaying(uint32_t stream)
+{
+    return (_data->_stream[stream].stype != k3streamType::NONE);
 }
 
 K3API void k3soundBufObj::PlayStreams()
@@ -863,6 +873,9 @@ K3API void k3soundBufObj::PlayStreams()
                         memset(((uint8_t*)orig_out_buf) + half_buf_size - out_buf_size, 0, out_buf_size);
                     }
                     first_stream = false;
+                } else {
+                    // if no sample data, set stream type to none
+                    _data->_stream[s].stype = k3streamType::NONE;
                 }
             }
             _data->_write_pos = (wr_pos) ? 0 : half_buf_size;

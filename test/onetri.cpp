@@ -276,6 +276,7 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             cb_move_data[0] += 0.10f;
             cb_upload_move->Unmap();
             cb_move_dirty = true;
+            sbuf->AttachSampleStream(1, NULL);
             break;
         }
     }
