@@ -279,6 +279,8 @@ enum class k3dspMidiState {
 static const uint32_t K3_DSP_MIDI_FLAG_BLEND_OUTPUT = 0;
 static const uint32_t K3_DSP_NUM_VOICES = 20;
 static const uint32_t K3_DSP_NUM_MELODIC_VOICES = 15;
+static const uint32_t K3_DSP_PERCUSSIVE_VOICE = K3_DSP_NUM_MELODIC_VOICES;
+static const uint32_t K3_DSP_TRACKED_VOICES = K3_DSP_NUM_MELODIC_VOICES + 1;  // +1 for percussion
 static const uint32_t K3_DSP_NUM_PERCUSSIVE_VOICES = K3_DSP_NUM_VOICES - K3_DSP_NUM_MELODIC_VOICES;
 static const uint32_t K3_DSP_DEFAULT_SAMPLES_PER_MIDI_TICK = 240;
 

@@ -51,16 +51,14 @@ int k3_midi_parse_track(FILE* fh, k3_midi_header_t* header, k3_midi_event_t* tra
     int time = 0;
     uint8_t i, c0, c1, event_type = 0, meta_event_type, midi_channel, midi_event, ch;
     uint32_t length;
-    int max_opl_channels = 16; // can go up to 18 in non-percussion mode, voice 15 is for percussion
     int num_opl_channel_used = 0;
-    uint8_t midi_channel_voice[16] = { 0 };
-    uint8_t midi_channel_volume[16] = { 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F,
-                                       0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F };
-    k3_midi_opl_channel_t opl_channel[18];
-    memset(opl_channel, -1, 18 * sizeof(k3_midi_opl_channel_t));
-    opl_channel[15].midi_channel = 9; // percussion
-    k3_midi_event_t* op_channel_last_note_off_event[18] = { NULL }; // indicate last event where a note was turned off
-    int op_channel_last_note_off_time[18] = { 0 };  // indicates last time a note was turned off
+    uint8_t midi_channel_note[K3_MIDI_NUM_CHANNELS] = { 0 };
+    uint8_t midi_channel_mapped[K3_MIDI_NUM_CHANNELS] = { 0 };
+    uint8_t midi_channel_voice[K3_MIDI_NUM_CHANNELS] = { 0 };
+    uint8_t midi_channel_volume[K3_MIDI_NUM_CHANNELS];
+    memset(midi_channel_volume, 0x7f, K3_MIDI_NUM_CHANNELS);
+    k3_midi_event_t* op_channel_last_note_off_event[K3_MIDI_NUM_CHANNELS] = { NULL }; // indicate last event where a note was turned off
+    int op_channel_last_note_off_time[K3_MIDI_NUM_CHANNELS] = { 0 };  // indicates last time a note was turned off
     int op_channel_reset_threshold_time = 16 * header->division;
 
     k3_midi_fread_bigend(fh, &chunk_type, sizeof(uint32_t));
@@ -112,7 +110,7 @@ int k3_midi_parse_track(FILE* fh, k3_midi_header_t* header, k3_midi_event_t* tra
                             running_length += fread(&cur_event->f.data0, 1, 1, fh);
                         }
                         if (meta_event_type == K3_MIDI_META_EVENT_TYPE_END_TRACK) {
-                            for (i = *base_opl_channel; i < max_opl_channels; i++) {
+                            for (i = 0; i < K3_MIDI_NUM_CHANNELS; i++) {
                                 if (op_channel_last_note_off_event[i]) {
                                     op_channel_last_note_off_event[i]->f.data1 = 0xFF;
                                 }
@@ -166,96 +164,77 @@ int k3_midi_parse_track(FILE* fh, k3_midi_header_t* header, k3_midi_event_t* tra
                 // Midi messages - channel set in lower 4 bits of event_type
                 switch (midi_event) {
                 case K3_MIDI_MSG_NOTE_OFF:
-                    for (i = *base_opl_channel; i < max_opl_channels; i++) {
-                        if (opl_channel[i].midi_channel == midi_channel && (opl_channel[i].note == c0 || i == 15)) {
-                            if (cur_event) {
-                                op_channel_last_note_off_event[i] = cur_event;
-                                cur_event->f.delta_time = (uint8_t)delta_time;
-                                cur_event->f.command = midi_event | i;
-                                cur_event->f.data0 = c0;
-                                cur_event->f.data1 = 0x0;
-                                cur_event++;
-                            }
-                            op_channel_last_note_off_time[i] = time;
-                            opl_channel[i].note = -1;
-                            num_events++;
-                            delta_time = 0;
+                    i = K3_MIDI_CHANNEL_REMAP(midi_channel);
+                    if (midi_channel_mapped[midi_channel] == 1 && (midi_channel_note[midi_channel] == c0 || i == K3_DSP_PERCUSSIVE_VOICE)) {
+                        if (cur_event) {
+                            op_channel_last_note_off_event[i] = cur_event;
+                            cur_event->f.delta_time = (uint8_t)delta_time;
+                            cur_event->f.command = midi_event | i;
+                            cur_event->f.data0 = c0;
+                            cur_event->f.data1 = 0x0;
+                            cur_event++;
                         }
+                        op_channel_last_note_off_time[i] = time;
+                        midi_channel_note[midi_channel] = -1;
+                        num_events++;
+                        delta_time = 0;
                     }
                     break;
 
                 case K3_MIDI_MSG_NOTE_ON:
-                    ch = 0xFF;
-                    for (i = *base_opl_channel; i < max_opl_channels; i++) {
-                        if (opl_channel[i].midi_channel == midi_channel && (opl_channel[i].note == -1 || i == 15)) {
-                            ch = i;
-                            break;
+                    ch = K3_MIDI_CHANNEL_REMAP(midi_channel);
+                    if ((midi_channel_mapped[midi_channel] == 0) || ((time - op_channel_last_note_off_time[ch]) > op_channel_reset_threshold_time)) {
+                        if (op_channel_last_note_off_event[ch]) {
+                            op_channel_last_note_off_event[ch]->f.data1 = 0xFF;
                         }
-                        if (opl_channel[i].midi_channel == -1 && ch == 0xFF) {
-                            ch = i;
-                        }
-                    }
-                    if (ch != 0xFF) {
-                        if ((opl_channel[ch].midi_channel == -1) || ((time - op_channel_last_note_off_time[ch]) > op_channel_reset_threshold_time)) {
-                            if (op_channel_last_note_off_event[ch]) {
-                                op_channel_last_note_off_event[ch]->f.data1 = 0xFF;
-                            }
-                            if (cur_event) {
-                                cur_event->f.delta_time = (uint8_t)delta_time;
-                                cur_event->f.command = K3_MIDI_MSG_PROGRAM_CHANGE | ch;
-                                cur_event->f.data0 = midi_channel_voice[midi_channel];
-                                cur_event++;
-                            }
-                            opl_channel[ch].midi_channel = midi_channel;
-                            num_events++;
-                            delta_time = 0;
-                        }
-                        op_channel_last_note_off_event[ch] = NULL;
-                        op_channel_last_note_off_time[ch] = 0x7FFFFFFF;
                         if (cur_event) {
                             cur_event->f.delta_time = (uint8_t)delta_time;
-                            cur_event->f.command = midi_event | ch;
-                            cur_event->f.data0 = c0;
-                            cur_event->f.data1 = (c1 * midi_channel_volume[midi_channel]) >> 7;
+                            cur_event->f.command = K3_MIDI_MSG_PROGRAM_CHANGE | ch;
+                            cur_event->f.data0 = midi_channel_voice[midi_channel];
                             cur_event++;
                         }
-                        opl_channel[ch].note = c0;
+                        midi_channel_mapped[midi_channel] = 1;
                         num_events++;
                         delta_time = 0;
-                        if (ch >= num_opl_channel_used) num_opl_channel_used = ch + 1;
-                    } else {
-                        //printf("fpos 0x%x (d %d, t %d): ", cur_file_pos, next_delta_time, time);
-                        k3error::Handler("Midi: unable to find free voice!", "k3_midi_parse_track");
                     }
+                    op_channel_last_note_off_event[ch] = NULL;
+                    op_channel_last_note_off_time[ch] = 0x7FFFFFFF;
+                    if (cur_event) {
+                        cur_event->f.delta_time = (uint8_t)delta_time;
+                        cur_event->f.command = midi_event | ch;
+                        cur_event->f.data0 = c0;
+                        cur_event->f.data1 = (c1 * midi_channel_volume[midi_channel]) >> 7;
+                        cur_event++;
+                    }
+                    midi_channel_note[midi_channel] = c0;
+                    num_events++;
+                    delta_time = 0;
+                    if (ch >= num_opl_channel_used) num_opl_channel_used = ch + 1;
                     break;
 
                     //case K3_MIDI_MSG_CONTROL_CHANGE:
                 case K3_MIDI_MSG_PITCH_WHEEL:
-                    for (i = *base_opl_channel; i < max_opl_channels; i++) {
-                        if (opl_channel[i].midi_channel == midi_channel) {
-                            if (cur_event) {
-                                cur_event->f.delta_time = (uint8_t)delta_time;
-                                cur_event->f.command = midi_event | i;
-                                cur_event->f.data0 = c0;
-                                cur_event->f.data1 = c1;
-                                cur_event++;
-                            }
-                            //op_channel_last_note_off_event[i] = NULL;
-                            //op_channel_last_note_off_time[i] = 0x7FFFFFFF;
-                            num_events++;
-                            delta_time = 0;
+                    i = K3_MIDI_CHANNEL_REMAP(midi_channel);
+                    if (midi_channel_mapped[midi_channel] == 1) {
+                        if (cur_event) {
+                            cur_event->f.delta_time = (uint8_t)delta_time;
+                            cur_event->f.command = midi_event | i;
+                            cur_event->f.data0 = c0;
+                            cur_event->f.data1 = c1;
+                            cur_event++;
                         }
+                        //op_channel_last_note_off_event[i] = NULL;
+                        //op_channel_last_note_off_time[i] = 0x7FFFFFFF;
+                        num_events++;
+                        delta_time = 0;
                     }
                     break;
 
                 case K3_MIDI_MSG_PROGRAM_CHANGE:
-                    if (midi_channel != 9) {
+                    if (midi_channel != K3_MIDI_PERCUSSION_CHANNEL) {
                         midi_channel_voice[midi_channel] = c0;
-                        for (i = *base_opl_channel; i < max_opl_channels; i++) {
-                            if (opl_channel[i].midi_channel == midi_channel) {
-                                opl_channel[i].midi_channel = -1;
-                            }
-                        }
+                        i = K3_MIDI_CHANNEL_REMAP(midi_channel);
+                        midi_channel_mapped[midi_channel] = 0;
                     }
                     break;
 
@@ -316,12 +295,14 @@ void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, cons
     uint32_t src1_delta_time = k3_midi_get_delta_time(&src1);
     bool src0_done = (src0->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
     bool src1_done = (src1->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK);
-    uint8_t channel_map[16];
-    memset(channel_map, 0xFF, 16);
-    channel_map[15] = 15;  // percussion must use this channel
+    uint8_t channel_map[2][16];
+    memset(channel_map, 0xFF, 32);
+    channel_map[0][K3_DSP_PERCUSSIVE_VOICE] = K3_DSP_PERCUSSIVE_VOICE;  // percussion must use this channel
+    channel_map[1][K3_DSP_PERCUSSIVE_VOICE] = K3_DSP_PERCUSSIVE_VOICE;  // percussion must use this channel
     *num_channels_used = 0;
     uint32_t channels_used = 0x0;
     uint32_t dest_written = 0;
+    uint32_t src_ch;
 
     //printf("Start mix...\n");
     while (!src0_done || !src1_done) {
@@ -334,6 +315,7 @@ void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, cons
             src1_delta_time -= src0_delta_time;
             src0_delta_time = k3_midi_get_delta_time(&src0);
             if (src0->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK) src0_done = true;
+            src_ch = 0;
         } else {
             k3_midi_set_delta_time(&dest, src1_delta_time);
             dest->data &= 0xFF000000;
@@ -343,12 +325,13 @@ void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, cons
             src0_delta_time -= src1_delta_time;
             src1_delta_time = k3_midi_get_delta_time(&src1);
             if (src1->f.command == K3_MIDI_META_EVENT_TYPE_END_TRACK) src1_done = true;
+            src_ch = 1;
         }
         if (dest->f.command & 0x80) {
             // midi event - need to remap channels
             uint8_t channel = dest->f.command & 0xF;
             // check if channel is unmapped
-            if (channel_map[channel] == 0xFF) {
+            if (channel_map[src_ch][channel] == 0xFF) {
                 // if unmapped, allocate the first available channel
                 int i;
                 // pick the first available channel
@@ -357,21 +340,25 @@ void k3_midi_mix_tracks(k3_midi_event_t* dest, const k3_midi_event_t* src0, cons
                         break;
                     }
                 }
-                // assign the mapping
-                channel_map[channel] = i;
-                channels_used |= (1 << i);
-                //printf("alloc ch %d to %d  cmd: 0x%x\n", channel, i, dest->f.command & 0xF0);
-                // if this is the highest channel we've assigned, set num channels used field
-                if (i >= *num_channels_used) *num_channels_used = i + 1;
+                if (i < 16) {
+                    // assign the mapping
+                    channel_map[src_ch][channel] = i;
+                    channels_used |= (1 << i);
+                    //printf("alloc ch %d to %d  cmd: 0x%x\n", channel, i, dest->f.command & 0xF0);
+                    // if this is the highest channel we've assigned, set num channels used field
+                    if (i >= *num_channels_used) *num_channels_used = i + 1;
+                } else {
+                    k3error::Handler("Out of voices", "k3_midi_mix_tracks");
+                }
             }
             dest->f.command &= 0xF0;
-            dest->f.command |= channel_map[channel] & 0xF;
+            dest->f.command |= channel_map[src_ch][channel] & 0xF;
             // if we have a note off, with the marker indicating we're done with channel,
             // then clear the mapping
             if (((dest->f.command & 0xF0) == K3_MIDI_MSG_NOTE_OFF) && (dest->f.data1 == 0xFF)) {
-                //printf("freeing ch %d from %d\n", channel, channel_map[channel]);
-                channels_used &= ~(1 << channel_map[channel]);
-                channel_map[channel] = 0xFF;
+                //printf("freeing ch %d from %d\n", channel, channel_map[src_ch][channel]);
+                channels_used &= ~(1 << channel_map[src_ch][channel]);
+                channel_map[src_ch][channel] = 0xFF;
             }
         }
         dest++;
@@ -634,7 +621,7 @@ k3dspMidiState k3dspMidiProcess(k3_dsp_midi_t* midi, const uint8_t* in_stream, u
                     // Channel events
                     switch (cur_event->f.command & 0xF0) {
                     case K3_MIDI_MSG_NOTE_OFF:
-                        if (channel != 15) {
+                        if (channel != K3_DSP_PERCUSSIVE_VOICE) {
                             // non-percussive
                             if (midi->vox[channel].cur_vol_env != K3_DSP_VOL_ENV_OFF) {
                                 midi->vox[channel].cur_vol_env = K3_DSP_VOL_ENV_RELEASE;
@@ -660,7 +647,7 @@ k3dspMidiState k3dspMidiProcess(k3_dsp_midi_t* midi, const uint8_t* in_stream, u
                         }
                         break;
                     case K3_MIDI_MSG_NOTE_ON:
-                        if (channel != 15) {
+                        if (channel != K3_DSP_PERCUSSIVE_VOICE) {
                             // non-percussive
                             // find a preset for the note being played
                             for (midi->vox[channel].preset = midi->vox[channel].base_preset; midi->vox[channel].preset != NULL; midi->vox[channel].preset = midi->vox[channel].preset->next) {
@@ -747,7 +734,7 @@ k3dspMidiState k3dspMidiProcess(k3_dsp_midi_t* midi, const uint8_t* in_stream, u
                         }
                         break;
                     case K3_MIDI_MSG_PROGRAM_CHANGE:
-                        if (channel != 15) {
+                        if (channel != K3_DSP_PERCUSSIVE_VOICE) {
                             // non-precussive
                             midi->vox[channel].base_preset = sf2->presets[note]->GetHead();
                         }

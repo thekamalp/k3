@@ -29,6 +29,10 @@
 
 #define K3_MIDI_CTRL_MAIN_VOLUME                0x07
 
+#define K3_MIDI_NUM_CHANNELS                    16
+#define K3_MIDI_PERCUSSION_CHANNEL              9
+#define K3_MIDI_CHANNEL_REMAP(x)                (((x) < K3_MIDI_PERCUSSION_CHANNEL) ? (x) : (((x) == K3_MIDI_PERCUSSION_CHANNEL) ? K3_DSP_PERCUSSIVE_VOICE : (x) - 1))
+
 #pragma pack(push, 1)
 
 typedef struct {
@@ -40,13 +44,6 @@ typedef struct {
 } k3_midi_header_t;
 
 #pragma pack(pop)
-
-typedef struct {
-    int8_t note; // -1 if off
-    int8_t midi_channel; // -1 if none assigned
-    int8_t voice;  // -1 if none assigned
-    int8_t reserved;
-} k3_midi_opl_channel_t;
 
 typedef struct {
     uint8_t data0;
