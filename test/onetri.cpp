@@ -68,12 +68,9 @@ void App::Setup()
 
     gfx = win->GetGfx();
     sbuf = win->CreateSoundBuffer(2, 44100, 16, 8192, 2);
-    sound_sample0 = k3sampleDataObj::Create();
-    sound_sample1 = k3sampleDataObj::Create();
-    sound_sample0->LoadFromFile("..\\test\\assets\\144862.mp3");
-    sound_sample1->LoadFromFile("..\\test\\assets\\59992.flac");
-    sound_font = k3soundFontObj::Create();
-    sound_font->LoadFromFile("..\\test\\assets\\gm.sf2");
+    sound_sample0 = k3sampleDataObj::CreateFromFile("..\\test\\assets\\144862.mp3");
+    sound_sample1 = k3sampleDataObj::CreateFromFile("..\\test\\assets\\59992.flac");
+    sound_font = k3soundFontObj::CreateFromFile("..\\test\\assets\\gm.sf2");
     midi = k3midiLoadFromFile("..\\test\\assets\\mario1.mid");
     sbuf->setSoundFont(sound_font);
     printf("Adapter: %s\n", gfx->AdapterName());

@@ -278,6 +278,19 @@ K3API k3soundFont k3soundFontObj::Create()
     return sf;
 }
 
+K3API k3soundFont k3soundFontObj::CreateFromFile(const char* filename)
+{
+    k3soundFont sf = Create();
+    sf->LoadFromFile(filename);
+    return sf;
+}
+K3API k3soundFont k3soundFontObj::CreateFromFileHandle(FILE* fh)
+{
+    k3soundFont sf = Create();
+    sf->LoadFromFileHandle(fh);
+    return sf;
+}
+
 void k3soundFontObj::LoadFromFile(const char* filename)
 {
     if (filename == NULL) {

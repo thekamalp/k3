@@ -637,6 +637,20 @@ K3API k3sampleData k3sampleDataObj::Create()
     return sample;
 }
 
+K3API k3sampleData k3sampleDataObj::CreateFromFile(const char* filename)
+{
+    k3sampleData sample = Create();
+    sample->LoadFromFile(filename);
+    return sample;
+}
+
+K3API k3sampleData k3sampleDataObj::CreateFromFileHandle(FILE* fh, uint32_t size)
+{
+    k3sampleData sample = Create();
+    sample->LoadFromFileHandle(fh, size);
+    return sample;
+}
+
 void k3sampleDataObj::LoadFromFile(const char* filename)
 {
     FILE* fh = fopen(filename, "r");

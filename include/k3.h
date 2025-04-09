@@ -1298,6 +1298,8 @@ public:
     }
 
     static K3API k3sampleData Create();
+    static K3API k3sampleData CreateFromFile(const char* filename);
+    static K3API k3sampleData CreateFromFileHandle(FILE* fh, uint32_t size);
     void LoadFromFile(const char* filename);
     uint32_t LoadFromFileHandle(FILE* fh, uint32_t size);  // returns bytes read
     void LoadFromMemory(const void* mem, uint32_t size);
@@ -1323,6 +1325,8 @@ public:
     }
 
     static K3API k3soundFont Create();
+    static K3API k3soundFont CreateFromFile(const char* filename);
+    static K3API k3soundFont CreateFromFileHandle(FILE* fh);
     void LoadFromFile(const char* filename);
     void LoadFromFileHandle(FILE* fh);
 };
