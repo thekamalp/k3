@@ -87,6 +87,7 @@ void App::Setup()
 
     _chdir("..\\test\\assets");
     const char* custom_prop_names[] = { "Solid" };
+    const char* custom_anim_prop_names[] = { "interesting_number", "interesting_string" };
     k3meshDesc mdesc = {};
     mdesc.view_index = view_index;
     mdesc.cmd_buf = cmd_buf;
@@ -94,6 +95,8 @@ void App::Setup()
     mdesc.name = "anim_cyl.fbx";
     mdesc.num_custom_model_props = 1;
     mdesc.custom_model_prop_name = custom_prop_names;
+    mdesc.num_custom_anim_props = 2;
+    mdesc.custom_anim_prop_name = custom_anim_prop_names;
     scene = gfx->CreateMesh(&mdesc);
     view_index = mdesc.view_index;
     _chdir("..\\..\\bin");
@@ -375,6 +378,7 @@ void App::UpdateResources(uint32_t v)
 
 void App::Keyboard(k3key k, char c, k3keyState state)
 {
+    const char* str = NULL;
     if (state == k3keyState::PRESSED) {
         float rot_axis[3] = { 0.0f, 0.0f, 1.0f };
         float new_xform[16];
@@ -403,7 +407,13 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             break;
         case k3key::SPACE:
             anim = !anim;
-            printf("Anim: %s\n", scene->getAnimName(anim));
+            printf("Anim: %s interesting_numer: %d", scene->getAnimName(anim), scene->getAnimCustomProp(anim, 0).i);
+            str = scene->getAnimCustomPropString(anim, 1);
+            if (str) {
+                printf(" interesting_string: %s\n", str);
+            } else {
+                printf("\n");
+            }
             break;
         }
     }

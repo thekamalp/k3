@@ -1,0 +1,70 @@
+The FBX import functions were tested using files exported from Blender 4.1.
+
+############################################
+####### FBX export settings ################
+############################################
+
+Path Mode: Relative was used, but any mode should work, including copy (embedded assets)
+Batch Mode: Off was used, never tested using anything else, but should work (?)
+
+Limited to: none of Selected Objects, Visible Objects, or Active Collections are set, but shoudl work if they are
+Object Types: Empty, Camera, Lamp, Armature, Mesh are selected, Other is not; should work with any combination
+Custom properties is selected, should work if not
+
+Transform
+Scale: 1.0, but should work with any value
+Apply Scalings: FBX All (must be set to this)
+Forward: Y Forward (must be set to this)
+Up: Z Up (must be set to this)
+Apply Transform: set (must bet set)
+Use Space Transform: set (must be set)
+Apply Transform: not set (must not be set)
+
+Geometry
+Smoothing: Normals (others may work, but haven't tested)
+Apply Modifiers: set (may work with it not set)
+Loose Edge: not set (not sure what this does)
+Triangulate Faces: set (should work with it not set; importer does triangulation, but better to do it asset creation, and not as well tested)
+Tangent Space: set (shoujld work with it not set, but not as well tested)
+Vertex Color: sRGB (not sure what this does, probably not relevant)
+Prioritize Active Color: not set (not sure what it does, probably not relevant)
+
+Armature
+Primary Bone: Y axis (must be this)
+Secondary Bone: X axis (must be this)
+Armature FBXNode type: Null (must be this)
+Only Deform Bones: set (should be set)
+Add Leaf Bones: not set (should not be set)
+
+Bake Animations: set (should be set)
+Kay All Bones: not set (must not be set)
+NLA Strips: not set (should not be set)
+All Actions: set (must be set for deformable objects, for levels, should not be set)
+Force Start/End Keying: set (must be set)
+Sampling Rate: 5.0 (can be anything; use 5.0 for deformable objects, 15.0 for levels)
+Simplify: 1.0 (not sure what this does, probably can be anything)
+
+
+############################################
+####### FBX action custom properties #######
+############################################
+
+Blender 4.1's fbx exported does not export custom properties for actions.  To do so, the exporter must be modified.  Go to:
+scripts\addons\io_scene_fbx\export_fbx_bin.py
+
+In function fbx_data_animation_elements:
+
+After:
+        # For now, only one layer for all animations.
+        alayer = elem_data_single_int64(root, b"AnimationLayer", get_fbx_uuid_from_key(alayer_key))
+        alayer.add_string(fbx_name_class(name, b"AnimLayer"))
+        alayer.add_string(b"")
+
+Add this:
+        # Custom properties.
+        if scene_data.settings.use_custom_props:
+            act_name = name.decode("utf-8").partition("|")[2]
+            act = bpy.data.actions[act_name]
+            if act is not None:
+                fbx_data_element_custom_properties(astack_props, act)
+

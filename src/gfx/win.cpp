@@ -1037,6 +1037,7 @@ k3meshImpl::k3meshImpl()
 {
     _num_meshes = 0;
     _num_model_custom_props = 0;
+    _num_anim_custom_props = 0;
     _num_custom_prop_strings = 0;
     _num_models = 0;
     _num_tris = 0;
@@ -1052,6 +1053,7 @@ k3meshImpl::k3meshImpl()
     _model = NULL;
     _model_custom_props = NULL;
     _empty_custom_props = NULL;
+    _anim_custom_props = NULL;
     _custom_prop_strings = NULL;
     _textures = NULL;
     _cameras = NULL;
@@ -1087,6 +1089,10 @@ k3meshImpl::~k3meshImpl()
     if (_empty_custom_props) {
         delete[] _empty_custom_props;
         _empty_custom_props = NULL;
+    }
+    if (_anim_custom_props) {
+        delete[] _anim_custom_props;
+        _anim_custom_props = NULL;
     }
     if (_custom_prop_strings) {
         uint32_t i;
@@ -1385,6 +1391,28 @@ K3API const char* k3meshObj::getEmptyCustomPropString(uint32_t empty, uint32_t c
 {
     if (empty < _data->_num_empties && custom_prop_index < _data->_num_model_custom_props) {
         uint32_t str_index = _data->_empty_custom_props[empty * _data->_num_model_custom_props + custom_prop_index].ui - 1;
+        if (str_index < _data->_num_custom_prop_strings) {
+            return _data->_custom_prop_strings[str_index];
+        }
+    }
+    return NULL;
+}
+
+K3API k3flint32 k3meshObj::getAnimCustomProp(uint32_t anim, uint32_t custom_prop_index)
+{
+    if (anim < _data->_num_anims && custom_prop_index < _data->_num_anim_custom_props) {
+        return _data->_anim_custom_props[anim * _data->_num_anim_custom_props + custom_prop_index];
+    } else {
+        k3flint32 n;
+        n.i = 0;
+        return n;
+    }
+}
+
+K3API const char* k3meshObj::getAnimCustomPropString(uint32_t anim, uint32_t custom_prop_index)
+{
+    if (anim < _data->_num_anims && custom_prop_index < _data->_num_anim_custom_props) {
+        uint32_t str_index = _data->_anim_custom_props[anim * _data->_num_anim_custom_props + custom_prop_index].ui - 1;
         if (str_index < _data->_num_custom_prop_strings) {
             return _data->_custom_prop_strings[str_index];
         }
@@ -2466,7 +2494,7 @@ K3API const float* k3meshObj::getVertSkin(uint32_t model, uint32_t vert)
 
 
 
-#define K3_FBX_DEBUG 0
+#define K3_FBX_DEBUG 1
 
 enum class k3fbxNodeType {
     UNKNOWN,
@@ -2734,6 +2762,8 @@ struct k3fbxPoseNode {
 struct k3fbxCustomPropDesc {
     uint32_t num_model_custom_props;
     const char** model_custom_prop_name;
+    uint32_t num_anim_custom_props;
+    const char** anim_custom_prop_name;
 };
 
 struct k3fbxData {
@@ -2778,6 +2808,7 @@ struct k3fbxData {
     k3fbxMeshData* mesh;
     k3fbxModelData* model;
     k3flint32* model_custom_prop;
+    k3flint32* anim_custom_prop;
     char** custom_prop_strings;
     k3fbxMaterialData* material;
     k3fbxTextureData* texture;
@@ -3163,6 +3194,7 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
     uint64_t connect_id[3];
     k3fbxProperty fbx_property = k3fbxProperty::NONE;
     uint32_t fbx_custom_prop_index = 0;
+    k3fbxNodeType fbx_custom_prop_type = k3fbxNodeType::UNKNOWN;
     uint32_t fbx_property_argument = 0;
     uint32_t fbx_node_argument = 0;
     uint64_t node_attrib_id;
@@ -3445,8 +3477,13 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         }
                         break;
                     case k3fbxProperty::CUSTOM_PROP:
-                        if (fbx->model && fbx_property_argument < 1) {
+                        if (fbx->model && fbx_property_argument < 1 && fbx_custom_prop_type == k3fbxNodeType::OBJECTS) {
                             fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].i = *i32_arr;
+                            fbx_property_argument++;
+                        } else if (fbx->anim_layer && fbx_property_argument < 1 && fbx_custom_prop_type == k3fbxNodeType::ANIMATION_LAYER) {
+                            // don't subtract 1 from num_anim_layers because the custom property is on the AnimationStack, before the corresponding
+                            // AnimationLayer has been created
+                            fbx->anim_custom_prop[fbx->num_anim_layers * custom_props->num_anim_custom_props + fbx_custom_prop_index].i = *i32_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -3605,8 +3642,13 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                         }
                         break;
                     case k3fbxProperty::CUSTOM_PROP:
-                        if (fbx->model && fbx_property_argument < 1) {
+                        if (fbx->model && fbx_property_argument < 1 && fbx_custom_prop_type == k3fbxNodeType::OBJECTS) {
                             fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].f = *f32_arr;
+                            fbx_property_argument++;
+                        } else if (fbx->anim_layer && fbx_property_argument < 1 && fbx_custom_prop_type == k3fbxNodeType::ANIMATION_LAYER) {
+                            // don't subtract 1 from num_anim_layers because the custom property is on the AnimationStack, before the corresponding
+                            // AnimationLayer has been created
+                            fbx->anim_custom_prop[fbx->num_anim_layers * custom_props->num_anim_custom_props + fbx_custom_prop_index].f = *f32_arr;
                             fbx_property_argument++;
                         }
                         break;
@@ -4129,6 +4171,14 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                             for (i = 0; i < custom_props->num_model_custom_props && fbx_property != k3fbxProperty::CUSTOM_PROP; i++) {
                                 if (!strncmp(str, custom_props->model_custom_prop_name[i], K3_FBX_MAX_NAME_LENGTH)) {
                                     fbx_property = k3fbxProperty::CUSTOM_PROP;
+                                    fbx_custom_prop_type = k3fbxNodeType::OBJECTS;
+                                    fbx_custom_prop_index = i;
+                                }
+                            }
+                            for (i = 0; i < custom_props->num_anim_custom_props && fbx_property != k3fbxProperty::CUSTOM_PROP; i++) {
+                                if (!strncmp(str, custom_props->anim_custom_prop_name[i], K3_FBX_MAX_NAME_LENGTH)) {
+                                    fbx_property = k3fbxProperty::CUSTOM_PROP;
+                                    fbx_custom_prop_type = k3fbxNodeType::ANIMATION_LAYER;
                                     fbx_custom_prop_index = i;
                                 }
                             }
@@ -4143,7 +4193,16 @@ void readFbxNode(k3fbxData* fbx, k3fbxNodeType parent_node, uint32_t level, FILE
                                 if (str_len > K3_FBX_MAX_NAME_LENGTH) str_len = K3_FBX_MAX_NAME_LENGTH;
                                 fbx->custom_prop_strings[fbx->num_custom_prop_strings - 1] = new char[str_len];
                                 strncpy(fbx->custom_prop_strings[fbx->num_custom_prop_strings - 1], str, str_len);
-                                fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].ui = fbx->num_custom_prop_strings;
+                                switch (fbx_custom_prop_type) {
+                                case k3fbxNodeType::OBJECTS:
+                                    fbx->model_custom_prop[(fbx->num_models - 1) * custom_props->num_model_custom_props + fbx_custom_prop_index].ui = fbx->num_custom_prop_strings;
+                                    break;
+                                case k3fbxNodeType::ANIMATION_LAYER:
+                                    // don't subtract 1 from num_anim_layers because the custom property is on the AnimationStack, before the corresponding
+                                    // AnimationLayer has been created
+                                    fbx->anim_custom_prop[fbx->num_anim_layers * custom_props->num_anim_custom_props + fbx_custom_prop_index].ui = fbx->num_custom_prop_strings;
+                                    break;
+                                }
                             }
                             if (fbx_property_argument > 0 && str_len > 1) {
                                 fbx_property_argument++;
@@ -4479,6 +4538,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     k3fbxCustomPropDesc custom_props;
     custom_props.num_model_custom_props = desc->num_custom_model_props;
     custom_props.model_custom_prop_name = desc->custom_model_prop_name;
+    custom_props.num_anim_custom_props = desc->num_custom_anim_props;
+    custom_props.anim_custom_prop_name = desc->custom_anim_prop_name;
     readFbxNode(&fbx, k3fbxNodeType::UNKNOWN, 0, in_file, &custom_props);
     fbx.mesh = new k3fbxMeshData[fbx.num_meshes];
     fbx.model = new k3fbxModelData[fbx.num_models];
@@ -4508,6 +4569,8 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         for (i = 0; i < fbx.num_anim_layers; i++) {
             fbx.anim_layer[i].anim_curve_node_id = new uint32_t[K3_FBX_BONE_TO_ANIM_MULTIPLIER * num_anim_objs];
         }
+        fbx.anim_custom_prop = new k3flint32[fbx.num_anim_layers * custom_props.num_anim_custom_props];
+        memset(fbx.anim_custom_prop, 0, fbx.num_anim_layers * custom_props.num_anim_custom_props * sizeof(k3flint32));
     }
     if (fbx.num_anim_curve_nodes) fbx.anim_curve_node = new k3fbxAnimCurveNode[fbx.num_anim_curve_nodes];
     if (fbx.num_anim_curves) fbx.anim_curve = new k3fbxAnimCurve[fbx.num_anim_curves];
@@ -4923,8 +4986,12 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
         }
     }
+    mesh_impl->_num_anim_custom_props = 0;
+    mesh_impl->_anim_custom_props = NULL;
     if (mesh_impl->_num_anims) {
         mesh_impl->_anim = new k3anim[mesh_impl->_num_anims];
+        mesh_impl->_num_anim_custom_props = custom_props.num_anim_custom_props;
+        mesh_impl->_anim_custom_props = new k3flint32[mesh_impl->_num_anims * mesh_impl->_num_anim_custom_props];
     }
 
     if (use_skin) {
@@ -5062,6 +5129,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_anim[anim_id].bone_data = NULL;
             mesh_impl->_anim[anim_id].bone_flag = NULL;
             mesh_impl->_anim[anim_id].anim_objs = NULL;
+            memcpy(mesh_impl->_anim_custom_props + anim_id * mesh_impl->_num_anim_custom_props, fbx.anim_custom_prop + fbx_anim_id * custom_props.num_anim_custom_props, custom_props.num_anim_custom_props * sizeof(k3flint32));
             obj_id = ~0x0;
             // Find the next object we are animating
             for (curve_node_index = 0; curve_node_index < fbx.anim_layer[fbx_anim_id].num_anim_curve_nodes && obj_id >= mesh_impl->_num_models; curve_node_index++) {
@@ -5774,6 +5842,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     delete[] fbx.mesh;
     delete[] fbx.model;
+    if (fbx.anim_custom_prop) delete[] fbx.anim_custom_prop;
     if (fbx.model_custom_prop) delete[] fbx.model_custom_prop;
     if (fbx.light_node) delete[] fbx.light_node;
     if (fbx.camera) delete[] fbx.camera;

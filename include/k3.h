@@ -1971,6 +1971,8 @@ struct k3meshDesc {
     k3uploadBuffer up_buf;
     uint32_t num_custom_model_props;
     const char** custom_model_prop_name;
+    uint32_t num_custom_anim_props;
+    const char** custom_anim_prop_name;
 };
 
 struct k3AABB {
@@ -2087,6 +2089,8 @@ public:
     K3API const char* getCustomPropString(uint32_t obj, uint32_t custom_prop_index);
     K3API k3flint32 getEmptyCustomProp(uint32_t empty, uint32_t custom_prop_index);
     K3API const char* getEmptyCustomPropString(uint32_t empty, uint32_t custom_prop_index);
+    K3API k3flint32 getAnimCustomProp(uint32_t anim, uint32_t custom_prop_index);
+    K3API const char* getAnimCustomPropString(uint32_t anim, uint32_t custom_prop_index);
     K3API uint32_t getParent(uint32_t obj);
     K3API uint32_t getRootParent(uint32_t obj);
     K3API float* getEmptyTransform(uint32_t empty);
