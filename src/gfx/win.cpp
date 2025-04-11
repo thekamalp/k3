@@ -2494,7 +2494,7 @@ K3API const float* k3meshObj::getVertSkin(uint32_t model, uint32_t vert)
 
 
 
-#define K3_FBX_DEBUG 1
+#define K3_FBX_DEBUG 0
 
 enum class k3fbxNodeType {
     UNKNOWN,
