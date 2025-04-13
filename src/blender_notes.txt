@@ -64,7 +64,7 @@ Add this:
         # Custom properties.
         if scene_data.settings.use_custom_props:
             act_name = name.decode("utf-8").partition("|")[2]
-            act = bpy.data.actions[act_name]
-            if act is not None:
+            if act_name in bpy.data.actions.keys():
+                act = bpy.data.actions[act_name]
                 fbx_data_element_custom_properties(astack_props, act)
 

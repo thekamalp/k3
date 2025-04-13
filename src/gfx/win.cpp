@@ -800,8 +800,20 @@ K3API void k3soundBufObj::AttachSampleStream(uint32_t stream, k3sampleData sampl
 
 K3API bool k3soundBufObj::isStreamPlaying(uint32_t stream)
 {
+    if (stream >= _data->_num_streams) {
+        return false;
+    }
     return (_data->_stream[stream].stype != k3streamType::NONE);
 }
+
+K3API k3sampleData k3soundBufObj::getSampleStream(uint32_t stream)
+{
+    if (stream >= _data->_num_streams) {
+        return NULL;
+    }
+    return (_data->_stream[stream].stype != k3streamType::NONE) ? _data->_stream[stream].sample : NULL;
+}
+
 
 K3API void k3soundBufObj::PlayStreams()
 {

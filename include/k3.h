@@ -1361,6 +1361,7 @@ public:
     K3API void setSoundFont(k3soundFont sf2);
     K3API void AttachSampleStream(uint32_t stream, k3sampleData sample);
     K3API bool isStreamPlaying(uint32_t stream);
+    K3API k3sampleData getSampleStream(uint32_t stream);
     // This must be called periodically to fill in the sound buffer
     K3API void PlayStreams();
 };
