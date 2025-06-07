@@ -4646,7 +4646,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         k3resource img_res;
         for (i = 0; i < fbx.num_textures; i++) {
             if(f >= NUM_UP_BUF) {
-                up_image_fence->WaitGpuFence(f - NUM_UP_BUF);
+                while (!up_image_fence->CheckFence(f + 1 - NUM_UP_BUF));
             }
 
             uint32_t content_start_pos = fbx.texture[i].file_pos;
