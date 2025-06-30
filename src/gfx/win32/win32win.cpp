@@ -731,8 +731,8 @@ K3API k3win k3winObj::Create(const char* title,
     d->_title = title;
     d->_x_pos = x;
     d->_y_pos = y;
-    d->_width = width;
-    d->_height = height;
+    d->_width = (width == 0) ? GetSystemMetrics(SM_CXSCREEN) : width;
+    d->_height = (height == 0) ? GetSystemMetrics(SM_CYSCREEN) : height;
     d->_color_fmt = color_format;
     d->_is_fullscreen = fullscreen;
 
@@ -843,10 +843,15 @@ K3API void k3winObj::SetSize(uint32_t width, uint32_t height)
         d->GetFullWindowSize(&full_width, &full_height);
         SetWindowPos(d->_hwnd, NULL, 0, 0, full_width, full_height,
             SWP_NOMOVE | SWP_DRAWFRAME | SWP_NOACTIVATE | SWP_NOZORDER);
-        RECT r;
-        GetClientRect(d->_hwnd, &r);
-        d->_width = r.right - r.left;
-        d->_height = r.bottom - r.top;
+        if (d->_is_fullscreen) {
+            d->_width = full_width;
+            d->_height = full_height;
+        } else {
+            RECT r;
+            GetClientRect(d->_hwnd, &r);
+            d->_width = r.right - r.left;
+            d->_height = r.bottom - r.top;
+        }
         d->ResizeBackBuffer();
     }
 }
