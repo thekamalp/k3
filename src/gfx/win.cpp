@@ -379,6 +379,8 @@ K3API k3font k3gfxObj::CreateFont(k3fontDesc* desc)
     uint32_t i;
     for (i = 0; i < k3fontImpl::NUM_VERSIONS; i++) {
         font_impl->_upload_cbuf[i] = CreateUploadBuffer();
+        font_impl->_upload_cbuf[i]->MapForWrite(sizeof(k3fontCBufferDynamic));
+        font_impl->_upload_cbuf[i]->Unmap();
     }
     k3fontCBuffer* cbuf_data = static_cast<k3fontCBuffer*>(font_impl->_upload_cbuf[0]->MapForWrite(sizeof(k3fontCBuffer)));
     memset(cbuf_data, 0, sizeof(k3fontCBuffer));
