@@ -5929,6 +5929,7 @@ k3winImpl::~k3winImpl()
 k3winObj::~k3winObj()
 {
     if (_data) {
+        SetFullscreen(false);
         delete _data;
         _data = NULL;
     }
