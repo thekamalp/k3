@@ -2917,6 +2917,7 @@ K3API k3rtState k3gfxObj::CreateRTState(uint32_t num_elements, const k3rtStateDe
     D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION* dx12_export_assoc;
     D3D12_RAYTRACING_SHADER_CONFIG* dx12_shader_config;
     D3D12_RAYTRACING_PIPELINE_CONFIG* dx12_pipe_config;
+    D3D12_EXPORT_DESC* dx12_export_desc;
     for (i = 0; i < num_elements; i++) {
         switch (desc[i].type) {
         case k3rtStateType::SHADER:
@@ -2924,12 +2925,13 @@ K3API k3rtState k3gfxObj::CreateRTState(uint32_t num_elements, const k3rtStateDe
             dx12_shader_desc = new D3D12_DXIL_LIBRARY_DESC;
             dx12_shader_desc->DXILLibrary = desc[i].shader.obj->getImpl()->_byte_code;
             dx12_shader_desc->NumExports = desc[i].shader.num_entries;
-            dx12_shader_desc->pExports = (dx12_shader_desc->NumExports) ? new D3D12_EXPORT_DESC[dx12_shader_desc->NumExports] : NULL;
+            dx12_export_desc = (dx12_shader_desc->NumExports) ? new D3D12_EXPORT_DESC[dx12_shader_desc->NumExports] : NULL;
             for (j = 0; j < dx12_shader_desc->NumExports; j++) {
-                dx12_shader_desc->pExports[j].Name = createWideString(desc[i].shader.entries[j]);
-                dx12_shader_desc->pExports[j].ExportToRename = NULL;
-                dx12_shader_desc->pExports[j].Flags = D3D12_EXPORT_FLAG_NONE;
+                dx12_export_desc[j].Name = createWideString(desc[i].shader.entries[j]);
+                dx12_export_desc[j].ExportToRename = NULL;
+                dx12_export_desc[j].Flags = D3D12_EXPORT_FLAG_NONE;
             }
+            dx12_shader_desc->pExports = dx12_export_desc;
             subobj[i].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
             subobj[i].pDesc = dx12_shader_desc;
             break;
