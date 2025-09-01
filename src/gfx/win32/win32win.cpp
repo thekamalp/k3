@@ -18,6 +18,8 @@ bool k3win32WinImpl::_win32_cursor_visible = true;
 STICKYKEYS k3win32WinImpl::_start_sticky_keys = { sizeof(STICKYKEYS), 0 };
 TOGGLEKEYS k3win32WinImpl::_start_toggle_keys = { sizeof(TOGGLEKEYS), 0 };
 FILTERKEYS k3win32WinImpl::_start_filter_keys = { sizeof(FILTERKEYS), 0 };
+GameInput::v2::IGameInput* k3win32WinImpl::_game_input = NULL;
+GameInput::v2::GameInputCallbackToken k3win32WinImpl::_gi_tok = 0;
 
 uint32_t k3soundBufWin32Impl::_num_sbuf = 0;
 LPDIRECTSOUND8 k3soundBufWin32Impl::_dsound = NULL;
@@ -179,6 +181,48 @@ uint32_t k3timerObj::getSystemTime()
 }
 
 // ------------------------------------------------------------
+// GameInput
+void k3win32WinImpl::gameinputDeviceCallback(GameInput::v2::GameInputCallbackToken callbackToken,
+    void* context,
+    GameInput::v2::IGameInputDevice* device,
+    uint64_t timestamp,
+    GameInput::v2::GameInputDeviceStatus currentStatus,
+    GameInput::v2::GameInputDeviceStatus previousStatus)
+{
+    uint32_t i;
+    uint32_t dev_id = 0;
+    const GameInput::v2::GameInputDeviceInfo* dev_info;
+    device->GetDeviceInfo(&dev_info);
+    for (i = 0; i < 32; i++) {
+        dev_id ^= dev_info->deviceId.value[i] << (8 * (i & 0x3));
+    }
+    if (currentStatus & GameInput::v2::GameInputDeviceConnected) {
+        if (_num_joy < MAX_JOY) {
+            _joy_map[_num_joy] = k3win32JoyObj::Create(device, dev_id);
+            uint32_t w2;
+            for (w2 = 0; w2 < _win_count; w2++) {
+                if (_winimpl_map[w2]->JoystickAdded) _winimpl_map[w2]->JoystickAdded(_winimpl_map[w2]->_data, dev_id, _joy_map[_num_joy]->getJoyInfo(), _joy_map[_num_joy]->getJoyState());
+            }
+            _num_joy++;
+        }
+    } else {
+        uint32_t j;
+        for (j = 0; j < _num_joy; j++) {
+            if (_joy_map[j]->getDevId() == dev_id) break;
+        }
+        if (j < _num_joy) {
+            uint32_t w2;
+            for (w2 = 0; w2 < _win_count; w2++) {
+                if (_winimpl_map[w2]->JoystickRemoved) _winimpl_map[w2]->JoystickRemoved(_winimpl_map[w2]->_data, dev_id);
+            }
+            _num_joy--;
+            _joy_map[j] = _joy_map[_num_joy];
+            _joy_map[_num_joy] = NULL;
+        }
+    }
+}
+
+// ------------------------------------------------------------
 // windows
 
 k3win32WinImpl::k3win32WinImpl()
@@ -219,6 +263,20 @@ void k3win32WinImpl::Initialize()
     SystemParametersInfo(SPI_GETTOGGLEKEYS, sizeof(TOGGLEKEYS), &_start_toggle_keys, 0);
     SystemParametersInfo(SPI_GETFILTERKEYS, sizeof(FILTERKEYS), &_start_filter_keys, 0);
 
+    HRESULT hr = GameInput::v2::GameInputCreate(&_game_input);
+    if(hr != S_OK) {
+        k3error::Handler("Could not create GameInput");
+        _game_input = NULL;
+    } else {
+        _game_input->RegisterDeviceCallback(NULL,
+            GameInput::v2::GameInputKindController | GameInput::v2::GameInputKindGamepad,
+            GameInput::v2::GameInputDeviceConnected,
+            GameInput::v2::GameInputNoEnumeration,
+            NULL,
+            gameinputDeviceCallback,
+            &_gi_tok);
+    }
+
     // Disable accesibility keys
     AllowAccesibilityKeys(false);
 }
@@ -234,6 +292,12 @@ void k3win32WinImpl::Uninitialize()
     //rid[0].dwFlags = 0;
     //rid[0].hwndTarget = NULL; // follow keyboard focus
     //RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
+
+    if (_game_input) {
+        _game_input->UnregisterCallback(_gi_tok);
+        _game_input->Release();
+        _game_input = NULL;
+    }
 
     UnregisterClass(k3win32WinImpl::_win_class_name, GetModuleHandle(NULL));
 
@@ -788,7 +852,7 @@ K3API k3win k3winObj::Create(const char* title,
     notification_filter.dbcc_size = sizeof(notification_filter);
     notification_filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
     notification_filter.dbcc_classguid = GUID_DEVINTERFACE_HID;
-    d->_hdev_notify = RegisterDeviceNotification(d->_hwnd, &notification_filter, DEVICE_NOTIFY_WINDOW_HANDLE);
+    //d->_hdev_notify = RegisterDeviceNotification(d->_hwnd, &notification_filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
     ShowWindow( d->_hwnd, ((d->_is_visible) ? SW_SHOWDEFAULT : SW_HIDE) );
     //ShowWindow(d->_hwnd, SW_SHOWDEFAULT);
@@ -981,6 +1045,21 @@ K3API k3soundBuf k3winObj::CreateSoundBuffer(uint32_t num_channels, uint32_t sam
     return sbuf;
 }
 
+K3API void k3winObj::SetJoystickFunc(k3win_joystick_added_ptr JoystickAdded, k3win_joystick_removed_ptr JoystickRemoved, k3win_joystick_move_ptr JoystickMove, k3win_joystick_button_ptr JoystickButton)
+{
+    _data->JoystickAdded = JoystickAdded;
+    _data->JoystickRemoved = JoystickRemoved;
+    _data->JoystickMove = JoystickMove;
+    _data->JoystickButton = JoystickButton;
+    if (_data->JoystickAdded) {
+        uint32_t j;
+        for (j = 0; j < k3win32WinImpl::_num_joy; j++) {
+            _data->JoystickAdded(_data->_data, k3win32WinImpl::_joy_map[j]->getDevId(), k3win32WinImpl::_joy_map[j]->getJoyInfo(), k3win32WinImpl::_joy_map[j]->getJoyState());
+        }
+
+    }
+}
+
 
 void k3winObj::WindowLoop()
 {
@@ -1006,7 +1085,7 @@ void k3winObj::WindowLoop()
         }
         if (winimpl->Idle != NULL) got_idle = true;
     }
-    k3win32WinImpl::SyncAttachedJoystickes();
+    //k3win32WinImpl::SyncAttachedJoystickes();
 
     ZeroMemory(&msg, sizeof(MSG));
 

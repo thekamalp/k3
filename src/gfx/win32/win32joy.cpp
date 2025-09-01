@@ -4,6 +4,65 @@
 
 #include "k3win32.h"
 
+HANDLE k3win32JoyObj::findRawInputHandle(const char* pnp_path)
+{
+	UINT dev_list_count = 0;
+	UINT dev_count = GetRawInputDeviceList(NULL, &dev_list_count, sizeof(RAWINPUTDEVICELIST));
+	HANDLE raw_input_dev = NULL;
+	uint32_t n, j;
+	if (dev_list_count) {
+		RAWINPUTDEVICELIST* dev_list = new RAWINPUTDEVICELIST[dev_list_count];
+		RID_DEVICE_INFO dev_info = { 0 };
+		UINT data_size;
+		dev_count = GetRawInputDeviceList(dev_list, &dev_list_count, sizeof(RAWINPUTDEVICELIST));
+		for (n = 0; n < dev_count; n++) {
+			// Make sure the device is an HID (not a keyboard or mouse)
+			if (dev_list[n].dwType == RIM_TYPEHID) {
+				uint32_t dev_id = (uint32_t)dev_list[n].hDevice;
+				// get device info,  to make sure its the right usage
+				dev_info.cbSize = sizeof(RID_DEVICE_INFO);
+				data_size = sizeof(RID_DEVICE_INFO);
+				GetRawInputDeviceInfo(dev_list[n].hDevice, RIDI_DEVICEINFO, &dev_info, &data_size);
+				// Should be HID, but double check
+				if (dev_info.dwType == RIM_TYPEHID) {
+					// Check usage page/usage for joystick or game controller
+					if (dev_info.hid.usUsagePage == 0x1 && (dev_info.hid.usUsage == 0x4 || dev_info.hid.usUsage == 0x5)) {
+						// Get device path
+						char dev_path[256] = { 0 };
+						uint32_t buf_size = 256;
+						GetRawInputDeviceInfo(dev_list[n].hDevice, RIDI_DEVICENAME, dev_path, &buf_size);
+						if (!strncmp(dev_path, pnp_path, 256)) {
+							raw_input_dev = dev_list[n].hDevice;
+							break;
+						}
+					}
+				}
+			}
+		}
+		delete[] dev_list;
+	}
+	return raw_input_dev;
+}
+
+k3win32Joy k3win32JoyObj::Create(GameInput::v2::IGameInputDevice* device, uint32_t dev_id)
+{
+	const GameInput::v2::GameInputDeviceInfo* dev_info;
+	device->GetDeviceInfo(&dev_info);
+	k3win32Joy joy = NULL;
+	HANDLE raw_input_dev = NULL;
+	if (dev_info->vendorId == k3win32PS4JoyObj::VENDOR_ID && dev_info->productId == k3win32PS4JoyObj::PRODUCT_ID) {
+		raw_input_dev = findRawInputHandle(dev_info->pnpPath);
+	}
+	if (raw_input_dev != NULL) {
+		joy = Create(raw_input_dev, dev_id);
+	} else if (dev_info->supportedInput & GameInput::v2::GameInputKindGamepad) {
+		joy = new k3win32GIGpadJoyObj(device, dev_id);
+	} else if (dev_info->supportedInput & GameInput::v2::GameInputKindController) {
+		joy = new k3win32GIControllerJoyObj(device, dev_id);
+	}
+	return joy;
+}
+
 k3win32Joy k3win32JoyObj::Create(HANDLE hDevice, uint32_t dev_id)
 {
 	k3win32Joy joy;
@@ -14,7 +73,7 @@ k3win32Joy k3win32JoyObj::Create(HANDLE hDevice, uint32_t dev_id)
 		dev_info.hid.dwProductId == k3win32PS4JoyObj::PRODUCT_ID) {
 		joy = new k3win32PS4JoyObj(hDevice);
 	} else {
-		joy = new k3win32JoyObj(hDevice);
+		joy = new k3win32HIDJoyObj(hDevice);
 	}
 	joy->_dev_id = dev_id;
 	return joy;
@@ -22,12 +81,351 @@ k3win32Joy k3win32JoyObj::Create(HANDLE hDevice, uint32_t dev_id)
 
 k3win32JoyObj::k3win32JoyObj()
 {
-	InitData();
+	memset(&_joy_info, 0, sizeof(k3joyInfo));
+	memset(&_joy_state, 0, sizeof(k3joyState));
+	_dev_id = 0;
+	memset(_axis_range, 0, K3JOY_MAX_AXES * sizeof(k3win32JoyAxisRange));
+	_buttons_changed = 0;
+	_axes_changed = 0;
 }
 
-k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
+k3win32JoyObj::~k3win32JoyObj()
+{ }
+
+void k3win32JoyObj::SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values)
 {
-	InitData();
+}
+
+uint32_t k3win32JoyObj::getDevId()
+{
+	return _dev_id;
+}
+
+const k3joyInfo* k3win32JoyObj::getJoyInfo()
+{
+	return &_joy_info;
+}
+
+const k3joyState* k3win32JoyObj::getJoyState()
+{
+	return &_joy_state;
+}
+
+bool k3win32JoyObj::buttonHasChanged(uint32_t button)
+{
+	bool ret = (_buttons_changed & (1 << button)) ? true : false;
+	_buttons_changed &= ~(1 << button);
+	return ret;
+}
+
+bool k3win32JoyObj::axisHasChanged(uint32_t axis)
+{
+	bool ret = (_axes_changed & (1 << axis)) ? true : false;
+	_axes_changed &= ~(1 << axis);
+	return ret;
+}
+
+float k3win32JoyObj::NormalizeJoystickPos(ULONG pos, k3win32JoyAxisRange range)
+{
+	float scale = 1.0f / (range.max - range.min);
+	float fpos = (pos - range.min) * scale;
+	return fpos;
+}
+
+k3joyAxis k3win32JoyObj::UsageToAxisType(USAGE page, USAGE usage)
+{
+	k3joyAxis axis_type = k3joyAxis::UNKNOWN;
+
+	if (page == 0x01) {
+		switch (usage) {
+		case 0x30: axis_type = k3joyAxis::X; break;
+		case 0x31: axis_type = k3joyAxis::Y; break;
+		case 0x32: axis_type = k3joyAxis::Z; break;
+		case 0x35: axis_type = k3joyAxis::R; break;
+		case 0x33: axis_type = k3joyAxis::U; break;
+		case 0x34: axis_type = k3joyAxis::V; break;
+		case 0x39: axis_type = k3joyAxis::POV; break;
+		default:   axis_type = k3joyAxis::UNKNOWN; break;
+		}
+	}
+
+	return axis_type;
+}
+
+k3win32GIJoyObj::k3win32GIJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id)
+{
+	_gi_dev = device;
+	_gi_last_reading = NULL;
+	_dev_id = dev_id;
+}
+
+k3win32GIJoyObj::~k3win32GIJoyObj()
+{ }
+
+k3win32GIGpadJoyObj::k3win32GIGpadJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id) :
+	k3win32GIJoyObj(device, dev_id)
+{
+	const GameInput::v2::GameInputDeviceInfo* dev_info;
+	device->GetDeviceInfo(&dev_info);
+	_joy_info.num_buttons = dev_info->controllerButtonCount - 4 + 2;  // dpad buttons become POV axis, but 2 triggers alias to buttons
+	_joy_info.num_axes = dev_info->controllerAxisCount + 1;  // for pov axis
+	if (_joy_info.num_buttons > K3JOY_MAX_BUTTONS) _joy_info.num_buttons = K3JOY_MAX_BUTTONS;
+	if (_joy_info.num_axes > K3JOY_MAX_AXES) _joy_info.num_axes = K3JOY_MAX_AXES;
+	if (_joy_info.num_axes > 0) {
+		_joy_info.axis[0] = k3joyAxis::X;
+		_joy_info.axis_ordinal[0] = 0;
+		_axis_range[0].min = -1.0f;
+		_axis_range[0].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 1) {
+		_joy_info.axis[1] = k3joyAxis::Y;
+		_joy_info.axis_ordinal[1] = 0;
+		_axis_range[1].min = -1.0f;
+		_axis_range[1].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 2) {
+		_joy_info.axis[2] = k3joyAxis::X;
+		_joy_info.axis_ordinal[2] = 1;
+		_axis_range[2].min = -1.0f;
+		_axis_range[2].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 3) {
+		_joy_info.axis[3] = k3joyAxis::Y;
+		_joy_info.axis_ordinal[3] = 1;
+		_axis_range[3].min = -1.0f;
+		_axis_range[3].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 4) {
+		_joy_info.axis[4] = k3joyAxis::Z;
+		_joy_info.axis_ordinal[4] = 0;
+		_axis_range[4].min = 0.0f;
+		_axis_range[4].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 5) {
+		_joy_info.axis[5] = k3joyAxis::R;
+		_joy_info.axis_ordinal[5] = 0;
+		_axis_range[5].min = 0.0f;
+		_axis_range[5].max = 1.0f;
+	}
+	_joy_info.axis[_joy_info.num_axes - 1] = k3joyAxis::POV;
+	_joy_info.axis_ordinal[_joy_info.num_axes - 1] = 0;
+	_axis_range[_joy_info.num_axes - 1].min = 0.0f;
+	_axis_range[_joy_info.num_axes - 1].max = 1.0f;
+	_joy_state.buttons_pressed = 0;
+	_buttons_changed = (1 << _joy_info.num_buttons) - 1;
+	_axes_changed = (1 << _joy_info.num_axes) - 1;
+	_joy_state.buttons_pressed = 0;
+	uint32_t i;
+	for (i = 0; i < K3JOY_MAX_AXES; i++) {
+		_joy_state.axis[i] = (_joy_info.axis[i] == k3joyAxis::POV) ? 1.0f : 0.5f;
+	}
+}
+
+k3win32GIGpadJoyObj::~k3win32GIGpadJoyObj()
+{ }
+
+void k3win32GIGpadJoyObj::Poll()
+{
+	if (_gi_dev) {
+		GameInput::v2::IGameInputReading* cur_reading;
+		k3win32WinImpl::_game_input->GetCurrentReading(GameInput::v2::GameInputKindController | GameInput::v2::GameInputKindGamepad,
+			_gi_dev, &cur_reading);
+		const float SMALL_CHANGE = 0.005f;
+		if (cur_reading && cur_reading != _gi_last_reading) {
+			GameInput::v2::GameInputGamepadState gpad_state;
+			cur_reading->GetGamepadState(&gpad_state);
+			uint32_t button_value = 0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadX) ? 0x1 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadA) ? 0x2 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadB) ? 0x4 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadY) ? 0x8 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadLeftShoulder) ? 0x10 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadRightShoulder) ? 0x20 : 0x0;
+			button_value |= (gpad_state.leftTrigger > 0.2f) ? 0x40 : 0x0;
+			button_value |= (gpad_state.rightTrigger > 0.2f) ? 0x80 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadView) ? 0x100 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadMenu) ? 0x200 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadLeftThumbstick) ? 0x400 : 0x0;
+			button_value |= (gpad_state.buttons & GameInput::v2::GameInputGamepadRightThumbstick) ? 0x800 : 0x0;
+			_buttons_changed = button_value ^ _joy_state.buttons_pressed;
+			_joy_state.buttons_pressed = button_value;
+
+			float* gpad_axes = &gpad_state.leftThumbstickX;
+			float axis_value;
+			uint32_t a;
+			for (a = 0; a < 4; a++) {
+				axis_value = *gpad_axes;
+				// y axis need to be reversed
+				axis_value = (a & 1) ? -axis_value : axis_value;
+				axis_value = axis_value * 0.5f + 0.5f;
+				if (fabsf(axis_value - _joy_state.axis[a]) > SMALL_CHANGE) {
+					_joy_state.axis[a] = axis_value;
+					_axes_changed |= 1 << a;
+				}
+				gpad_axes++;
+			}
+			gpad_axes = &gpad_state.leftTrigger;
+			for (a = 4; a < 6; a++) {
+				axis_value = *gpad_axes;
+				if (fabsf(axis_value - _joy_state.axis[a]) > SMALL_CHANGE) {
+					_joy_state.axis[a] = axis_value;
+					_axes_changed |= 1 << a;
+
+				}
+				gpad_axes++;
+			}
+			// POV axis
+			if (gpad_state.buttons & GameInput::v2::GameInputGamepadDPadUp) {
+				axis_value = (gpad_state.buttons & GameInput::v2::GameInputGamepadDPadRight) ? 0.125f :
+					((gpad_state.buttons & GameInput::v2::GameInputGamepadDPadLeft) ? 0.875f : 0.0f);
+			} else if (gpad_state.buttons & GameInput::v2::GameInputGamepadDPadDown) {
+				axis_value = (gpad_state.buttons & GameInput::v2::GameInputGamepadDPadRight) ? 0.375f :
+					((gpad_state.buttons & GameInput::v2::GameInputGamepadDPadLeft) ? 0.625f : 0.5f);
+			} else {
+				axis_value = (gpad_state.buttons & GameInput::v2::GameInputGamepadDPadRight) ? 0.25f :
+					((gpad_state.buttons & GameInput::v2::GameInputGamepadDPadLeft) ? 0.75f : 1.0f);
+			}
+			if (axis_value != _joy_state.axis[6]) {
+				_joy_state.axis[6] = axis_value;
+				_axes_changed |= 1 << 6;
+			}
+
+			_gi_last_reading = cur_reading;
+		}
+	}
+}
+
+k3win32GIControllerJoyObj::k3win32GIControllerJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id) :
+	k3win32GIJoyObj(device, dev_id)
+{
+	const GameInput::v2::GameInputDeviceInfo* dev_info;
+	device->GetDeviceInfo(&dev_info);
+	bool has_pov = (dev_info->controllerSwitchCount > 0);
+	_joy_info.num_buttons = dev_info->controllerButtonCount;
+	_joy_info.num_axes = dev_info->controllerAxisCount + has_pov;
+	if (_joy_info.num_buttons > K3JOY_MAX_BUTTONS) _joy_info.num_buttons = K3JOY_MAX_BUTTONS;
+	if (_joy_info.num_axes > K3JOY_MAX_AXES) _joy_info.num_axes = K3JOY_MAX_AXES;
+	if (_joy_info.num_axes > 0) {
+		_joy_info.axis[0] = k3joyAxis::X;
+		_joy_info.axis_ordinal[0] = 0;
+		_axis_range[0].min = -1.0f;
+		_axis_range[0].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 1) {
+		_joy_info.axis[1] = k3joyAxis::Y;
+		_joy_info.axis_ordinal[1] = 0;
+		_axis_range[1].min = -1.0f;
+		_axis_range[1].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 2) {
+		_joy_info.axis[2] = k3joyAxis::X;
+		_joy_info.axis_ordinal[2] = 1;
+		_axis_range[2].min = -1.0f;
+		_axis_range[2].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 3) {
+		_joy_info.axis[3] = k3joyAxis::Y;
+		_joy_info.axis_ordinal[3] = 1;
+		_axis_range[3].min = -1.0f;
+		_axis_range[3].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 4) {
+		_joy_info.axis[4] = k3joyAxis::Z;
+		_joy_info.axis_ordinal[4] = 0;
+		_axis_range[4].min = 0.0f;
+		_axis_range[4].max = 1.0f;
+	}
+	if (_joy_info.num_axes > 5) {
+		_joy_info.axis[5] = k3joyAxis::R;
+		_joy_info.axis_ordinal[5] = 0;
+		_axis_range[5].min = 0.0f;
+		_axis_range[5].max = 1.0f;
+	}
+	if (has_pov) {
+		_joy_info.axis[_joy_info.num_axes - 1] = k3joyAxis::POV;
+		_joy_info.axis_ordinal[_joy_info.num_axes - 1] = 0;
+		_axis_range[_joy_info.num_axes - 1].min = 0.0f;
+		_axis_range[_joy_info.num_axes - 1].max = 1.0f;
+	}
+	_joy_state.buttons_pressed = 0;
+	_dev_id = dev_id;
+	_buttons_changed = (1 << _joy_info.num_buttons) - 1;
+	_axes_changed = (1 << _joy_info.num_axes) - 1;
+	_joy_state.buttons_pressed = 0;
+	uint32_t i;
+	for (i = 0; i < K3JOY_MAX_AXES; i++) {
+		_joy_state.axis[i] = (_joy_info.axis[i] == k3joyAxis::POV) ? 1.0f : 0.5f;
+	}
+}
+
+k3win32GIControllerJoyObj::~k3win32GIControllerJoyObj()
+{ }
+
+void k3win32GIControllerJoyObj::Poll()
+{
+	if (_gi_dev) {
+		GameInput::v2::IGameInputReading* cur_reading;
+		k3win32WinImpl::_game_input->GetCurrentReading(GameInput::v2::GameInputKindController | GameInput::v2::GameInputKindGamepad,
+			_gi_dev, &cur_reading);
+		const float SMALL_CHANGE = 0.005f;
+		if (cur_reading && cur_reading != _gi_last_reading) {
+			bool button_state[K3JOY_MAX_BUTTONS] = {};
+			cur_reading->GetControllerButtonState(_joy_info.num_buttons, button_state);
+			uint32_t button_value = 0;
+			uint32_t i;
+			for (i = 0; i < _joy_info.num_buttons; i++) {
+				button_value |= (button_state[i]) ? (1 << i) : 0;
+			}
+			_buttons_changed = button_value ^ _joy_state.buttons_pressed;
+			_joy_state.buttons_pressed = button_value;
+
+			uint32_t a;
+			float axis_value[K3JOY_MAX_AXES] = {};
+			bool has_pov = cur_reading->GetControllerSwitchCount() != 0;
+			uint32_t primary_axis_count = _joy_info.num_axes - has_pov;
+			cur_reading->GetControllerAxisState(primary_axis_count, axis_value);
+
+			if (has_pov) {
+				GameInput::v2::GameInputSwitchPosition switch_pos;
+				cur_reading->GetControllerSwitchState(1, &switch_pos);
+				switch (switch_pos) {
+				case GameInput::v2::GameInputSwitchCenter:    axis_value[primary_axis_count] = 1.0f; break;
+				case GameInput::v2::GameInputSwitchUp:        axis_value[primary_axis_count] = 0.0f; break;
+				case GameInput::v2::GameInputSwitchUpRight:   axis_value[primary_axis_count] = 0.125f; break;
+				case GameInput::v2::GameInputSwitchRight:     axis_value[primary_axis_count] = 0.25f; break;
+				case GameInput::v2::GameInputSwitchDownRight: axis_value[primary_axis_count] = 0.375f; break;
+				case GameInput::v2::GameInputSwitchDown:      axis_value[primary_axis_count] = 0.5f; break;
+				case GameInput::v2::GameInputSwitchDownLeft:  axis_value[primary_axis_count] = 0.625f; break;
+				case GameInput::v2::GameInputSwitchLeft:      axis_value[primary_axis_count] = 0.75f; break;
+				case GameInput::v2::GameInputSwitchUpLeft:    axis_value[primary_axis_count] = 0.875; break;
+				default: axis_value[primary_axis_count] = 1.0f; break;
+				}
+			}
+
+			for (a = 0; a < _joy_info.num_axes; a++) {
+				if (fabsf(axis_value[a] - _joy_state.axis[a]) > SMALL_CHANGE) {
+					_joy_state.axis[a] = axis_value[a];
+					_axes_changed |= 1 << a;
+				}
+			}
+
+			_gi_last_reading = cur_reading;
+		}
+	}
+
+}
+
+k3win32HIDJoyObj::k3win32HIDJoyObj(HANDLE hDevice)
+{
+	_pPreParsedData = NULL;
+	_pButtonCaps = NULL;
+	_pValueCaps = NULL;
+	_hid_handle = NULL;
+	_input_buffer_size = 0;
+	_output_buffer_size = 0;
+	_input_buffer = NULL;
+	_output_buffer = NULL;
+	memset(&_ov, 0, sizeof(OVERLAPPED));
 
 	HANDLE hHeap = GetProcessHeap();
 	uint32_t buf_size = 0;
@@ -120,26 +518,7 @@ k3win32JoyObj::k3win32JoyObj(HANDLE hDevice)
 	Poll();
 }
 
-void k3win32JoyObj::InitData()
-{
-	memset(&_joy_info, 0, sizeof(k3joyInfo));
-	memset(&_joy_state, 0, sizeof(k3joyState));
-	_dev_id = 0;
-	memset(_axis_range, 0, K3JOY_MAX_AXES * sizeof(k3win32JoyAxisRange));
-	_pPreParsedData = NULL;
-	_pButtonCaps = NULL;
-	_pValueCaps = NULL;
-	_hid_handle = NULL;
-	_input_buffer_size = 0;
-	_output_buffer_size = 0;
-	_input_buffer = NULL;
-	_output_buffer = NULL;
-	_buttons_changed = 0;
-	_axes_changed = 0;
-	memset(&_ov, 0, sizeof(OVERLAPPED));
-}
-
-k3win32JoyObj::~k3win32JoyObj()
+k3win32HIDJoyObj::~k3win32HIDJoyObj()
 {
 	HANDLE hHeap = GetProcessHeap();
 	if (_hid_handle)    CloseHandle(_hid_handle);
@@ -150,7 +529,7 @@ k3win32JoyObj::~k3win32JoyObj()
 	if (_pPreParsedData) HeapFree(hHeap, 0, _pPreParsedData);
 }
 
-void k3win32JoyObj::Poll()
+void k3win32HIDJoyObj::Poll()
 {
 	DWORD bytes_written = 0;
 
@@ -193,68 +572,8 @@ void k3win32JoyObj::Poll()
 	}
 }
 
-void k3win32JoyObj::SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values)
-{
-}
-
-uint32_t k3win32JoyObj::getDevId()
-{
-	return _dev_id;
-}
-
-const k3joyInfo* k3win32JoyObj::getJoyInfo()
-{
-	return &_joy_info;
-}
-
-const k3joyState* k3win32JoyObj::getJoyState()
-{
-	return &_joy_state;
-}
-
-bool k3win32JoyObj::buttonHasChanged(uint32_t button)
-{
-	bool ret = (_buttons_changed & (1 << button)) ? true : false;
-	_buttons_changed &= ~(1 << button);
-	return ret;
-}
-
-bool k3win32JoyObj::axisHasChanged(uint32_t axis)
-{
-	bool ret = (_axes_changed & (1 << axis)) ? true : false;
-	_axes_changed &= ~(1 << axis);
-	return ret;
-}
-
-float k3win32JoyObj::NormalizeJoystickPos(ULONG pos, k3win32JoyAxisRange range)
-{
-	float scale = 1.0f / (range.max - range.min);
-	float fpos = (pos - range.min) * scale;
-	return fpos;
-}
-
-k3joyAxis k3win32JoyObj::UsageToAxisType(USAGE page, USAGE usage)
-{
-	k3joyAxis axis_type = k3joyAxis::UNKNOWN;
-
-	if (page == 0x01) {
-		switch (usage) {
-		case 0x30: axis_type = k3joyAxis::X; break;
-		case 0x31: axis_type = k3joyAxis::Y; break;
-		case 0x32: axis_type = k3joyAxis::Z; break;
-		case 0x35: axis_type = k3joyAxis::R; break;
-		case 0x33: axis_type = k3joyAxis::U; break;
-		case 0x34: axis_type = k3joyAxis::V; break;
-		case 0x39: axis_type = k3joyAxis::POV; break;
-		default:   axis_type = k3joyAxis::UNKNOWN; break;
-		}
-	}
-
-	return axis_type;
-}
-
-
-k3win32PS4JoyObj::k3win32PS4JoyObj(HANDLE hDevice)
+k3win32PS4JoyObj::k3win32PS4JoyObj(HANDLE hDevice) :
+	k3win32HIDJoyObj(hDevice)
 {
 	// Initialize joy info structure
 	_joy_info.num_axes = 17;

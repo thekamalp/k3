@@ -7,6 +7,7 @@
 #include <initguid.h>
 #include <Windows.h>
 #include <dsound.h>
+#include <GameInput.h>
 #include <hidsdi.h>
 #include <dbt.h>
 #include <hidclass.h>
@@ -22,10 +23,11 @@ typedef k3ptr<k3win32JoyObj> k3win32Joy;
 class k3win32JoyObj : public k3obj
 {
 public:
+	static HANDLE findRawInputHandle(const char* pnp_path);
+	static k3win32Joy Create(GameInput::v2::IGameInputDevice* device, uint32_t dev_id);
     static k3win32Joy Create(HANDLE hDevice, uint32_t dev_id);
 
-    k3win32JoyObj();
-	k3win32JoyObj(HANDLE hDevice);
+	k3win32JoyObj();
 	virtual ~k3win32JoyObj();
 
 	virtual K3API k3objType getObjType() const
@@ -33,7 +35,7 @@ public:
 		return k3objType::UNKNOWN;  // not publically visible object
 	}
 
-	virtual void Poll();
+	virtual void Poll() = 0;
 	virtual void SetAttribute(k3joyAttr attr_type, uint32_t num_values, float* values);
 	uint32_t getDevId();
 	const k3joyInfo* getJoyInfo();
@@ -44,11 +46,52 @@ public:
 	static float NormalizeJoystickPos(ULONG pos, k3win32JoyAxisRange range);
 	static k3joyAxis UsageToAxisType(USAGE page, USAGE usage);
 protected:
-	void InitData();
 	k3joyInfo _joy_info;
 	k3joyState _joy_state;
 	uint32_t _dev_id;
 	k3win32JoyAxisRange _axis_range[K3JOY_MAX_AXES];
+	uint32_t _buttons_changed;
+	uint32_t _axes_changed;
+};
+
+class k3win32GIJoyObj : public k3win32JoyObj
+{
+public:
+	k3win32GIJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id);
+	virtual ~k3win32GIJoyObj();
+
+protected:
+	GameInput::v2::IGameInputDevice* _gi_dev;
+	GameInput::v2::IGameInputReading* _gi_last_reading;
+};
+
+class k3win32GIGpadJoyObj : public k3win32GIJoyObj
+{
+public:
+	k3win32GIGpadJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id);
+	virtual ~k3win32GIGpadJoyObj();
+
+	virtual void Poll();
+};
+
+class k3win32GIControllerJoyObj : public k3win32GIJoyObj
+{
+public:
+	k3win32GIControllerJoyObj(GameInput::v2::IGameInputDevice* device, uint32_t dev_id);
+	virtual ~k3win32GIControllerJoyObj();
+
+	virtual void Poll();
+};
+
+class k3win32HIDJoyObj : public k3win32JoyObj
+{
+public:
+	k3win32HIDJoyObj(HANDLE hDevice);
+	virtual ~k3win32HIDJoyObj();
+
+	virtual void Poll();
+
+protected:
 	PHIDP_PREPARSED_DATA _pPreParsedData;
 	PHIDP_BUTTON_CAPS _pButtonCaps;
 	PHIDP_VALUE_CAPS _pValueCaps;
@@ -57,10 +100,9 @@ protected:
 	uint32_t _output_buffer_size;
 	char* _input_buffer;
 	int8_t* _output_buffer;
-	uint32_t _buttons_changed;
-	uint32_t _axes_changed;
 	OVERLAPPED _ov;
 };
+
 #ifdef _MSC_VER
 #pragma pack(1)
 #endif
@@ -107,7 +149,7 @@ struct k2win32PS4Input {
 #pragma pack()
 #endif
 
-class k3win32PS4JoyObj : public k3win32JoyObj {
+class k3win32PS4JoyObj : public k3win32HIDJoyObj {
 public:
 	k3win32PS4JoyObj(HANDLE hDevice);
 	virtual ~k3win32PS4JoyObj();
@@ -157,6 +199,14 @@ public:
 	static STICKYKEYS _start_sticky_keys;
 	static TOGGLEKEYS _start_toggle_keys;
 	static FILTERKEYS _start_filter_keys;
+	static GameInput::v2::IGameInput* _game_input;
+	static GameInput::v2::GameInputCallbackToken _gi_tok;
+	static void gameinputDeviceCallback(GameInput::v2::GameInputCallbackToken callbackToken,
+		void* context,
+		GameInput::v2::IGameInputDevice* device,
+		uint64_t timestamp,
+		GameInput::v2::GameInputDeviceStatus currentStatus,
+		GameInput::v2::GameInputDeviceStatus previousStatus);
 
 	static void Initialize();
 	static void Uninitialize();

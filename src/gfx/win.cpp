@@ -5969,14 +5969,6 @@ K3API void k3winObj::SetResizeFunc(k3win_resize_ptr Resize)
     _data->Resize = Resize;
 }
 
-K3API void k3winObj::SetJoystickFunc(k3win_joystick_added_ptr JoystickAdded, k3win_joystick_removed_ptr JoystickRemoved, k3win_joystick_move_ptr JoystickMove, k3win_joystick_button_ptr JoystickButton)
-{
-    _data->JoystickAdded = JoystickAdded;
-    _data->JoystickRemoved = JoystickRemoved;
-    _data->JoystickMove = JoystickMove;
-    _data->JoystickButton = JoystickButton;
-}
-
 K3API void k3winObj::SetDestroyFunc(k3win_destroy_ptr Destroy)
 {
     _data->Destroy = Destroy;

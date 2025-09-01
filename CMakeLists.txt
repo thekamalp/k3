@@ -37,10 +37,14 @@ if(WIN32)
 	file (GLOB SOURCE_DX12  "src/gfx/dx12/*.cpp")
 	set (SOURCE_PLATFORM ${SOURCE_WIN32} ${SOURCE_DX12})
 	set (GFX_LINK_LIB d3d12 dxgi d3dcompiler)
-	set (LINK_LIB dsound hid dxguid winmm zlib ${FT_LIB} ${GFX_LINK_LIB})
+	set (LINK_LIB dsound hid dxguid winmm zlib ${FT_LIB} ${GFX_LINK_LIB} gameinput)
 endif()
 
 add_library(${PROJ} SHARED ${SOURCE_COMMON} ${SOURCE_IMAGE} ${SOURCE_JPG} ${SOURCE_MATH} ${SOURCE_GFX} ${SOURCE_FLAC} ${SOURCE_SOUND} ${SOURCE_PLATFORM})
+
+if(WIN32)
+	set_property (TARGET ${PROJ} PROPERTY VS_PACKAGE_REFERENCES "microsoft.gameinput.2.1.26100.6068")
+endif()
 
 target_link_libraries(${PROJ} ${LINK_LIB})
 
