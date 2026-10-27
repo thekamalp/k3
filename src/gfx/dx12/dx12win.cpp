@@ -684,6 +684,71 @@ K3API void k3cmdBufObj::SetGfxState(k3gfxState state)
     }
 }
 
+K3API void k3cmdBufObj::SetComputeState(k3computeState state)
+{
+    k3computeStateImpl* state_impl = state->getImpl();
+    _data->_cmd_list->SetPipelineState(state_impl->_state);
+    if (_data->_cur_binding != state_impl->_binding) {
+        _data->_cur_binding = state_impl->_binding;
+        k3shaderBindingImpl* bind_impl = _data->_cur_binding->getImpl();
+        _data->_cmd_list->SetComputeRootSignature(bind_impl->_binding);
+    }
+}
+
+K3API void k3cmdBufObj::SetComputeConstant(uint32_t index, uint32_t value, uint32_t offset)
+{
+    _data->_cmd_list->SetComputeRoot32BitConstant(index, value, offset);
+}
+
+K3API void k3cmdBufObj::SetComputeConstants(uint32_t index, uint32_t num_constants, const void* values, uint32_t offset)
+{
+    _data->_cmd_list->SetComputeRoot32BitConstants(index, num_constants, values, offset);
+}
+
+K3API void k3cmdBufObj::SetComputeConstantBuffer(uint32_t index, k3buffer constant_buffer)
+{
+    k3bufferImpl* buffer_impl = constant_buffer->getImpl();
+    if (buffer_impl->_gpu_view.ptr == NULL) {
+        k3error::Handler("Not view for constant buffer", "k3cmd_buf_obj::SetComputeConstantBuffer");
+        return;
+    }
+    _data->_cmd_list->SetComputeRootDescriptorTable(index, buffer_impl->_gpu_view);
+}
+
+K3API void k3cmdBufObj::SetComputeShaderView(uint32_t index, k3surf surf)
+{
+    if (surf == NULL) return;
+    k3surfImpl* surf_impl = surf->getImpl();
+    if (surf_impl->_srv_gpu_view.ptr == NULL) {
+        k3error::Handler("Surface does not supprt shader resource view", "k3cmdBufObj::SetComputeShaderView");
+    }
+    k3resourceImpl* resource_impl = surf_impl->_resource->getImpl();
+    _data->_cmd_list->SetComputeRootDescriptorTable(index, surf_impl->_srv_gpu_view);
+}
+
+K3API void k3cmdBufObj::SetComputeUnorderedView(uint32_t index, k3surf surf)
+{
+    if (surf == NULL) return;
+    k3surfImpl* surf_impl = surf->getImpl();
+    if (surf_impl->_uav_gpu_view.ptr == NULL) {
+        k3error::Handler("Surface does not supprt unordered access view", "k3cmdBufObj::SetComputeOrderedView");
+    }
+    k3resourceImpl* resource_impl = surf_impl->_resource->getImpl();
+    _data->_cmd_list->SetComputeRootDescriptorTable(index, surf_impl->_uav_gpu_view);
+}
+
+K3API void k3cmdBufObj::SetComputeSampler(uint32_t index, k3sampler sampler)
+{
+    if (sampler == NULL) return;
+    k3samplerImpl* sampler_impl = sampler->getImpl();
+    _data->_cmd_list->SetComputeRootDescriptorTable(index, sampler_impl->_gpu_view);
+}
+
+K3API void k3cmdBufObj::ComputeDispatch(uint32_t thread_group_x, uint32_t thread_group_y, uint32_t thread_group_z)
+{
+    _data->_cmd_list->Dispatch(thread_group_x, thread_group_y, thread_group_z);
+}
+
 K3API void k3cmdBufObj::SetDrawPrim(k3drawPrimType draw_prim)
 {
     D3D_PRIMITIVE_TOPOLOGY dx12_draw_prim = k3gfxImpl::ConvertToDx12DrawPrimType(draw_prim);
@@ -858,6 +923,18 @@ K3API void k3cmdBufObj::SetShaderView(uint32_t index, k3surf surf)
     }
     _data->_cmd_list->SetGraphicsRootDescriptorTable(index, surf_impl->_srv_gpu_view);
 }
+
+K3API void k3cmdBufObj::SetUnorderedView(uint32_t index, k3surf surf)
+{
+    if (surf == NULL)  return;
+    k3surfImpl* surf_impl = surf->getImpl();
+    if (surf_impl->_uav_gpu_view.ptr == NULL) {
+        k3error::Handler("Surface does not support unordered access view", "k3cmdBufObj::SetUnorderedView");
+        return;
+    }
+    _data->_cmd_list->SetGraphicsRootDescriptorTable(index, surf_impl->_uav_gpu_view);
+}
+
 
 K3API void k3cmdBufObj::SetSampler(uint32_t index, k3sampler sampler)
 {
@@ -1275,6 +1352,43 @@ k3gfxStateImpl* k3gfxStateObj::getImpl()
 }
 
 const k3gfxStateImpl* k3gfxStateObj::getImpl() const
+{
+    return _data;
+}
+
+k3computeStateImpl::k3computeStateImpl()
+{
+    _state = NULL;
+    _binding = NULL;
+}
+
+k3computeStateImpl::~k3computeStateImpl()
+{
+    if (_state) {
+        _state->Release();
+        _state = NULL;
+    }
+}
+
+k3computeStateObj::k3computeStateObj()
+{
+    _data = new k3computeStateImpl;
+}
+
+k3computeStateObj::~k3computeStateObj()
+{
+    if (_data) {
+        delete _data;
+        _data = NULL;
+    }
+}
+
+k3computeStateImpl* k3computeStateObj::getImpl()
+{
+    return _data;
+}
+
+const k3computeStateImpl* k3computeStateObj::getImpl() const
 {
     return _data;
 }
@@ -3204,6 +3318,22 @@ K3API k3rtStateTable k3gfxObj::CreateRTStateTable(const k3rtStateTableDesc* desc
     return state_table;
 }
 
+K3API k3computeState k3gfxObj::CreateComputeState(const k3computeStateDesc* desc)
+{
+    HRESULT hr;
+    D3D12_COMPUTE_PIPELINE_STATE_DESC dx12_desc = { 0 };
+    dx12_desc.pRootSignature = desc->shader_binding->getImpl()->_binding;
+    dx12_desc.CS = desc->compute_shader->getImpl()->_byte_code;
+    k3computeState state = new k3computeStateObj;
+    k3computeStateImpl* state_impl = state->getImpl();
+    hr = _data->_dev->CreateComputePipelineState(&dx12_desc, IID_PPV_ARGS(&state_impl->_state));
+    if (hr != S_OK) {
+        k3error::Handler("Could not create compute state", "k3gfxObj::CreateComputeState");
+        return NULL;
+    }
+    state_impl->_binding = desc->shader_binding;
+    return state;
+}
 
 K3API k3memPool k3gfxObj::CreateMemPool(uint64_t size, k3memType mem_type, uint32_t flag)
 {
@@ -3613,7 +3743,7 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     k3resourceImpl* resource_impl = buffer_impl->_resource->getImpl();
     uint32_t padded_size = bdesc->size;
     bool constant_buffer = (bdesc->format == k3fmt::UNKNOWN && bdesc->stride == 0);
-    bool shader_visible = constant_buffer || bdesc->shader_resource;
+    bool shader_visible = constant_buffer || bdesc->shader_resource || bdesc->shader_writable;
     if (shader_visible) padded_size = pad256(padded_size);
     D3D12_RESOURCE_DESC dx12_resource_desc = {};
     dx12_resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -3665,7 +3795,20 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
         D3D12_GPU_DESCRIPTOR_HANDLE cbv_gpu_handle(_data->_shader_heap[0]->GetGPUDescriptorHandleForHeapStart());
         cbv_handle.ptr += bdesc->view_index * desc_size;
         cbv_gpu_handle.ptr += bdesc->view_index * desc_size;
-        if (constant_buffer) {
+        if (bdesc->shader_writable) {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC dx12_uav_desc = {};
+            dx12_uav_desc.Format = DXGI_FORMAT_UNKNOWN;
+            dx12_uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            dx12_uav_desc.Buffer.FirstElement = 0;
+            dx12_uav_desc.Buffer.NumElements = (bdesc->stride) ? (bdesc->size / bdesc->stride) : 0;
+            dx12_uav_desc.Buffer.CounterOffsetInBytes = 0;
+            dx12_uav_desc.Buffer.StructureByteStride = bdesc->stride;
+            dx12_uav_desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+            _data->_dev->CreateUnorderedAccessView(resource_impl->_dx12_resource, NULL, &dx12_uav_desc, cbv_handle);
+            buffer_impl->_view_index = bdesc->view_index;
+            buffer_impl->_cpu_view = cbv_handle;
+            buffer_impl->_gpu_view = cbv_gpu_handle;
+        } else if (constant_buffer) {
             D3D12_CONSTANT_BUFFER_VIEW_DESC dx12_cbv_desc = {};
             dx12_cbv_desc.BufferLocation = resource_impl->_dx12_resource->GetGPUVirtualAddress();
             dx12_cbv_desc.SizeInBytes = padded_size;

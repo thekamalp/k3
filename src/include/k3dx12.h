@@ -190,6 +190,15 @@ public:
     k3shaderBinding _binding;
 };
 
+class k3computeStateImpl
+{
+public:
+    k3computeStateImpl();
+    virtual ~k3computeStateImpl();
+    ID3D12PipelineState* _state;
+    k3shaderBinding _binding;
+};
+
 class k3memPoolImpl
 {
 public:

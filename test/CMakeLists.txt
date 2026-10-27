@@ -1,4 +1,4 @@
-add_executable (onetri onetri.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_ps.cso)
+add_executable (onetri onetri.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_ps.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_cs.cso)
 add_executable (raytri raytri.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_ray.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple3d_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple3d_ps.cso)
 add_executable (gradtest gradtest.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/color_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/color_ps.cso)
 add_executable (animtest animtest.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_ps.cso)
@@ -14,6 +14,7 @@ endfunction()
 
 add_hlsl_shader(vs_5_1 "shaders/simple_vs.hlsl" "simple_vs.cso" "main")
 add_hlsl_shader(ps_5_1 "shaders/simple_ps.hlsl" "simple_ps.cso" "main")
+add_hlsl_shader(cs_6_0 "shaders/simple_cs.hlsl" "simple_cs.cso" "main")
 add_hlsl_shader(lib_6_3 "shaders/simple_ray.hlsl" "simple_ray.cso" "main")
 add_hlsl_shader(vs_5_1 "shaders/simple3d.hlsl" "simple3d_vs.cso" "vs_main")
 add_hlsl_shader(ps_5_1 "shaders/simple3d.hlsl" "simple3d_ps.cso" "ps_main")

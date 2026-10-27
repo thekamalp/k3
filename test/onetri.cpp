@@ -18,6 +18,9 @@ private:
     k3cmdBuf cmd_buf;
     k3shaderBinding main_binding;
     k3gfxState main_state;
+    k3surf uav_surf;
+    k3shaderBinding cs_binding;
+    k3computeState cs_state;
     k3buffer vertex_buffer;
     k3surf texture;
     k3sampler sampler;
@@ -39,12 +42,14 @@ public:
     void Setup();
     void Keyboard(k3key k, char c, k3keyState state);
     void Display();
+    void Resize(uint32_t width, uint32_t height);
     static void K3CALLBACK KeyboardCallback(void* data, k3key k, char c, k3keyState state);
     static void K3CALLBACK JoystickAdded(void* data, uint32_t joystick, const k3joyInfo* joy_info, const k3joyState* joy_state);
     static void K3CALLBACK JoystickRemoved(void* data, uint32_t joystick);
     static void K3CALLBACK JoystickMove(void* data, uint32_t joystick, uint32_t axis_num, k3joyAxis axis, uint32_t ordinal, float position);
     static void K3CALLBACK JoystickButton(void* data, uint32_t joystick, uint32_t button, k3keyState state);
     static void K3CALLBACK DisplayCallback(void* data);
+    static void K3CALLBACK ResizeCallback(void* data, uint32_t width, uint32_t height);
 };
 
 App::App()
@@ -62,6 +67,7 @@ void App::Setup()
     win->SetJoystickFunc(JoystickAdded, JoystickRemoved, JoystickMove, JoystickButton);
     win->SetDisplayFunc(DisplayCallback);
     win->SetIdleFunc(DisplayCallback);
+    win->SetResizeFunc(ResizeCallback);
     win->SetVisible(true);
     win->SetCursorVisible(true);
     win->SetDataPtr(this);
@@ -98,6 +104,21 @@ void App::Setup()
     bind_params[2].view_set_desc.space = 0;
     bind_params[2].view_set_desc.offset = 2;
     main_binding = gfx->CreateShaderBinding(3, bind_params, 0, NULL);
+
+    bind_params[0].type = k3bindingType::VIEW_SET;
+    bind_params[0].view_set_desc.type = k3shaderBindType::UAV;
+    bind_params[0].view_set_desc.num_views = 1;
+    bind_params[0].view_set_desc.reg = 0;
+    bind_params[0].view_set_desc.space = 0;
+    bind_params[0].view_set_desc.offset = 0;
+    cs_binding = gfx->CreateShaderBinding(1, bind_params, 0, NULL);
+
+    k3shader cs;
+    cs = gfx->CreateShaderFromCompiledFile("simple_cs.cso");
+    k3computeStateDesc cs_state_desc = { 0 };
+    cs_state_desc.compute_shader = cs;
+    cs_state_desc.shader_binding = cs_binding;
+    cs_state = gfx->CreateComputeState(&cs_state_desc);
 
     k3shader vs, ps;
     vs = gfx->CreateShaderFromCompiledFile("simple_vs.cso");
@@ -208,6 +229,17 @@ void App::Setup()
         cb_move_desc.view_index++;
     }
 
+    win->GetBackBuffer()->GetResource()->getDesc(&rdesc);
+    vdesc.view_index = cb_move_desc.view_index + 1;
+    vdesc.clear_value[0] = 0.5f;
+    vdesc.clear_value[1] = 0.0f;
+    vdesc.clear_value[2] = 0.0f;
+    vdesc.clear_value[3] = 1.0f;
+    k3viewDesc vdesc2 = vdesc;
+    vdesc2.view_index++;
+    uav_surf = gfx->CreateSurface(&rdesc, &vdesc, &vdesc, &vdesc2);
+    vdesc.view_index += 2;
+
     cmd_buf->Reset();
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
     cmd_buf->UploadBuffer(buf, buffer_resource);
@@ -282,9 +314,9 @@ void App::Keyboard(k3key k, char c, k3keyState state)
 void App::Display()
 {
     sbuf->PlayStreams();
-    k3surf back_buffer = win->GetBackBuffer();
+    k3surf back_buffer = uav_surf;
     k3resource back_buffer_resource = back_buffer->GetResource();
-    float clear_color[] = { 0.5f, 0.0f, 0.5f, 1.0f };
+    float clear_color[] = { 0.5f, 0.0f, 0.0f, 1.0f };
     float text_fg_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     float text_bg_color[] = { 0.0, 0.0, 0.0, 1.0 };
     k3renderTargets rt = { NULL };
@@ -313,11 +345,38 @@ void App::Display()
     cmd_buf->Draw(3);
     cmd_buf->DrawText("Hi", font, text_fg_color, text_bg_color, -5, -10, k3fontAlignment::TOP_LEFT);
     cmd_buf->DrawText("Me Oh My Everyone", font, text_fg_color, text_bg_color, 0, 0, k3fontAlignment::TOP_CENTER);
+
+    cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::UAV);
+    cmd_buf->SetComputeState(cs_state);
+    cmd_buf->SetComputeUnorderedView(0, back_buffer);
+    cmd_buf->ComputeDispatch(8, 8);
+
+    back_buffer = win->GetBackBuffer();
+    back_buffer_resource = back_buffer->GetResource();
+    cmd_buf->TransitionResource(uav_surf->GetResource(), k3resourceState::COPY_SOURCE);
+    cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->Copy(back_buffer_resource, uav_surf->GetResource());
+
     cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::COMMON);
     cmd_buf->Close();
     gfx->SubmitCmdBuf(cmd_buf);
     win->SwapBuffer();
 }
+
+void App::Resize(uint32_t width, uint32_t height)
+{
+    gfx->WaitGpuIdle();
+
+    k3resourceDesc rdesc;
+    win->GetBackBuffer()->GetResource()->getDesc(&rdesc);
+
+    k3viewDesc vdesc = {};
+    k3viewDesc vdesc2 = {};
+    vdesc.view_index = uav_surf->GetSRVViewIndex();
+    vdesc2.view_index = uav_surf->GetUAVViewIndex();
+    uav_surf = gfx->CreateSurface(&rdesc, &vdesc, &vdesc, &vdesc2);
+}
+
 
 void K3CALLBACK App::KeyboardCallback(void* data, k3key k, char c, k3keyState state)
 {
@@ -329,6 +388,12 @@ void K3CALLBACK App::DisplayCallback(void* data)
 {    
     App* a = (App*)data;
     a->Display();
+}
+
+void K3CALLBACK App::ResizeCallback(void* data, uint32_t width, uint32_t height)
+{
+    App* a = (App*)data;
+    a->Resize(width, height);
 }
 
 void K3CALLBACK App::JoystickAdded(void* data, uint32_t joystick, const k3joyInfo* joy_info, const k3joyState* joy_state)

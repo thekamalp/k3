@@ -181,7 +181,8 @@ enum class k3objType {
     LLIST,
     LLIST_NODE,
     SAMPLE_DATA,
-    SOUND_FONT
+    SOUND_FONT,
+    COMPUTE_STATE
 };
 
 class k3obj
@@ -1430,6 +1431,10 @@ class k3rtStateImpl;
 class k3rtStateObj;
 typedef k3ptr<k3rtStateObj> k3rtState;
 
+class k3computeStateImpl;
+class k3computeStateObj;
+typedef k3ptr<k3computeStateObj> k3computeState;
+
 class k3rtStateTableImpl;
 class k3rtStateTableObj;
 typedef k3ptr<k3rtStateTableObj> k3rtStateTable;
@@ -1678,6 +1683,7 @@ struct k3bufferDesc {
     uint32_t view_index;  // for CBV, SRV
     k3fmt format;         // for index buffer
     bool shader_resource; // SRV buffer
+    bool shader_writable; // UAV buffer
 };
 
 // Raytracing acceleration structure size
@@ -2212,6 +2218,7 @@ public:
     K3API void SetConstants(uint32_t index, uint32_t num_constants, const void* values, uint32_t offset = 0);
     K3API void SetConstantBuffer(uint32_t index, k3buffer constant_buffer);
     K3API void SetShaderView(uint32_t index, k3surf surf);
+    K3API void SetUnorderedView(uint32_t index, k3surf surf);
     K3API void SetSampler(uint32_t index, k3sampler sampler);
     K3API void SetBlendFactor(const float* blend_factor);
     K3API void SetStencilRef(uint8_t stencil_ref);
@@ -2221,6 +2228,15 @@ public:
     K3API void UpdateRTStateTable(k3rtStateTable table, k3rtStateTableUpdate* desc);
     K3API void SetRTState(k3rtState state);
     K3API void RTDispatch(const k3rtDispatch* desc);
+
+    K3API void SetComputeState(k3computeState state);
+    K3API void SetComputeConstant(uint32_t index, uint32_t value, uint32_t offset = 0);
+    K3API void SetComputeConstants(uint32_t index, uint32_t num_constants, const void* values, uint32_t offset = 0);
+    K3API void SetComputeConstantBuffer(uint32_t index, k3buffer constant_buffer);
+    K3API void SetComputeShaderView(uint32_t index, k3surf surf);
+    K3API void SetComputeUnorderedView(uint32_t index, k3surf surf);
+    K3API void SetComputeSampler(uint32_t index, k3sampler sampler);
+    K3API void ComputeDispatch(uint32_t thread_group_x, uint32_t thread_group_y = 1, uint32_t thread_group_z = 1);
 
     K3API void Copy(k3resource dest, k3resource source);
     K3API void Draw(uint32_t vertex_count, uint32_t vertex_start = 0, uint32_t instance_count = 1, uint32_t instance_start = 0, uint32_t index_start = 0);
@@ -2594,6 +2610,29 @@ public:
     }
 };
 
+struct k3computeStateDesc
+{
+    k3shaderBinding shader_binding;
+    k3shader compute_shader;
+};
+
+class k3computeStateObj : public k3obj
+{
+private:
+    k3computeStateImpl* _data;
+
+public:
+    k3computeStateObj();
+    virtual ~k3computeStateObj();
+    k3computeStateImpl* getImpl();
+    const k3computeStateImpl* getImpl() const;
+
+    virtual K3API k3objType getObjType() const
+    {
+        return k3objType::COMPUTE_STATE;
+    }
+};
+
 enum class k3memType {
     GPU,
     UPLOAD,
@@ -2728,6 +2767,7 @@ public:
     K3API k3gfxState CreateGfxState(const k3gfxStateDesc* desc);
     K3API k3rtState CreateRTState(uint32_t num_elements, const k3rtStateDesc* desc);
     K3API k3rtStateTable CreateRTStateTable(const k3rtStateTableDesc* desc);
+    K3API k3computeState CreateComputeState(const k3computeStateDesc* desc);
 
     K3API k3memPool CreateMemPool(uint64_t size, k3memType mem_type, uint32_t flag);
     K3API k3uploadImage CreateUploadImage();
