@@ -6102,8 +6102,8 @@ void k3traverseAssimpNode(const aiScene* scene, const aiNode* node, uint32_t par
                         attrs[attr_start + 8 * i + 1] = scene->mMeshes[mesh_index]->mNormals[i].y;
                         attrs[attr_start + 8 * i + 2] = scene->mMeshes[mesh_index]->mNormals[i].z;
                         if (scene->mMeshes[mesh_index]->mTextureCoords) {
-                            attrs[attr_start + 8 * i + 3] = scene->mMeshes[mesh_index]->mTextureCoords[0]->x;
-                            attrs[attr_start + 8 * i + 4] = scene->mMeshes[mesh_index]->mTextureCoords[0]->y;
+                            attrs[attr_start + 8 * i + 3] = scene->mMeshes[mesh_index]->mTextureCoords[0][i].x;
+                            attrs[attr_start + 8 * i + 4] = 1.0f - scene->mMeshes[mesh_index]->mTextureCoords[0][i].y;
                         } else {
                             attrs[attr_start + 8 * i + 3] = 0.0f;
                             attrs[attr_start + 8 * i + 4] = 0.0f;
