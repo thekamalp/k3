@@ -6565,16 +6565,48 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
             mesh_impl->_anim[i].num_anim_objs = mesh_impl->_num_bones;
             mesh_impl->_anim[i].anim_objs = NULL;
             double ticks_per_sec = (scene->mAnimations[i]->mTicksPerSecond == 0) ? K3_FBX_TICKS_PER_MSEC / 1000 : scene->mAnimations[i]->mTicksPerSecond;
-            double anim_duration_msec = (scene->mAnimations[i]->mDuration / ticks_per_sec) * 1000.0;
-            mesh_impl->_anim[i].num_keyframes = 8;
-            double keyframe_delta_msec = anim_duration_msec / mesh_impl->_anim[i].num_keyframes;
-            double keyframe_delta_tick = (ticks_per_sec * keyframe_delta_msec) / 1000.0;
+            double duration_ticks = (scene->mAnimations[i]->mDuration == 0) ? ticks_per_sec : scene->mAnimations[i]->mDuration;
+            double anim_duration_msec = (duration_ticks / ticks_per_sec) * 1000.0;
+            // Loop through all of the animations and find the minimal time interval between key frames
+            double min_interval_ticks = duration_ticks;
+            double cur_interval_ticks = 0.0;
+            uint32_t k;
+            for (j = 0; j < scene->mAnimations[i]->mNumChannels; j++) {
+                channel = scene->mAnimations[i]->mChannels[j];
+                for (k = 0; k < channel->mNumPositionKeys - 1; k++) {
+                    cur_interval_ticks = channel->mPositionKeys[k + 1].mTime - channel->mPositionKeys[k].mTime;
+                    min_interval_ticks = (cur_interval_ticks < min_interval_ticks) ? cur_interval_ticks : min_interval_ticks;
+                }
+                for (k = 0; k < channel->mNumRotationKeys - 1; k++) {
+                    cur_interval_ticks = channel->mRotationKeys[k + 1].mTime - channel->mRotationKeys[k].mTime;
+                    min_interval_ticks = (cur_interval_ticks < min_interval_ticks) ? cur_interval_ticks : min_interval_ticks;
+                }
+                for (k = 0; k < channel->mNumScalingKeys - 1; k++) {
+                    cur_interval_ticks = channel->mScalingKeys[k + 1].mTime - channel->mScalingKeys[k].mTime;
+                    min_interval_ticks = (cur_interval_ticks < min_interval_ticks) ? cur_interval_ticks : min_interval_ticks;
+                }
+            }
+            // compute the number of key frames based on the duration and minimum interval
+            mesh_impl->_anim[i].num_keyframes = (duration_ticks / min_interval_ticks) + 1;
+            double keyframe_delta_msec = anim_duration_msec / (mesh_impl->_anim[i].num_keyframes - 1);
+            double keyframe_delta_tick = min_interval_ticks; // should be the same as ths: (ticks_per_sec* keyframe_delta_msec) / 1000.0;
             mesh_impl->_anim[i].keyframe_delta_msec = keyframe_delta_msec;
             mesh_impl->_anim[i].model.id = ~0;
             mesh_impl->_anim[i].model.obj_type = k3fbxObjType::NONE;
             mesh_impl->_anim[i].bone_data = new k3boneData[mesh_impl->_anim[i].num_keyframes * mesh_impl->_anim[i].num_anim_objs];
             mesh_impl->_anim[i].bone_flag = NULL;// new uint32_t[mesh_impl->_anim[i].num_anim_objs];
-            memset(mesh_impl->_anim[i].bone_data, 0, mesh_impl->_anim[i].num_keyframes* mesh_impl->_anim[i].num_anim_objs * sizeof(k3boneData));
+            for (j = 0; j < mesh_impl->_anim[i].num_keyframes * mesh_impl->_anim[i].num_anim_objs; j++) {
+                mesh_impl->_anim[i].bone_data[j].position[0] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].position[1] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].position[2] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].rot_quat[0] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].rot_quat[1] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].rot_quat[2] = 0.0f;
+                mesh_impl->_anim[i].bone_data[j].rot_quat[3] = 1.0f;
+                mesh_impl->_anim[i].bone_data[j].scaling[0] = 1.0f;
+                mesh_impl->_anim[i].bone_data[j].scaling[1] = 1.0f;
+                mesh_impl->_anim[i].bone_data[j].scaling[2] = 1.0f;
+            }
             //memset(mesh_impl->_anim[i].bone_flag, 0, mesh_impl->_anim[i].num_anim_objs * sizeof(uint32_t));
 
             // Loops through all bones
@@ -6596,21 +6628,30 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
                     // Loop through all the destination keyframes
                     for (j = 0; j < mesh_impl->_anim[i].num_keyframes; j++) {
                         // Find position src keyframe
-                        while (pos_src_frame+1 < channel->mNumPositionKeys && cur_tick > channel->mPositionKeys[pos_src_frame + 1].mTime) {
+                        while (pos_src_frame + 1 < channel->mNumPositionKeys && cur_tick > channel->mPositionKeys[pos_src_frame + 1].mTime) {
                             pos_src_frame++;
                         }
-                        // lerp between the current and next keyframe
-                        lerp = (cur_tick - channel->mPositionKeys[pos_src_frame].mTime) /
-                            (channel->mPositionKeys[pos_src_frame + 1].mTime - channel->mPositionKeys[pos_src_frame].mTime);
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[0] =
-                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.x +
-                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.x;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[1] =
-                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.y +
-                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.y;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[2] =
-                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.z +
-                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.z;
+                        if (pos_src_frame + 1 < channel->mNumPositionKeys) {
+                            // lerp between the current and next keyframe
+                            lerp = (cur_tick - channel->mPositionKeys[pos_src_frame].mTime) /
+                                (channel->mPositionKeys[pos_src_frame + 1].mTime - channel->mPositionKeys[pos_src_frame].mTime);
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[0] =
+                                (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.x +
+                                lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[1] =
+                                (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.y +
+                                lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[2] =
+                                (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.z +
+                                lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.z;
+                        } else {
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[0] =
+                                channel->mPositionKeys[pos_src_frame].mValue.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[1] =
+                                channel->mPositionKeys[pos_src_frame].mValue.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[2] =
+                                channel->mPositionKeys[pos_src_frame].mValue.z;
+                        }
                         //k3mv4_Mul(mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position,
                         //    k3globalInverseXform, mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position);
 
@@ -6618,14 +6659,21 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
                         while (rot_src_frame + 1 < channel->mNumRotationKeys && cur_tick > channel->mRotationKeys[rot_src_frame + 1].mTime) {
                             rot_src_frame++;
                         }
-                        // lerp between the current and next keyframe
-                        lerp = (cur_tick - channel->mRotationKeys[rot_src_frame].mTime) /
-                            (channel->mRotationKeys[rot_src_frame + 1].mTime - channel->mRotationKeys[rot_src_frame].mTime);
-                        aiQuaternion::Interpolate(lerp_quat, channel->mRotationKeys[rot_src_frame].mValue, channel->mRotationKeys[rot_src_frame + 1].mValue, lerp);
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] = lerp_quat.x;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[1] = lerp_quat.y;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[2] = lerp_quat.z;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[3] = lerp_quat.w;
+                        if (rot_src_frame + 1 < channel->mNumRotationKeys) {
+                            // lerp between the current and next keyframe
+                            lerp = (cur_tick - channel->mRotationKeys[rot_src_frame].mTime) /
+                                (channel->mRotationKeys[rot_src_frame + 1].mTime - channel->mRotationKeys[rot_src_frame].mTime);
+                            aiQuaternion::Interpolate(lerp_quat, channel->mRotationKeys[rot_src_frame].mValue, channel->mRotationKeys[rot_src_frame + 1].mValue, lerp);
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] = lerp_quat.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[1] = lerp_quat.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[2] = lerp_quat.z;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[3] = lerp_quat.w;
+                        } else {
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] = channel->mRotationKeys[rot_src_frame].mValue.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[1] = channel->mRotationKeys[rot_src_frame].mValue.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[2] = channel->mRotationKeys[rot_src_frame].mValue.z;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[3] = channel->mRotationKeys[rot_src_frame].mValue.w;
+                        }
                         //mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] =
                         //    (1.0 - lerp) * channel->mRotationKeys[rot_src_frame].mValue.x +
                         //    lerp * channel->mRotationKeys[rot_src_frame + 1].mValue.x;
@@ -6653,18 +6701,27 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
                         while (scl_src_frame + 1 < channel->mNumScalingKeys && cur_tick > channel->mScalingKeys[scl_src_frame + 1].mTime) {
                             scl_src_frame++;
                         }
-                        // lerp between the current and next keyframe
-                        lerp = (cur_tick - channel->mScalingKeys[scl_src_frame].mTime) /
-                            (channel->mScalingKeys[scl_src_frame + 1].mTime - channel->mScalingKeys[scl_src_frame].mTime);
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[0] =
-                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.x +
-                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.x;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[1] =
-                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.y +
-                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.y;
-                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[2] =
-                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.z +
-                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.z;
+                        if (scl_src_frame + 1 < channel->mNumScalingKeys) {
+                            // lerp between the current and next keyframe
+                            lerp = (cur_tick - channel->mScalingKeys[scl_src_frame].mTime) /
+                                (channel->mScalingKeys[scl_src_frame + 1].mTime - channel->mScalingKeys[scl_src_frame].mTime);
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[0] =
+                                (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.x +
+                                lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[1] =
+                                (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.y +
+                                lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[2] =
+                                (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.z +
+                                lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.z;
+                        } else {
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[0] =
+                                channel->mScalingKeys[scl_src_frame].mValue.x;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[1] =
+                                channel->mScalingKeys[scl_src_frame].mValue.y;
+                            mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[2] =
+                                channel->mScalingKeys[scl_src_frame].mValue.z;
+                        }
 
                         cur_tick += keyframe_delta_tick;
                     }
