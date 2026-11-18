@@ -539,6 +539,7 @@ inline float* k3mv4_Mul(float* d, const float* s1, const float* s2) { return k3m
 /* Quaternion converstion functions */
 K3API float* k3m_QuatToMat(uint32_t cols, float* d, const float* s);
 K3API float* k3m_MatToQuat(uint32_t cols, float* d, const float* s);
+K3API float* k3v3_SetQuatVector(float* d, const float* s1, const float* s2);
 K3API float* k3v4_SetQuatRotation(float* d, float angle, const float* axis);
 K3API float k3v3_GetQuatRotation(float* axis, float* angle, const float* quat);
 K3API float* k3v4_SetQuatEuler(float* d, const float* angles);
@@ -632,11 +633,19 @@ typedef void (K3CALLBACK* k3image_file_handler_loaddata_ptr)(FILE* file_handle, 
 typedef void (K3CALLBACK* k3image_file_handler_savedata_ptr)(FILE* file_handle, uint32_t width, uint32_t height,
     uint32_t depth, uint32_t pitch, uint32_t slice_pitch, k3fmt format, const void* data);
 
+typedef uint32_t (K3CALLBACK* k3image_file_handler_loadheaderinfofrommem_ptr)(void* mem, uint32_t mem_size, uint32_t* width, uint32_t* height,
+    uint32_t* depth, k3fmt* format);
+
+typedef void (K3CALLBACK* k3image_file_handler_loaddatafrommem_ptr)(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data);
+
+
 struct k3image_file_handler_t
 {
     k3image_file_handler_loadheaderinfo_ptr LoadHeaderInfo;
     k3image_file_handler_loaddata_ptr LoadData;
     k3image_file_handler_savedata_ptr SaveData;
+    k3image_file_handler_loadheaderinfofrommem_ptr LoadHeaderInfoFromMem;
+    k3image_file_handler_loaddatafrommem_ptr LoadDataFromMem;
 };
 
 struct k3DXT1Block {
@@ -710,6 +719,11 @@ public:
         k3fmt dest_format, const float* transform,
         k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode);
 
+    static K3API void ReformatFromFileMemory(k3image img, void* mem, uint32_t mem_size,
+        uint32_t dest_width, uint32_t dest_height, uint32_t dest_depth,
+        k3fmt dest_format, const float* transform,
+        k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode);
+
     static void LoadFromFile(k3image img, const char* src)
     {
         ReformatFromFile((img), (src), 0, 0, 0, k3fmt::UNKNOWN, NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
@@ -734,6 +748,19 @@ public:
     static void TransformFromFileHandle(k3image img, FILE* src, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df, const float* t, k3texAddr xa, k3texAddr ya, k3texAddr za)
     {
         ReformatFromFileHandle((img), (src), (dw), (dh), (dd), (df), (t), (xa), (ya), (za));
+    }
+
+    static void LoadFromFileMemory(k3image img, void* mem, uint32_t mem_size)
+    {
+        ReformatFromFileMemory((img), (mem), (mem_size), 0, 0, 0, k3fmt::UNKNOWN, NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
+    }
+    static void ReformatFromFileMemory(k3image img, void* mem, uint32_t mem_size, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df)
+    {
+        ReformatFromFileMemory((img), (mem), (mem_size), (dw), (dh), (dd), (df), NULL, k3texAddr::CLAMP, k3texAddr::CLAMP, k3texAddr::CLAMP);
+    }
+    static void TransformFromFileMemory(k3image img, void* mem, uint32_t mem_size, uint32_t dw, uint32_t dh, uint32_t dd, k3fmt df, const float* t, k3texAddr xa, k3texAddr ya, k3texAddr za)
+    {
+        ReformatFromFileMemory((img), (mem), (mem_size), (dw), (dh), (dd), (df), (t), (xa), (ya), (za));
     }
 
     static K3API void ReformatFromMemory(k3image img, uint32_t src_width, uint32_t src_height, uint32_t src_depth,
@@ -2082,6 +2109,7 @@ public:
     K3API uint32_t getMeshNumPrims(uint32_t mesh);
     K3API uint32_t getMeshIndex(uint32_t obj);
     K3API uint32_t getStartPrim(uint32_t obj);
+    K3API uint32_t getStartVert(uint32_t obj);
     K3API uint32_t getNumPrims(uint32_t obj);
     K3API float* getTransform(uint32_t obj);
     K3API float* getDiffuseColor(uint32_t obj);
@@ -2784,6 +2812,7 @@ public:
 
     K3API k3font CreateFont(k3fontDesc* desc);
     K3API k3mesh CreateMesh(k3meshDesc* desc);
+    K3API k3mesh CreateMeshAS(k3meshDesc* desc);
 };
 
 // ------------------------------------------------------------

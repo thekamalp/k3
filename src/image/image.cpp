@@ -138,6 +138,76 @@ K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
     } // if (src_format != k3fmt::UNKNOWN)
 }
 
+K3API void k3imageObj::ReformatFromFileMemory(k3image img, void* mem, uint32_t mem_size,
+    uint32_t dest_width, uint32_t dest_height, uint32_t dest_depth,
+    k3fmt dest_format, const float* transform,
+    k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode)
+{
+    uint32_t src_width, src_height, src_depth;
+    k3fmt src_format = k3fmt::UNKNOWN;
+    uint8_t* src_data_byte_ptr = NULL;
+    void* src_data;
+    uint32_t fhi;
+    uint8_t* mem8 = (uint8_t*)mem;
+    uint32_t read_length = 0;
+
+    for (fhi = 0; fhi < _num_file_handlers; fhi++) {
+        if (_fh[fhi]->LoadHeaderInfoFromMem) {
+            read_length = _fh[fhi]->LoadHeaderInfoFromMem(mem8, mem_size, &src_width, &src_height, &src_depth, &src_format);
+        }
+        if (src_format != k3fmt::UNKNOWN) {
+            mem8 += read_length;
+            mem_size -= read_length;
+            break;
+        }
+    }
+    if (src_format != k3fmt::UNKNOWN) {
+        if (dest_width == 0) dest_width = src_width;
+        if (dest_height == 0) dest_height = src_height;
+        if (dest_depth == 0) dest_depth = src_depth;
+        if (dest_format == k3fmt::UNKNOWN) dest_format = src_format;
+        uint32_t src_format_size = k3imageObj::GetFormatSize(src_format);
+        uint32_t dest_format_size = k3imageObj::GetFormatSize(dest_format);
+        img->SetDimensions(dest_width, dest_height, dest_depth, dest_format);
+        uint32_t dest_pitch = img->GetPitch();
+        uint32_t dest_slice_pitch = img->GetSlicePitch();
+        uint32_t src_pitch = (src_width == dest_width && src_format_size == dest_format_size) ? dest_pitch : src_width * src_format_size;
+        uint32_t src_slice_pitch = (src_pitch == dest_pitch && src_height == dest_height) ? dest_slice_pitch : src_pitch * src_height;
+
+        uint32_t src_image_size = src_depth * src_slice_pitch;
+        uint32_t dest_image_size = dest_depth * dest_slice_pitch;
+        bool inplace = (src_width == dest_width && src_height == dest_height &&
+            src_depth == dest_depth && src_image_size == dest_image_size && transform == NULL &&
+            src_pitch == dest_pitch && src_slice_pitch == dest_slice_pitch);
+
+        if (inplace) {
+            src_data = img->MapForWrite();
+        } else {
+            src_data_byte_ptr = new uint8_t[src_image_size];
+            src_data = static_cast<void*>(src_data_byte_ptr);
+        } // if( inplace )
+
+        _fh[fhi]->LoadDataFromMem(mem8, mem_size, src_pitch, src_slice_pitch, src_data);
+
+        if (inplace) {
+            if (src_format != dest_format) k3imageObj::ReformatBuffer(src_width, src_height, src_depth,
+                src_pitch, src_slice_pitch,
+                src_format, src_data,
+                dest_width, dest_height, dest_depth,
+                dest_pitch, dest_slice_pitch,
+                dest_format, src_data, transform,
+                x_addr_mode, y_addr_mode, z_addr_mode);
+            img->Unmap();
+        } else {
+            k3imageObj::ReformatFromMemory(img, src_width, src_height, src_depth, src_pitch, src_slice_pitch, src_format, src_data,
+                dest_width, dest_height, dest_depth, dest_format, transform,
+                x_addr_mode, y_addr_mode, z_addr_mode);
+            delete[] src_data_byte_ptr;
+        } // if( inplace )
+    } // if (src_format != k3fmt::UNKNOWN)
+
+}
+
 K3API void k3imageObj::ReformatFromMemory(k3image img, uint32_t src_width, uint32_t src_height, uint32_t src_depth,
     uint32_t src_pitch, uint32_t src_slice_pitch,
     k3fmt src_format, const void* src_data,
@@ -145,6 +215,9 @@ K3API void k3imageObj::ReformatFromMemory(k3image img, uint32_t src_width, uint3
     k3fmt dest_format, const float* transform,
     k3texAddr x_addr_mode, k3texAddr y_addr_mode, k3texAddr z_addr_mode)
 {
+    uint32_t src_format_size = GetFormatSize(src_format);
+    if (src_pitch == 0) src_pitch = src_width * src_format_size;
+    if (src_slice_pitch == 0) src_slice_pitch = src_height * src_pitch;
     if (dest_width == 0)  dest_width = src_width;
     if (dest_height == 0) dest_height = src_height;
     if (dest_depth == 0)  dest_depth = src_depth;

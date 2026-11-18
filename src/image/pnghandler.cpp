@@ -91,18 +91,15 @@ struct png_palette_entry_t {
 
 k3image_file_handler_t k3PNGHandler = { k3png_LoadHeaderInfo,
                                         k3png_LoadData,
-                                        k3png_SaveData };
+                                        k3png_SaveData,
+                                        k3png_LoadHeaderInfoFromMem,
+                                        k3png_LoadDataFromMem };
 
 png_ihdr_t header;
 k3fmt img_format;
 
-void K3CALLBACK k3png_LoadHeaderInfo(FILE* file_handle,
-    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
+uint32_t k3png_ValidateHeader(uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
 {
-    uint32_t start_pos = ftell(file_handle);
-    fread(&header, sizeof(png_ihdr_t), 1, file_handle);
-    png_ihdr_endian_swap(&header);
-
     // Do error checking on the header
     if (header.sig != PNG_SIGNATURE ||              // Do we have the PNG signature
         header.ihdr_chunk.type != PNG_CHUNK_IHDR || // is the first chunk IHDR
@@ -114,8 +111,7 @@ void K3CALLBACK k3png_LoadHeaderInfo(FILE* file_handle,
         !(header.interlace_method == PNG_INTERLACE_NONE ||
             header.interlace_method == PNG_INTERLACE_ADAM7)  // 0 or 1 are only legal interlace methods
         ) {
-        fseek(file_handle, start_pos, SEEK_SET);
-        return;
+        return 0;
     }
 
     *width = header.width;
@@ -139,6 +135,29 @@ void K3CALLBACK k3png_LoadHeaderInfo(FILE* file_handle,
         img_format = k3fmt::UNKNOWN;
     }
     *format = img_format;
+    return sizeof(header);
+}
+
+uint32_t K3CALLBACK k3png_LoadHeaderInfoFromMem(void* mem, uint32_t mem_size,
+    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
+{
+    memcpy(&header, mem, sizeof(header));
+    png_ihdr_endian_swap(&header);
+
+    return k3png_ValidateHeader(width, height, depth, format);
+}
+
+void K3CALLBACK k3png_LoadHeaderInfo(FILE* file_handle,
+    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
+{
+    uint32_t start_pos = ftell(file_handle);
+    fread(&header, sizeof(png_ihdr_t), 1, file_handle);
+    png_ihdr_endian_swap(&header);
+
+    if (k3png_ValidateHeader(width, height, depth, format) == 0) {
+        // Not a png file, so return to starting position
+        fseek(file_handle, start_pos, SEEK_SET);
+    }
 }
 
 uint8_t k3png_paeth(uint8_t a, uint8_t b, uint8_t c)
@@ -188,8 +207,10 @@ void k3png_defilter_scanline(uint8_t* dst, uint8_t* prev_dst, uint32_t pix_pitch
     }
 }
 
-void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice_pitch, void* data)
+void k3png_LoadDataCommon(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data)
 {
+    FILE* file_handle = (mem_size == 0) ? (FILE*)mem : NULL;
+    uint8_t* mem8 = (uint8_t*)mem;
     png_chunk_t chunk;
     bool palette_found = false;
     png_palette_entry_t palette[256] = { 0 };
@@ -285,15 +306,39 @@ void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
     uint32_t endian_swap = (header.bit_depth == 16) ? 0x1 : 0x0;
 #endif
     while (!done) {
-        fread(&chunk, sizeof(png_chunk_t), 1, file_handle);
+        if (file_handle) {
+            fread(&chunk, sizeof(png_chunk_t), 1, file_handle);
+        } else {
+            uint32_t read_length = sizeof(png_chunk_t);
+            read_length = (read_length > mem_size) ? mem_size : read_length;
+            memcpy(&chunk, mem8, read_length);
+            mem8 += read_length;
+            mem_size -= read_length;
+        }
         png_chunk_endian_swap(&chunk);
         switch (chunk.type) {
         case PNG_CHUNK_PLTE:
             length = chunk.length / 3;
             if (length > 256) length = 256;
-            fread(palette, sizeof(png_palette_entry_t), length, file_handle);
+            if (file_handle) {
+                fread(palette, sizeof(png_palette_entry_t), length, file_handle);
+            } else {
+                uint32_t read_length = sizeof(png_palette_entry_t) * length;
+                read_length = (read_length > mem_size) ? mem_size : read_length;
+                memcpy(palette, mem8, read_length);
+                mem8 += read_length;
+                mem_size -= read_length;
+            }
             length = chunk.length - 3 * length;
-            if (length) fseek(file_handle, length, SEEK_CUR);
+            if (length) {
+                if (file_handle) {
+                    fseek(file_handle, length, SEEK_CUR);
+                } else {
+                    length = (length > mem_size) ? mem_size : length;
+                    mem8 += length;
+                    mem_size -= length;
+                }
+            }
             palette_found = true;
             break;
         case PNG_CHUNK_IDAT:
@@ -303,7 +348,15 @@ void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
                 while (bytes_remaining) {
                     zs.avail_in = (bytes_remaining > scanline_pitch) ? scanline_pitch : bytes_remaining;
                     zs.next_in = raw_read;
-                    fread(raw_read, 1, zs.avail_in, file_handle);
+                    if (file_handle) {
+                        fread(raw_read, 1, zs.avail_in, file_handle);
+                    } else {
+                        uint32_t read_length = zs.avail_in;
+                        read_length = (read_length > mem_size) ? mem_size : read_length;
+                        memcpy(raw_read, mem8, read_length);
+                        mem8 += read_length;
+                        mem_size -= read_length;
+                    }
                     // TODO: at this point, should compute running CRC
                     bytes_remaining -= zs.avail_in;
                     while (zs.avail_in) {
@@ -399,19 +452,42 @@ void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
                 }
             } else {
                 // this shouldn't be...we have more data than expected for the image
-                fseek(file_handle, chunk.length, SEEK_CUR);
+                if (file_handle) {
+                    fseek(file_handle, chunk.length, SEEK_CUR);
+                } else {
+                    uint32_t read_length = chunk.length;
+                    read_length = (read_length > mem_size) ? mem_size : read_length;
+                    mem8 += read_length;
+                    mem_size -= read_length;
+                }
             }
             break;
         case PNG_CHUNK_IEND:
             done = true;
             break;
         default:
-            fseek(file_handle, chunk.length, SEEK_CUR);
+            if (file_handle) {
+                fseek(file_handle, chunk.length, SEEK_CUR);
+            } else {
+                uint32_t read_length = chunk.length;
+                read_length = (read_length > mem_size) ? mem_size : read_length;
+                mem8 += read_length;
+                mem_size -= read_length;
+            }
             break;
         }
-        fread(&crc, sizeof(crc), 1, file_handle);
-        // TODO: compute and check CRC
-        if (feof(file_handle)) done = true;
+        if (file_handle) {
+            fread(&crc, sizeof(crc), 1, file_handle);
+            // TODO: compute and check CRC
+            if (feof(file_handle)) done = true;
+        } else {
+            uint32_t read_length = sizeof(crc);
+            read_length = (read_length > mem_size) ? mem_size : read_length;
+            memcpy(&crc, mem8, sizeof(crc));
+            mem8 += read_length;
+            mem_size -= read_length;
+            if (mem_size == 0) done = true;
+        }
     }
 
     delete[] src_buffer;
@@ -423,4 +499,15 @@ void K3CALLBACK k3png_SaveData(FILE* file_handle,
     const void* data)
 {
 
+}
+
+void K3CALLBACK k3png_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice_pitch, void* data)
+{
+    k3png_LoadDataCommon(file_handle, 0, pitch, slice_pitch, data);
+}
+
+void K3CALLBACK k3png_LoadDataFromMem(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data)
+{
+    if (mem_size == 0) return;
+    k3png_LoadDataCommon(mem, mem_size, pitch, slice_pitch, data);
 }

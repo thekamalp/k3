@@ -166,6 +166,7 @@ struct k3meshModel {
     uint32_t parent;
     uint32_t mesh_index;
     uint32_t prim_start;
+    uint32_t vert_start;
     uint32_t num_prims;
     float position[3];
     uint32_t padding0;

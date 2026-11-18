@@ -436,11 +436,13 @@ void App::Display()
     fence->WaitGpuFence(version - NUM_VERSIONS);
     UpdateResources(v);
 
+    k3buffer index_buf = scene->getIndexBuffer();
     cmd_buf->TransitionResource(depth_surf->GetResource(), k3resourceState::RENDER_TARGET);
     cmd_buf->ClearDepthTarget(depth_surf, k3depthSelect::DEPTH, 0.0f, 0x0, NULL);
     cmd_buf->SetGfxState(raster_state);
     cmd_buf->TransitionResource(scene->getVertexBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
     cmd_buf->TransitionResource(scene->getAttribBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
+    cmd_buf->SetIndexBuffer(index_buf);
     cmd_buf->SetVertexBuffer(0, scene->getVertexBuffer());
     cmd_buf->SetVertexBuffer(1, scene->getAttribBuffer());
     cmd_buf->SetVertexBuffer(2, scene->getSkinBuffer());
@@ -458,7 +460,11 @@ void App::Display()
     for (i = 0; i < scene->getNumObjects(); i++) {
         if (scene->getVisibility(i) > 0.5f) {
             cmd_buf->SetConstant(3, i);
-            cmd_buf->Draw(3 * scene->getNumPrims(i), 3 * scene->getStartPrim(i));
+            if (index_buf != NULL) {
+                cmd_buf->Draw(3 * scene->getNumPrims(i), scene->getStartVert(i), 1, 0, 3 * scene->getStartPrim(i));
+            } else {
+                cmd_buf->Draw(3 * scene->getNumPrims(i), 3 * scene->getStartPrim(i));
+            }
         }
     }
 

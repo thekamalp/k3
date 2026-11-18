@@ -3,6 +3,9 @@
 // Date: 10/10/2021
 
 #include "k3internal.h"
+#include <assimp/cimport.h>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 
 // ------------------------------------------------------------
 // k3 bit tracker
@@ -1282,6 +1285,15 @@ K3API uint32_t k3meshObj::getStartPrim(uint32_t obj)
     }
 }
 
+K3API uint32_t k3meshObj::getStartVert(uint32_t obj)
+{
+    if (obj < _data->_num_models) {
+        return _data->_model[obj].vert_start;
+    } else {
+        return 0;
+    }
+}
+
 K3API uint32_t k3meshObj::getNumPrims(uint32_t obj)
 {
     if (obj < _data->_num_models) {
@@ -2109,7 +2121,7 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_ex
         memcpy(model_xform, _data->_model[m].world_xform, 16 * sizeof(float));
 
         v_start = _data->_mesh_start[mesh];
-        v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+        v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_verts : _data->_mesh_start[mesh + 1];
         v_start *= 3;
         v_end *= 3;
 
@@ -2120,57 +2132,97 @@ K3API void k3meshObj::getAABB(k3AABB* aabb, uint32_t model, k3bitTracker bone_ex
         skin_f += 4;
 
         if (_data->_ib != NULL) {
-            uint32_t i, i_start = v_start, i_end = v_end;
+            uint32_t i, i_start = 0, i_end;
             uint32_t vert_size = (_data->_num_bones > 0) ? 19 : 11;
             uint32_t* indices = (uint32_t*)(_data->_geom_data + vert_size * _data->_num_verts);
-            v_start = _data->_num_verts;
-            v_end = 0;
+            for (i = 0; i < m; i++) {
+                i_start += _data->_model[i].num_prims;
+            }
+            i_end = i_start + _data->_model[m].num_prims;
+            i_start *= 3;
+            i_end *= 3;
             for (i = i_start; i < i_end; i++) {
-                v_start = (indices[i] < v_start) ? indices[i] : v_start;
-                v_end = (indices[i] > v_end) ? indices[i] : v_end;
-            }
-        }
-        for (v = v_start; v < v_end; v++) {
-            xform_vert[3] = 1.0f;
-            if (_data->_num_bones > 0 && skin_f[0] >= 0.1f) {
-                xform_vert[0] = 0.0f;
-                xform_vert[1] = 0.0f;
-                xform_vert[2] = 0.0f;
-                temp_vec1[0] = verts[0];
-                temp_vec1[1] = verts[1];
-                temp_vec1[2] = verts[2];
-                temp_vec1[3] = 1.0f;
-                include_bone = true;
-                for (b = 0; b < 4; b++) {
-                    //if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
-                    if (bone_exclude_mask != NULL && bone_exclude_mask->GetBit(skin_i[b])) include_bone = false;
-                    // Transform vertex with this bone matrix
-                    k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
-                    // scale by weight
-                    k3sv3_Mul(temp_vec2, skin_f[b], temp_vec2);
-                    // Add in the weighted position to transformed vertex
-                    k3v3_Add(xform_vert, xform_vert, temp_vec2);
+                v = indices[i];
+
+                xform_vert[3] = 1.0f;
+                if (_data->_num_bones > 0 && skin_f[8 * v + 0] >= 0.1f) {
+                    xform_vert[0] = 0.0f;
+                    xform_vert[1] = 0.0f;
+                    xform_vert[2] = 0.0f;
+                    temp_vec1[0] = verts[3 * v + 0];
+                    temp_vec1[1] = verts[3 * v + 1];
+                    temp_vec1[2] = verts[3 * v + 2];
+                    temp_vec1[3] = 1.0f;
+                    include_bone = true;
+                    for (b = 0; b < 4; b++) {
+                        //if (bone >= _data->_num_bones || skin_i[8 * v + b] == bone) include_bone = true;
+                        if (bone_exclude_mask != NULL && bone_exclude_mask->GetBit(skin_i[8 * v + b])) include_bone = false;
+                        // Transform vertex with this bone matrix
+                        k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[8 * v + b], temp_vec1);
+                        // scale by weight
+                        k3sv3_Mul(temp_vec2, skin_f[8 * v + b], temp_vec2);
+                        // Add in the weighted position to transformed vertex
+                        k3v3_Add(xform_vert, xform_vert, temp_vec2);
+                    }
+                } else {
+                    xform_vert[0] = verts[0];
+                    xform_vert[1] = verts[2];
+                    xform_vert[2] = verts[2];
                 }
-            } else {
-                xform_vert[0] = verts[0];
-                xform_vert[1] = verts[2];
-                xform_vert[2] = verts[2];
-            }
-            k3mv4_Mul(xform_vert, model_xform, xform_vert);
+                k3mv4_Mul(xform_vert, model_xform, xform_vert);
 
-            if (include_bone) {
-                aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
-                aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
-                aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
-                aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
-                aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
-                aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
+                if (include_bone) {
+                    aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
+                    aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
+                    aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
+                    aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
+                    aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
+                    aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
+                }
             }
+        } else {
+            for (v = v_start; v < v_end; v++) {
+                xform_vert[3] = 1.0f;
+                if (_data->_num_bones > 0 && skin_f[0] >= 0.1f) {
+                    xform_vert[0] = 0.0f;
+                    xform_vert[1] = 0.0f;
+                    xform_vert[2] = 0.0f;
+                    temp_vec1[0] = verts[0];
+                    temp_vec1[1] = verts[1];
+                    temp_vec1[2] = verts[2];
+                    temp_vec1[3] = 1.0f;
+                    include_bone = true;
+                    for (b = 0; b < 4; b++) {
+                        //if (bone >= _data->_num_bones || skin_i[b] == bone) include_bone = true;
+                        if (bone_exclude_mask != NULL && bone_exclude_mask->GetBit(skin_i[b])) include_bone = false;
+                        // Transform vertex with this bone matrix
+                        k3mv4_Mul(temp_vec2, bone_mat + 16 * skin_i[b], temp_vec1);
+                        // scale by weight
+                        k3sv3_Mul(temp_vec2, skin_f[b], temp_vec2);
+                        // Add in the weighted position to transformed vertex
+                        k3v3_Add(xform_vert, xform_vert, temp_vec2);
+                    }
+                } else {
+                    xform_vert[0] = verts[0];
+                    xform_vert[1] = verts[2];
+                    xform_vert[2] = verts[2];
+                }
+                k3mv4_Mul(xform_vert, model_xform, xform_vert);
 
-            verts += 3;
-            attrs += 8;
-            skin_f += 8;
-            skin_i += 8;
+                if (include_bone) {
+                    aabb->min[0] = (xform_vert[0] < aabb->min[0]) ? xform_vert[0] : aabb->min[0];
+                    aabb->min[1] = (xform_vert[1] < aabb->min[1]) ? xform_vert[1] : aabb->min[1];
+                    aabb->min[2] = (xform_vert[2] < aabb->min[2]) ? xform_vert[2] : aabb->min[2];
+                    aabb->max[0] = (xform_vert[0] > aabb->max[0]) ? xform_vert[0] : aabb->max[0];
+                    aabb->max[1] = (xform_vert[1] > aabb->max[1]) ? xform_vert[1] : aabb->max[1];
+                    aabb->max[2] = (xform_vert[2] > aabb->max[2]) ? xform_vert[2] : aabb->max[2];
+                }
+
+                verts += 3;
+                attrs += 8;
+                skin_f += 8;
+                skin_i += 8;
+            }
         }
     }
 
@@ -2448,7 +2500,7 @@ K3API const float* k3meshObj::getVertPosition(uint32_t model, uint32_t vert)
     }
     uint32_t mesh = _data->_model[model].mesh_index;
     uint32_t v_start = _data->_mesh_start[mesh];
-    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_verts : _data->_mesh_start[mesh + 1];
     v_start *= 3;
     v_end *= 3;
 
@@ -2470,7 +2522,7 @@ K3API const float* k3meshObj::getVertAttrib(uint32_t model, uint32_t vert)
     }
     uint32_t mesh = _data->_model[model].mesh_index;
     uint32_t v_start = _data->_mesh_start[mesh];
-    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_verts : _data->_mesh_start[mesh + 1];
     v_start *= 3;
     v_end *= 3;
 
@@ -2492,7 +2544,7 @@ K3API const float* k3meshObj::getVertSkin(uint32_t model, uint32_t vert)
     }
     uint32_t mesh = _data->_model[model].mesh_index;
     uint32_t v_start = _data->_mesh_start[mesh];
-    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_tris : _data->_mesh_start[mesh + 1];
+    uint32_t v_end = (mesh == _data->_num_meshes - 1) ? _data->_num_verts : _data->_mesh_start[mesh + 1];
     v_start *= 3;
     v_end *= 3;
 
@@ -4780,6 +4832,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             strncpy(mesh_impl->_model[dest_index].name, fbx.model[i].name, K3_FBX_MAX_NAME_LENGTH);
             mesh_impl->_model[dest_index].mesh_index = mesh_index;
             mesh_impl->_model[dest_index].prim_start = mesh_start;
+            mesh_impl->_model[dest_index].vert_start = mesh_start;
             mesh_impl->_model[dest_index].num_prims = num_mesh_prims;
             mesh_impl->_model[dest_index].diffuse_color[0] = 1.0f;
             mesh_impl->_model[dest_index].diffuse_color[1] = 1.0f;
@@ -5892,6 +5945,841 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
 
     return mesh;
 }
+
+struct k3assimpMaterialTextureMapping {
+    aiString diffuse_filepath;
+    aiString normal_filepath;
+    uint32_t diffuse_map_index;
+    uint32_t normal_map_index;
+};
+
+void k3assimpMulByNodeXform(const aiNode* node, float* xform)
+{
+    float node_xform[16];
+    while (node) {
+        node_xform[0] = node->mTransformation[0][0];
+        node_xform[1] = node->mTransformation[0][1];
+        node_xform[2] = node->mTransformation[0][2];
+        node_xform[3] = node->mTransformation[0][3];
+        node_xform[4] = node->mTransformation[1][0];
+        node_xform[5] = node->mTransformation[1][1];
+        node_xform[6] = node->mTransformation[1][2];
+        node_xform[7] = node->mTransformation[1][3];
+        node_xform[8] = node->mTransformation[2][0];
+        node_xform[9] = node->mTransformation[2][1];
+        node_xform[10] = node->mTransformation[2][2];
+        node_xform[11] = node->mTransformation[2][3];
+        node_xform[12] = node->mTransformation[3][0];
+        node_xform[13] = node->mTransformation[3][1];
+        node_xform[14] = node->mTransformation[3][2];
+        node_xform[15] = node->mTransformation[3][3];
+        k3m4_Mul(xform, node_xform, xform);
+        node = node->mParent;
+    }
+}
+
+
+const float k3globalInverseXform[16] =
+{ 1.0f, 0.0f, 0.0f, 0.0f,
+  0.0f, 0.0f, -1.0f, 0.0f,
+  0.0f, 1.0f, 0.0f, 0.0f,
+  0.0f, 0.0f, 0.0f, 1.0f };
+//{ 1.0f, 0.0f, 0.0f, 0.0f,
+//  0.0f, 1.0f, 0.0f, 0.0f,
+//  0.0f, 0.0f, 1.0f, 0.0f,
+//  0.0f, 0.0f, 0.0f, 1.0f };
+
+void k3traverseAssimpNode(const aiScene* scene, const aiNode* node, uint32_t parent_node, const k3assimpMaterialTextureMapping* mat2tex, uint32_t skeleton_mesh, k3meshImpl* mesh_impl)
+{
+    // mesh_impl->_num_models and _num_bones must be 0 before calling
+    uint32_t i, j;
+    uint32_t cur_node = parent_node;
+    float* verts = mesh_impl->_geom_data;
+    float* attrs = NULL;
+    float* skin_f = NULL;
+    uint32_t* skin_i = NULL;
+    uint32_t* indices = NULL;
+    bool use_skin = (mesh_impl->_num_anims != 0);
+    uint32_t attr_size = (use_skin) ? 16 : 8;
+    uint32_t vert_size = 3 + attr_size;
+    if (verts) {
+        attrs = verts + 3 * mesh_impl->_num_verts;
+        skin_f = (use_skin) ? verts + 11 * mesh_impl->_num_verts : NULL;
+        skin_i = (uint32_t*)skin_f;
+        skin_f += 4;
+        indices = (uint32_t*)(verts + vert_size * mesh_impl->_num_verts);
+    }
+    if (node->mNumMeshes) {
+        cur_node = mesh_impl->_num_models;
+        for (i = 0; i < node->mNumMeshes; i++) {
+            uint32_t mesh_index = node->mMeshes[i];
+            uint32_t mesh_vertex_start = mesh_impl->_mesh_start[mesh_index];
+            uint32_t mesh_prim_start = 0;
+            for (j = 0; j < mesh_index; j++) {
+                mesh_prim_start += scene->mMeshes[j]->mNumFaces;
+            }
+            if (mesh_impl->_model) {
+                uint32_t num_mesh_prims = scene->mMeshes[mesh_index]->mNumFaces;
+                uint32_t material_index = scene->mMeshes[mesh_index]->mMaterialIndex;
+                aiMaterial* material = scene->mMaterials[material_index];
+                strncpy(mesh_impl->_model[mesh_impl->_num_models].name, node->mName.data, K3_FBX_MAX_NAME_LENGTH);
+                mesh_impl->_model[mesh_impl->_num_models].mesh_index = mesh_index;
+                mesh_impl->_model[mesh_impl->_num_models].prim_start = mesh_prim_start;
+                mesh_impl->_model[mesh_impl->_num_models].vert_start = mesh_vertex_start;
+                mesh_impl->_model[mesh_impl->_num_models].num_prims = num_mesh_prims;
+                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[0] = 1.0f;
+                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = 1.0f;
+                mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = 1.0f;
+                mesh_impl->_model[mesh_impl->_num_models].emissive_factor = 0.0f;
+                mesh_impl->_model[mesh_impl->_num_models].diffuse_map_index = mat2tex[material_index].diffuse_map_index;
+                mesh_impl->_model[mesh_impl->_num_models].normal_map_index = mat2tex[material_index].normal_map_index;
+                mesh_impl->_model[mesh_impl->_num_models].visibility = 1.0f;
+                mesh_impl->_model[mesh_impl->_num_models].flags = 0x0;
+                aiColor3D color;
+                if (material->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
+                    mesh_impl->_model[mesh_impl->_num_models].diffuse_color[0] = color.r;
+                    mesh_impl->_model[mesh_impl->_num_models].diffuse_color[1] = color.g;
+                    mesh_impl->_model[mesh_impl->_num_models].diffuse_color[2] = color.b;
+                }
+                float emissive_factor, opacity;
+                if (material->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_factor) == AI_SUCCESS) {
+                    mesh_impl->_model[mesh_impl->_num_models].emissive_factor = emissive_factor;
+                }
+                if (material->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+                    mesh_impl->_model[mesh_impl->_num_models].visibility = opacity;
+                }
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[0] = node->mTransformation[0][0];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[1] = node->mTransformation[0][1];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[2] = node->mTransformation[0][2];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[3] = node->mTransformation[0][3];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[4] = node->mTransformation[1][0];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[5] = node->mTransformation[1][1];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[6] = node->mTransformation[1][2];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[7] = node->mTransformation[1][3];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[8] = node->mTransformation[2][0];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[9] = node->mTransformation[2][1];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[10] = node->mTransformation[2][2];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[11] = node->mTransformation[2][3];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[12] = node->mTransformation[3][0];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[13] = node->mTransformation[3][1];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[14] = node->mTransformation[3][2];
+                mesh_impl->_model[mesh_impl->_num_models].world_xform[15] = node->mTransformation[3][3];
+
+                aiVector3D position, rotation, scaling;
+                node->mTransformation.Decompose(scaling, rotation, position);
+                mesh_impl->_model[mesh_impl->_num_models].position[0] = position[0];
+                mesh_impl->_model[mesh_impl->_num_models].position[1] = position[1];
+                mesh_impl->_model[mesh_impl->_num_models].position[2] = position[2];
+                mesh_impl->_model[mesh_impl->_num_models].rotation[0] = rotation[0];
+                mesh_impl->_model[mesh_impl->_num_models].rotation[1] = rotation[1];
+                mesh_impl->_model[mesh_impl->_num_models].rotation[2] = rotation[2];
+                mesh_impl->_model[mesh_impl->_num_models].scaling[0] = scaling[0];
+                mesh_impl->_model[mesh_impl->_num_models].scaling[1] = scaling[1];
+                mesh_impl->_model[mesh_impl->_num_models].scaling[2] = scaling[2];
+                mesh_impl->_model[mesh_impl->_num_models].parent = parent_node;
+
+                // transform by parent
+                k3assimpMulByNodeXform(node->mParent, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+                k3m4_Mul(mesh_impl->_model[mesh_impl->_num_models].world_xform, k3globalInverseXform, mesh_impl->_model[mesh_impl->_num_models].world_xform);
+            }
+            mesh_impl->_num_models++;
+            if (verts) {
+                // Check if we have not already added this mesh by looking to see that first 3 indices are all 0
+                uint32_t index_start = 3 * mesh_prim_start;
+                uint32_t vert_start = 3 * mesh_vertex_start;
+                uint32_t attr_start = 8 * mesh_vertex_start;
+                if (indices[index_start] == 0 && indices[index_start + 1] == 0 && indices[index_start + 2] == 0) {
+                    for (i = 0; i < scene->mMeshes[mesh_index]->mNumFaces; i++) {
+                        indices[index_start + 3 * i + 0] = scene->mMeshes[mesh_index]->mFaces[i].mIndices[0];
+                        indices[index_start + 3 * i + 1] = scene->mMeshes[mesh_index]->mFaces[i].mIndices[1];
+                        indices[index_start + 3 * i + 2] = scene->mMeshes[mesh_index]->mFaces[i].mIndices[2];
+                    }
+                    for (i = 0; i < scene->mMeshes[mesh_index]->mNumVertices; i++) {
+                        verts[vert_start + 3 * i + 0] = scene->mMeshes[mesh_index]->mVertices[i].x;
+                        verts[vert_start + 3 * i + 1] = scene->mMeshes[mesh_index]->mVertices[i].y;
+                        verts[vert_start + 3 * i + 2] = scene->mMeshes[mesh_index]->mVertices[i].z;
+                        attrs[attr_start + 8 * i + 0] = scene->mMeshes[mesh_index]->mNormals[i].x;
+                        attrs[attr_start + 8 * i + 1] = scene->mMeshes[mesh_index]->mNormals[i].y;
+                        attrs[attr_start + 8 * i + 2] = scene->mMeshes[mesh_index]->mNormals[i].z;
+                        if (scene->mMeshes[mesh_index]->mTextureCoords) {
+                            attrs[attr_start + 8 * i + 3] = scene->mMeshes[mesh_index]->mTextureCoords[0]->x;
+                            attrs[attr_start + 8 * i + 4] = scene->mMeshes[mesh_index]->mTextureCoords[0]->y;
+                        } else {
+                            attrs[attr_start + 8 * i + 3] = 0.0f;
+                            attrs[attr_start + 8 * i + 4] = 0.0f;
+                        }
+                        attrs[attr_start + 8 * i + 5] = scene->mMeshes[mesh_index]->mTangents[i].x;
+                        attrs[attr_start + 8 * i + 6] = scene->mMeshes[mesh_index]->mTangents[i].y;
+                        attrs[attr_start + 8 * i + 7] = scene->mMeshes[mesh_index]->mTangents[i].z;
+                    }
+                }
+
+            }
+        }
+    } else {
+        uint32_t j;
+        bool camera_found = false;
+        bool light_found = false;
+        bool bone_found = false;
+
+        // Look for a camera
+        for (i = 0; i < scene->mNumCameras; i++) {
+            if (node->mName == scene->mCameras[i]->mName) {
+                camera_found = true;
+                break;
+            }
+        }
+        if (camera_found) {
+            if (mesh_impl->_cameras) {
+                float world_xform[16];
+                k3m4_SetIdentity(world_xform);
+                k3assimpMulByNodeXform(node, world_xform);
+                k3m4_Mul(world_xform, k3globalInverseXform, world_xform);
+                float translation[4];
+                float look_at[4];
+                float up[4];
+
+                translation[0] = scene->mCameras[i]->mPosition[0];
+                translation[1] = scene->mCameras[i]->mPosition[1];
+                translation[2] = scene->mCameras[i]->mPosition[2];
+                translation[3] = 1.0f;
+                look_at[0] = scene->mCameras[i]->mLookAt[0];
+                look_at[1] = scene->mCameras[i]->mLookAt[1];
+                look_at[2] = scene->mCameras[i]->mLookAt[2];
+                look_at[3] = 1.0f;
+                up[0] = scene->mCameras[i]->mUp[0];
+                up[1] = scene->mCameras[i]->mUp[1];
+                up[2] = scene->mCameras[i]->mUp[2];
+                up[3] = 0.0f;
+                k3mv4_Mul(translation, world_xform, translation);
+                k3mv4_Mul(look_at, world_xform, look_at);
+                k3mv4_Mul(up, world_xform, up);
+
+                strncpy(mesh_impl->_cameras[mesh_impl->_num_cameras].name, node->mName.data, K3_MAX_NAME_LENGTH);
+                mesh_impl->_cameras[mesh_impl->_num_cameras].translation[0] = translation[0];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].translation[1] = translation[1];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].translation[2] = translation[2];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].look_at[0] = look_at[0];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].look_at[1] = -look_at[1];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].look_at[2] = look_at[2];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].up[0] = up[0];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].up[1] = up[1];
+                mesh_impl->_cameras[mesh_impl->_num_cameras].up[2] = up[2];
+
+                // Set the look at position properly
+                k3v3_Cross(mesh_impl->_cameras[mesh_impl->_num_cameras].look_at, mesh_impl->_cameras[mesh_impl->_num_cameras].look_at, mesh_impl->_cameras[mesh_impl->_num_cameras].up);
+                k3v3_Cross(mesh_impl->_cameras[mesh_impl->_num_cameras].look_at, mesh_impl->_cameras[mesh_impl->_num_cameras].up, mesh_impl->_cameras[mesh_impl->_num_cameras].look_at);
+                k3v3_Add(mesh_impl->_cameras[mesh_impl->_num_cameras].look_at, mesh_impl->_cameras[mesh_impl->_num_cameras].translation, mesh_impl->_cameras[mesh_impl->_num_cameras].look_at);
+
+                mesh_impl->_cameras[mesh_impl->_num_cameras].proj_type = (scene->mCameras[i]->mOrthographicWidth) ? k3projType::ORTHOGRAPIC : k3projType::PERSPECTIVE;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].res_x = 1920;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].res_y = 1080;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].fovy = scene->mCameras[i]->mAspect;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].ortho_scale = scene->mCameras[i]->mOrthographicWidth;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].near_plane = scene->mCameras[i]->mClipPlaneNear;
+                mesh_impl->_cameras[mesh_impl->_num_cameras].far_plane = scene->mCameras[i]->mClipPlaneFar;
+            }
+
+            mesh_impl->_num_cameras++;
+        } else {
+            // Look for a light
+            for (i = 0; i < scene->mNumLights; i++) {
+                if (node->mName == scene->mLights[i]->mName) {
+                    light_found = true;
+                    break;
+                }
+            }
+
+            if (light_found) {
+                if (mesh_impl->_lights) {
+                    float light_axis[3] = { 0.0f, 1.0f, 0.0f };
+
+                    float world_xform[16];
+                    k3m4_SetIdentity(world_xform);
+                    k3assimpMulByNodeXform(node, world_xform);
+                    k3m4_Mul(world_xform, k3globalInverseXform, world_xform);
+                    float light_position[4];
+                    float light_direction[4];
+                    light_position[0] = scene->mLights[i]->mPosition[0];
+                    light_position[1] = scene->mLights[i]->mPosition[1];
+                    light_position[2] = scene->mLights[i]->mPosition[2];
+                    light_position[3] = 1.0f;
+                    light_direction[0] = scene->mLights[i]->mDirection[0];
+                    light_direction[1] = scene->mLights[i]->mDirection[1];
+                    light_direction[2] = scene->mLights[i]->mDirection[2];
+                    light_direction[3] = 0.0f;
+                    k3mv4_Mul(light_position, world_xform, light_position);
+                    k3mv4_Mul(light_direction, world_xform, light_direction);
+
+                    strncpy(mesh_impl->_lights[mesh_impl->_num_lights].name, node->mName.C_Str(), K3_FBX_MAX_NAME_LENGTH);
+                    mesh_impl->_lights[mesh_impl->_num_lights].flags = 0x0;
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[0] = light_position[0];
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[1] = light_position[1];
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[2] = light_position[2];
+                    mesh_impl->_lights[mesh_impl->_num_lights].position[3] = light_position[3];
+
+                    k3v3_Normalize(light_direction);
+                    k3v3_SetQuatVector(mesh_impl->_lights[mesh_impl->_num_lights].rot_quat, light_direction, light_axis);
+                    mesh_impl->_lights[mesh_impl->_num_lights].parent = ~0x0;
+                    mesh_impl->_lights[mesh_impl->_num_lights].flags = 0x0;
+
+                    switch (scene->mLights[i]->mType) {
+                    case aiLightSource_POINT: mesh_impl->_lights[mesh_impl->_num_lights].light_type = k3lightBufferData::POINT; break;
+                    case aiLightSource_DIRECTIONAL: mesh_impl->_lights[mesh_impl->_num_lights].light_type = k3lightBufferData::DIRECTIONAL; break;
+                    case aiLightSource_SPOT: mesh_impl->_lights[mesh_impl->_num_lights].light_type = k3lightBufferData::SPOT; break;
+                    default: mesh_impl->_lights[mesh_impl->_num_lights].light_type = k3lightBufferData::POINT; break;
+                    }
+                    // Get max of the light's r,g or b
+                    mesh_impl->_lights[mesh_impl->_num_lights].intensity = scene->mLights[i]->mColorDiffuse[0];
+                    mesh_impl->_lights[mesh_impl->_num_lights].intensity = (scene->mLights[i]->mColorDiffuse[1] > mesh_impl->_lights[mesh_impl->_num_lights].intensity) ? scene->mLights[i]->mColorDiffuse[1] : mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    mesh_impl->_lights[mesh_impl->_num_lights].intensity = (scene->mLights[i]->mColorDiffuse[2] > mesh_impl->_lights[mesh_impl->_num_lights].intensity) ? scene->mLights[i]->mColorDiffuse[2] : mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    // Intensity should at least be 1.0
+                    mesh_impl->_lights[mesh_impl->_num_lights].intensity = (mesh_impl->_lights[mesh_impl->_num_lights].intensity < 1.0f) ? 1.0f : mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    mesh_impl->_lights[mesh_impl->_num_lights].color[0] = scene->mLights[i]->mColorDiffuse[0] / mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    mesh_impl->_lights[mesh_impl->_num_lights].color[1] = scene->mLights[i]->mColorDiffuse[1] / mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    mesh_impl->_lights[mesh_impl->_num_lights].color[2] = scene->mLights[i]->mColorDiffuse[2] / mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    mesh_impl->_lights[mesh_impl->_num_lights].decay_type = k3lightBufferData::DECAY_LINEAR;
+                    mesh_impl->_lights[mesh_impl->_num_lights].decay_start = scene->mLights[i]->mAttenuationLinear;
+
+                    k3v3_RGBtoHSV(mesh_impl->_lights[mesh_impl->_num_lights].base_hsv, mesh_impl->_lights[mesh_impl->_num_lights].color);
+                    mesh_impl->_lights[mesh_impl->_num_lights].base_intensity = mesh_impl->_lights[mesh_impl->_num_lights].intensity;
+                    if (mesh_impl->_lights[mesh_impl->_num_lights].base_hsv[1] < 1.0f / 1024.0f) {
+                        mesh_impl->_lights[mesh_impl->_num_lights].base_hsv[1] = 1.0f / 1024.0f;
+                    }
+                    if (mesh_impl->_lights[mesh_impl->_num_lights].base_hsv[2] < 1.0f / 1024.0f) {
+                        mesh_impl->_lights[mesh_impl->_num_lights].base_hsv[2] = 1.0f / 1024.0f;
+                    }
+                    if (mesh_impl->_lights[mesh_impl->_num_lights].base_intensity < 1.0f / 1024.0f) {
+                        mesh_impl->_lights[mesh_impl->_num_lights].base_intensity = 1.0f / 1024.0f;
+                    }
+                }
+
+                mesh_impl->_num_lights++;
+            } else if (use_skin) {
+                uint32_t mesh_start = 0, mesh_end = scene->mNumMeshes;
+                if (skeleton_mesh < scene->mNumMeshes) {
+                    // if we're in a skeletal mesh, just look for bones in that mesh
+                    mesh_start = skeleton_mesh;
+                    mesh_end = mesh_start + 1;
+                }
+                for (i = mesh_start; i < mesh_end; i++) {
+                    for (j = 0; j < scene->mMeshes[i]->mNumBones; j++) {
+                        if (node->mName == scene->mMeshes[i]->mBones[j]->mName) {
+                            bone_found = true;
+                            break;
+                        }
+                    }
+                    if (bone_found) break;
+                }
+                if (bone_found) {
+                    const aiBone* bone = scene->mMeshes[i]->mBones[j];
+                    cur_node = mesh_impl->_num_bones;
+                    mesh_impl->_num_bones++;
+                    if (mesh_impl->_bones) {
+                        strncpy(mesh_impl->_bones[cur_node].name, node->mName.C_Str(), K3_FBX_MAX_NAME_LENGTH);
+                        mesh_impl->_bones[cur_node].parent = (skeleton_mesh < scene->mNumMeshes) ? parent_node : ~0x0;
+                        aiVector3D position, scaling;
+                        aiQuaternion rotation;
+                        aiMatrix4x4 xform = node->mTransformation;
+                        xform.Decompose(scaling, rotation, position);
+                        mesh_impl->_bones[cur_node].position[0] = position.x;
+                        mesh_impl->_bones[cur_node].position[1] = position.y;
+                        mesh_impl->_bones[cur_node].position[2] = position.z;
+                        mesh_impl->_bones[cur_node].rot_quat[0] = rotation.x;
+                        mesh_impl->_bones[cur_node].rot_quat[1] = rotation.y;
+                        mesh_impl->_bones[cur_node].rot_quat[2] = rotation.z;
+                        mesh_impl->_bones[cur_node].rot_quat[3] = rotation.w;
+                        mesh_impl->_bones[cur_node].scaling[0] = scaling.x;
+                        mesh_impl->_bones[cur_node].scaling[1] = scaling.y;
+                        mesh_impl->_bones[cur_node].scaling[2] = scaling.z;
+                        xform = bone->mOffsetMatrix;
+                        mesh_impl->_bones[cur_node].inv_bind_pose[0] = xform[0][0];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[1] = xform[0][1];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[2] = xform[0][2];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[3] = xform[0][3];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[4] = xform[1][0];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[5] = xform[1][1];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[6] = xform[1][2];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[7] = xform[1][3];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[8] = xform[2][0];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[9] = xform[2][1];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[10] = xform[2][2];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[11] = xform[2][3];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[12] = xform[3][0];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[13] = xform[3][1];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[14] = xform[3][2];
+                        mesh_impl->_bones[cur_node].inv_bind_pose[15] = xform[3][3];
+                    }
+                    skeleton_mesh = i;
+                    if (verts && use_skin) {
+                        uint32_t mesh_vertex_start = mesh_impl->_mesh_start[i];
+                        // loop through all the vertices that are affected by this bone
+                        for (i = 0; i < bone->mNumWeights; i++) {
+                            uint32_t affected_vert = 8 * (mesh_vertex_start + bone->mWeights[i].mVertexId);
+                            float cur_weight = bone->mWeights[i].mWeight;
+                            uint32_t cur_bone = cur_node;
+                            float temp_weight;
+                            uint32_t temp_bone;
+                            // Each vertex can have up to 4 bones affecting it
+                            // Store the 4 most significant, by doing simple insertion sort
+                            for (j = 0; j < 4; j++) {
+                                if (cur_weight > skin_f[affected_vert + j]) {
+                                    // swap cur_* with skin_f/i
+                                    temp_weight = skin_f[affected_vert + j];
+                                    temp_bone = skin_i[affected_vert + j];
+                                    skin_f[affected_vert + j] = cur_weight;
+                                    skin_i[affected_vert + j] = cur_bone;
+                                    cur_weight = temp_weight;
+                                    cur_bone = temp_bone;
+                                }
+                            }
+
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
+    for (i = 0; i < node->mNumChildren; i++) {
+        k3traverseAssimpNode(scene, node->mChildren[i], cur_node, mat2tex, skeleton_mesh, mesh_impl);
+    }
+}
+
+K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
+{
+    const aiScene* scene = aiImportFile(desc->name,
+        aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace |
+        aiProcess_Triangulate | aiProcess_ImproveCacheLocality | aiProcess_SortByPType);
+
+    if (!scene) {
+        k3error::Handler("Mesh file not found", "k3gfxObj::CreateMeshAS");
+        return NULL;
+    }
+
+    uint32_t i, j, t;
+    k3mesh mesh = new k3meshObj;
+    k3meshImpl* mesh_impl = mesh->getImpl();
+    mesh_impl->_num_meshes = scene->mNumMeshes;
+    mesh_impl->_mesh_start = new uint32_t[mesh_impl->_num_meshes];
+    mesh_impl->_num_verts = 0;
+    mesh_impl->_num_tris = 0;
+    mesh_impl->_num_bones = 0;
+    for (i = 0; i < mesh_impl->_num_meshes; i++) {
+        mesh_impl->_mesh_start[i] = mesh_impl->_num_verts;
+        mesh_impl->_num_verts += scene->mMeshes[i]->mNumVertices;
+        mesh_impl->_num_tris += scene->mMeshes[i]->mNumFaces;
+    }
+
+    // This counts the number of embedded textures
+    mesh_impl->_num_textures = scene->mNumTextures;
+    k3assimpMaterialTextureMapping* mat2tex = NULL;
+    if (scene->mNumMaterials) {
+        uint32_t texture_count;
+        aiString filepath;
+        mat2tex = new k3assimpMaterialTextureMapping[scene->mNumMaterials];
+        for (i = 0; i < scene->mNumMaterials; i++) {
+            mat2tex[i].diffuse_map_index = ~0;
+            mat2tex[i].normal_map_index = ~0;
+            texture_count = scene->mMaterials[i]->GetTextureCount(aiTextureType_DIFFUSE);
+            for (t = 0; t < texture_count; t++) {
+                if (scene->mMaterials[i]->GetTexture(aiTextureType_DIFFUSE, t, &filepath) == AI_SUCCESS) {
+                    mat2tex[i].diffuse_filepath = filepath;
+                    const aiTexture* embedded_texture = scene->GetEmbeddedTexture(filepath.C_Str());
+                    if (embedded_texture) {
+                        // get the index to embedded texture list
+                        for (j = 0; j < scene->mNumTextures; j++) {
+                            if (embedded_texture == scene->mTextures[j]) {
+                                mat2tex[i].diffuse_map_index = j;
+                                break;
+                            }
+                        }
+                    } else {
+                        // Check if we have already loaded this texture
+                        for (j = 0; j < i; j++) {
+                            if (mat2tex[j].diffuse_filepath == filepath) {
+                                mat2tex[i].diffuse_map_index = mat2tex[j].diffuse_map_index;
+                                break;
+                            }
+                            if (mat2tex[j].normal_filepath == filepath) {
+                                mat2tex[i].diffuse_map_index = mat2tex[j].normal_map_index;
+                                break;
+                            }
+                        }
+                        if (j == i) {
+                            // if we didn't find the texture, we need add it to the list
+                            mat2tex[i].diffuse_map_index = mesh_impl->_num_textures;
+                            mesh_impl->_num_textures++;
+                        }
+                    }
+                }
+            }
+            texture_count = scene->mMaterials[i]->GetTextureCount(aiTextureType_NORMALS);
+            for (t = 0; t < texture_count; t++) {
+                if (scene->mMaterials[i]->GetTexture(aiTextureType_NORMALS, t, &filepath) == AI_SUCCESS) {
+                    mat2tex[i].normal_filepath = filepath;
+                    const aiTexture* embedded_texture = scene->GetEmbeddedTexture(filepath.C_Str());
+                    if (embedded_texture) {
+                        // get the index to embedded texture list
+                        for (j = 0; j < scene->mNumTextures; j++) {
+                            if (embedded_texture == scene->mTextures[j]) {
+                                mat2tex[i].normal_map_index = j;
+                                break;
+                            }
+                        }
+                    } else {
+                        // Check if we already loaded this texture
+                        for (j = 0; j < i; j++) {
+                            if (mat2tex[j].diffuse_filepath == filepath) {
+                                mat2tex[i].normal_map_index = mat2tex[j].diffuse_map_index;
+                                break;
+                            }
+                            if (mat2tex[j].normal_filepath == filepath) {
+                                mat2tex[i].normal_map_index = mat2tex[j].normal_map_index;
+                                break;
+                            }
+                        }
+                        if (j == i) {
+                            // if we didn't fin the texture, we need to add it to the list
+                            mat2tex[i].normal_map_index = mesh_impl->_num_textures;
+                            mesh_impl->_num_textures++;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (mesh_impl->_num_textures) {
+            static const uint32_t NUM_UP_BUF = 4;
+            uint64_t f = 0;
+            uint32_t v = 0;
+            k3uploadImage up_image[NUM_UP_BUF];
+            k3fence up_image_fence = CreateFence();
+            for (i = 0; i < NUM_UP_BUF; i++) {
+                up_image[i] = CreateUploadImage();
+            }
+
+            mesh_impl->_textures = new k3surf[mesh_impl->_num_textures];
+            k3resourceDesc rdesc;
+            k3viewDesc vdesc = { 0 };
+            k3resource img_res;
+            for (i = 0; i < mesh_impl->_num_textures; i++) {
+                if (f >= NUM_UP_BUF) {
+                    while (!up_image_fence->CheckFence(f + 1 - NUM_UP_BUF));
+                }
+
+                if (i < scene->mNumTextures) {
+                    // embedded texture
+                    if (scene->mTextures[i]->CheckFormat("jpg") || scene->mTextures[i]->CheckFormat("png")) {
+                        k3imageObj::LoadFromFileMemory(up_image[v], scene->mTextures[i]->pcData, scene->mTextures[i]->mWidth);
+                    } else {
+                        k3imageObj::LoadFromMemory(up_image[v], scene->mTextures[i]->mWidth, scene->mTextures[i]->mHeight, 1, 0, 0, k3fmt::BGRA8_UNORM, scene->mTextures[i]->pcData);
+                    }
+                } else {
+                    k3imageObj::LoadFromFile(up_image[v], scene->mTextures[i]->mFilename.C_Str());
+                }
+                up_image[v]->GetDesc(&rdesc);
+                vdesc.view_index = desc->view_index++;
+                mesh_impl->_textures[i] = CreateSurface(&rdesc, NULL, &vdesc, NULL);
+
+                desc->cmd_buf->Reset();
+                img_res = mesh_impl->_textures[i]->GetResource();
+                desc->cmd_buf->TransitionResource(img_res, k3resourceState::COPY_DEST);
+                desc->cmd_buf->UploadImage(up_image[v], img_res);
+                desc->cmd_buf->TransitionResource(img_res, k3resourceState::SHADER_RESOURCE);
+                desc->cmd_buf->Close();
+                SubmitCmdBuf(desc->cmd_buf);
+
+                f = up_image_fence->SetGpuFence(k3gpuQueue::GRAPHICS);
+                v++;
+                if (v >= NUM_UP_BUF) v = 0;
+            }
+            WaitGpuIdle();
+        }
+    }
+
+    // determine which models have actual geometries...those are the only valid ones
+    mesh_impl->_num_models = 0;  // initialize to 0
+    mesh_impl->_num_bones = 0;   // initialize to 0
+    mesh_impl->_num_cameras = 0; // initialize to 0
+    mesh_impl->_num_lights = 0;  // initialize to 0
+    mesh_impl->_num_empties = 0; // no empties in assimp
+    mesh_impl->_num_anims = scene->mNumAnimations;
+    k3traverseAssimpNode(scene, scene->mRootNode, ~0, mat2tex, ~0, mesh_impl);
+
+    if (mesh_impl->_num_models == 0) {
+        k3error::Handler("No models found in file", "k3gfxObj::CreateMeshAS");
+        if (mat2tex) {
+            delete[] mat2tex;
+        }
+        aiReleaseImport(scene);
+        return NULL;
+    }
+
+    mesh_impl->_model = new k3meshModel[mesh_impl->_num_models];
+    bool use_skin = false;
+    if (mesh_impl->_num_bones) {
+        mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
+        use_skin = true;
+    }
+    uint32_t vert_size = (use_skin) ? 19 : 11;
+    uint32_t geom_size = vert_size * mesh_impl->_num_verts * sizeof(float) + 3 * mesh_impl->_num_tris * sizeof(uint32_t);
+    uint32_t lbuf_size = mesh_impl->_num_lights * sizeof(k3lightBufferData);
+    uint32_t up_buf_size = geom_size + lbuf_size;
+    mesh_impl->_geom_data = new float[geom_size / sizeof(float)];
+    memset(mesh_impl->_geom_data, 0, geom_size);
+    mesh_impl->_cameras = (mesh_impl->_num_cameras) ? new k3camera[mesh_impl->_num_cameras] : NULL;
+    mesh_impl->_lights = (mesh_impl->_num_lights) ? new k3light[scene->mNumLights] : NULL;
+
+    mesh_impl->_num_models = 0;  // initialize to 0
+    mesh_impl->_num_bones = 0;   // initialize to 0
+    mesh_impl->_num_cameras = 0; // initialize to 0
+    mesh_impl->_num_lights = 0;  // initialize to 0
+    k3traverseAssimpNode(scene, scene->mRootNode, ~0, mat2tex, ~0, mesh_impl);
+
+    // normalize skin weights
+    if (use_skin) {
+        float* skin_f = mesh_impl->_geom_data + 11 * mesh_impl->_num_verts + 4;
+        float sum;
+        for (i = 0; i < mesh_impl->_num_verts; i++) {
+            if (*skin_f >= 0.1f) {
+                sum = *(skin_f + 0);
+                sum += *(skin_f + 1);
+                sum += *(skin_f + 2);
+                sum += *(skin_f + 3);
+                *(skin_f + 0) /= sum;
+                *(skin_f + 1) /= sum;
+                *(skin_f + 2) /= sum;
+                *(skin_f + 3) /= sum;
+            }
+            skin_f += 8;
+        }
+
+        mesh_impl->_anim = new k3anim[mesh_impl->_num_anims];
+        uint32_t b;
+        aiNodeAnim* channel;
+        // Loop through all of the animations
+        for (i = 0; i < mesh_impl->_num_anims; i++) {
+            strncpy(mesh_impl->_anim[i].name, scene->mAnimations[i]->mName.C_Str(), K3_FBX_MAX_NAME_LENGTH);
+            mesh_impl->_anim[i].num_anim_objs = mesh_impl->_num_bones;
+            mesh_impl->_anim[i].anim_objs = NULL;
+            double ticks_per_sec = (scene->mAnimations[i]->mTicksPerSecond == 0) ? K3_FBX_TICKS_PER_MSEC / 1000 : scene->mAnimations[i]->mTicksPerSecond;
+            double anim_duration_msec = (scene->mAnimations[i]->mDuration / ticks_per_sec) * 1000.0;
+            mesh_impl->_anim[i].num_keyframes = 8;
+            double keyframe_delta_msec = anim_duration_msec / mesh_impl->_anim[i].num_keyframes;
+            double keyframe_delta_tick = (ticks_per_sec * keyframe_delta_msec) / 1000.0;
+            mesh_impl->_anim[i].keyframe_delta_msec = keyframe_delta_msec;
+            mesh_impl->_anim[i].model.id = ~0;
+            mesh_impl->_anim[i].model.obj_type = k3fbxObjType::NONE;
+            mesh_impl->_anim[i].bone_data = new k3boneData[mesh_impl->_anim[i].num_keyframes * mesh_impl->_anim[i].num_anim_objs];
+            mesh_impl->_anim[i].bone_flag = NULL;// new uint32_t[mesh_impl->_anim[i].num_anim_objs];
+            memset(mesh_impl->_anim[i].bone_data, 0, mesh_impl->_anim[i].num_keyframes* mesh_impl->_anim[i].num_anim_objs * sizeof(k3boneData));
+            //memset(mesh_impl->_anim[i].bone_flag, 0, mesh_impl->_anim[i].num_anim_objs * sizeof(uint32_t));
+
+            // Loops through all bones
+            for (b = 0; b < mesh_impl->_num_bones; b++) {
+                channel = NULL;
+                for (j = 0; j < scene->mAnimations[i]->mNumChannels && channel == NULL; j++) {
+                    if (!strncmp(mesh_impl->_bones[b].name, scene->mAnimations[i]->mChannels[j]->mNodeName.C_Str(), K3_FBX_MAX_NAME_LENGTH)) {
+                        channel = scene->mAnimations[i]->mChannels[j];
+                    }
+                }
+                if (channel) {
+                    // Add the channel's data to the bone
+                    double cur_tick = 0.0;
+                    double lerp;
+                    uint32_t pos_src_frame = 0;
+                    uint32_t rot_src_frame = 0;
+                    uint32_t scl_src_frame = 0;
+                    aiQuaternion lerp_quat;
+                    // Loop through all the destination keyframes
+                    for (j = 0; j < mesh_impl->_anim[i].num_keyframes; j++) {
+                        // Find position src keyframe
+                        while (pos_src_frame+1 < channel->mNumPositionKeys && cur_tick > channel->mPositionKeys[pos_src_frame + 1].mTime) {
+                            pos_src_frame++;
+                        }
+                        // lerp between the current and next keyframe
+                        lerp = (cur_tick - channel->mPositionKeys[pos_src_frame].mTime) /
+                            (channel->mPositionKeys[pos_src_frame + 1].mTime - channel->mPositionKeys[pos_src_frame].mTime);
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[0] =
+                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.x +
+                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.x;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[1] =
+                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.y +
+                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.y;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position[2] =
+                            (1.0 - lerp) * channel->mPositionKeys[pos_src_frame].mValue.z +
+                            lerp * channel->mPositionKeys[pos_src_frame + 1].mValue.z;
+                        //k3mv4_Mul(mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position,
+                        //    k3globalInverseXform, mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].position);
+
+                        // Find rotation src keyframe
+                        while (rot_src_frame + 1 < channel->mNumRotationKeys && cur_tick > channel->mRotationKeys[rot_src_frame + 1].mTime) {
+                            rot_src_frame++;
+                        }
+                        // lerp between the current and next keyframe
+                        lerp = (cur_tick - channel->mRotationKeys[rot_src_frame].mTime) /
+                            (channel->mRotationKeys[rot_src_frame + 1].mTime - channel->mRotationKeys[rot_src_frame].mTime);
+                        aiQuaternion::Interpolate(lerp_quat, channel->mRotationKeys[rot_src_frame].mValue, channel->mRotationKeys[rot_src_frame + 1].mValue, lerp);
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] = lerp_quat.x;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[1] = lerp_quat.y;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[2] = lerp_quat.z;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[3] = lerp_quat.w;
+                        //mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[0] =
+                        //    (1.0 - lerp) * channel->mRotationKeys[rot_src_frame].mValue.x +
+                        //    lerp * channel->mRotationKeys[rot_src_frame + 1].mValue.x;
+                        //mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[1] =
+                        //    (1.0 - lerp) * channel->mRotationKeys[rot_src_frame].mValue.y +
+                        //    lerp * channel->mRotationKeys[rot_src_frame + 1].mValue.y;
+                        //mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[2] =
+                        //    (1.0 - lerp) * channel->mRotationKeys[rot_src_frame].mValue.z +
+                        //    lerp * channel->mRotationKeys[rot_src_frame + 1].mValue.z;
+                        //mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat[3] =
+                        //    (1.0 - lerp) * channel->mRotationKeys[rot_src_frame].mValue.w +
+                        //    lerp * channel->mRotationKeys[rot_src_frame + 1].mValue.w;
+                        //k3v4_Normalize(mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat);
+
+                        if (j > 0) {
+                            float* cur_quat = mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].rot_quat;
+                            float* prev_quat = mesh_impl->_anim[i].bone_data[(j - 1) * mesh_impl->_anim[i].num_anim_objs + b].rot_quat;
+                            // if the dot product of the current and previous quaternion or below 0, negate the current
+                            if (k3v4_Dot(cur_quat, prev_quat) < 0.0f) {
+                                k3v4_Negate(cur_quat);
+                            }
+                        }
+
+                        // Find scale src keyframe
+                        while (scl_src_frame + 1 < channel->mNumScalingKeys && cur_tick > channel->mScalingKeys[scl_src_frame + 1].mTime) {
+                            scl_src_frame++;
+                        }
+                        // lerp between the current and next keyframe
+                        lerp = (cur_tick - channel->mScalingKeys[scl_src_frame].mTime) /
+                            (channel->mScalingKeys[scl_src_frame + 1].mTime - channel->mScalingKeys[scl_src_frame].mTime);
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[0] =
+                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.x +
+                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.x;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[1] =
+                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.y +
+                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.y;
+                        mesh_impl->_anim[i].bone_data[j * mesh_impl->_anim[i].num_anim_objs + b].scaling[2] =
+                            (1.0 - lerp) * channel->mScalingKeys[scl_src_frame].mValue.z +
+                            lerp * channel->mScalingKeys[scl_src_frame + 1].mValue.z;
+
+                        cur_tick += keyframe_delta_tick;
+                    }
+                }
+            }
+        }
+    }
+
+    mesh_impl->_num_model_custom_props = 0;
+    mesh_impl->_model_custom_props = NULL;
+    mesh_impl->_empty_custom_props = 0;
+    mesh_impl->_num_custom_prop_strings = 0;
+    mesh_impl->_custom_prop_strings  = NULL;
+
+    float* verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
+    memcpy(verts, mesh_impl->_geom_data, geom_size);
+
+    k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
+    for (i = 0; i < mesh_impl->_num_lights; i++) {
+        lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
+        lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
+        lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
+        lb_data[i].intensity = mesh_impl->_lights[i].intensity;
+        if (mesh_impl->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
+            float mat[16];
+            lb_data[i].position[0] = 0.0f;
+            lb_data[i].position[1] = 1.0f;
+            lb_data[i].position[2] = 0.0f;
+            k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
+            k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
+        } else {
+            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
+            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
+            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+        }
+        lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
+        lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
+        lb_data[i].light_type = mesh_impl->_lights[i].light_type;
+        lb_data[i].cast_shadows = (mesh_impl->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
+        lb_data[i].spot_angle = 45.0f;
+    }
+
+    desc->up_buf->Unmap();
+    k3bufferDesc bdesc = { 0 };
+    bdesc.size = 3 * mesh_impl->_num_tris * sizeof(uint32_t);
+    bdesc.stride = 3 * sizeof(uint32_t);
+    bdesc.format = k3fmt::R32_UINT;
+    mesh_impl->_ib = CreateBuffer(&bdesc);
+
+    bdesc.size = 3 * mesh_impl->_num_verts * sizeof(float);
+    bdesc.stride = 3 * sizeof(float);
+    bdesc.format = k3fmt::RGB32_FLOAT;
+    mesh_impl->_vb = CreateBuffer(&bdesc);
+
+    bdesc.size = 8 * mesh_impl->_num_verts * sizeof(float);
+    bdesc.stride = 8 * sizeof(float);
+    bdesc.format = k3fmt::UNKNOWN;
+    bdesc.view_index = desc->view_index++;
+    bdesc.shader_resource = true;
+    mesh_impl->_ab = CreateBuffer(&bdesc);
+
+    if (use_skin) {
+        bdesc.size = 8 * mesh_impl->_num_verts * sizeof(float);
+        bdesc.stride = 8 * sizeof(float);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        mesh_impl->_sb = CreateBuffer(&bdesc);
+    }
+
+    if (mesh_impl->_num_lights) {
+        bdesc.size = lbuf_size;
+        bdesc.stride = sizeof(k3lightBufferData);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        mesh_impl->_lb = CreateBuffer(&bdesc);
+    }
+
+    k3resource buf_res;
+    desc->cmd_buf->Reset();
+    buf_res = mesh_impl->_ib->GetResource();
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, vert_size * mesh_impl->_num_verts * sizeof(float), 3 * mesh_impl->_num_tris * sizeof(uint32_t));
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    buf_res = mesh_impl->_vb->GetResource();
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 0, 3 * mesh_impl->_num_verts * sizeof(float));
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    buf_res = mesh_impl->_ab->GetResource();
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * mesh_impl->_num_verts * sizeof(float), 8 * mesh_impl->_num_verts * sizeof(float));
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    if (use_skin) {
+        buf_res = mesh_impl->_sb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * mesh_impl->_num_verts * sizeof(float), 8 * mesh_impl->_num_verts * sizeof(float));
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
+    if (lbuf_size) {
+        buf_res = mesh_impl->_lb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
+    desc->cmd_buf->Close();
+    SubmitCmdBuf(desc->cmd_buf);
+
+    if (mat2tex) {
+        delete[] mat2tex;
+    }
+    aiReleaseImport(scene);
+    return mesh;
+}
+
 
 // ------------------------------------------------------------
 // win class

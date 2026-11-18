@@ -10,7 +10,9 @@ extern "C" {
 
 k3image_file_handler_t k3JPGHandler = { k3jpg_LoadHeaderInfo,
                                         k3jpg_LoadData,
-                                        k3jpg_SaveData };
+                                        k3jpg_SaveData,
+                                        NULL,
+                                        NULL};
 
 struct k3_error_mgr {
     struct jpeg_error_mgr pub;	// "public" fields

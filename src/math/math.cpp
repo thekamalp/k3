@@ -1097,6 +1097,37 @@ K3API float* k3m_MatToQuat(uint32_t cols, float* d, const float* s)
     return d;
 }
 
+K3API float* k3v3_SetQuatVector(float* d, const float* s1, const float* s2)
+{
+    // assume s1 and s2 are normalized
+    float rot_vec[3];
+    float c;
+    k3v3_Cross(rot_vec, s1, s2);
+    c = k3v3_Dot(s1, s2);
+    if (c > 0.9999f) {
+        // if they are nearly parallel, no rotation
+        d[0] = 0.0f;
+        d[1] = 0.0f;
+        d[2] = 0.0f;
+        d[3] = 1.0f;
+        return d;
+    } else if (c < -0.9999f) {
+        d[0] = 1.0f;
+        d[1] = 0.0f;
+        d[2] = 0.0f;
+        d[3] = 0.0f;
+        return d;
+    }
+    k3v3_Normalize(rot_vec);
+    float sin_t_over_2 = sqrtf((1 - c) / 2);
+    float cos_t_over_2 = sqrtf((1 + c) / 2);
+    d[0] = sin_t_over_2 * rot_vec[0];
+    d[1] = sin_t_over_2 * rot_vec[1];
+    d[2] = sin_t_over_2 * rot_vec[2];
+    d[3] = cos_t_over_2;
+    return d;
+}
+
 K3API float* k3v4_SetQuatRotation(float* d, float angle, const float* axis)
 {
     float cos_ang2 = cosf(angle / 2.0f);

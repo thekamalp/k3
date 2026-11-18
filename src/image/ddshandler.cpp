@@ -242,7 +242,9 @@ struct k3DDSHeader10 {
 // Globals
 k3image_file_handler_t k3DDSHandler = { k3dds_LoadHeaderInfo,
                                         k3dds_LoadData,
-                                        k3dds_SaveData };
+                                        k3dds_SaveData,
+                                        k3dds_LoadHeaderInfoFromMem,
+                                        k3dds_LoadDataFromMem };
 
 k3DDSHeader header;
 k3DDSHeader10 header10;
@@ -291,11 +293,24 @@ bool FindMaskRange(const uint32_t mask, int32_t& start, int32_t& length)
     return (cur_mask == 0);
 }
 
-void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
+uint32_t k3dds_LoadHeaderInfoCommon(void* mem, uint32_t mem_size,
     uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
 {
-    uint32_t start_pos = ftell(file_handle);
-    fread(&header, sizeof(k3DDSHeader), 1, file_handle);
+    FILE* file_handle = NULL;
+    if (mem_size == 0) file_handle = (FILE*)mem;
+    uint8_t* mem8 = (uint8_t*)mem;
+
+    uint32_t start_pos = 0;
+    uint32_t read_length = sizeof(k3DDSHeader);
+    if (file_handle) {
+        start_pos = ftell(file_handle);
+        fread(&header, sizeof(k3DDSHeader), 1, file_handle);
+    } else {
+        if (read_length > mem_size) return 0;
+        memcpy(&header, mem8, read_length);
+        mem8 += read_length;
+        mem_size -= read_length;
+    }
 
     //bool caps_exist          = (header.flags & DDSD_CAPS) ? true : false;
     bool height_exist = (header.flags & DDSD_HEIGHT) ? true : false;
@@ -310,8 +325,8 @@ void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
         //!caps_exist || !pixelformat_exist ||
         !width_exist || !height_exist ||
         header.pixel_format.format_size != sizeof(k3dds_format)) {
-        fseek(file_handle, start_pos, SEEK_SET);
-        return;
+        if(file_handle) fseek(file_handle, start_pos, SEEK_SET);
+        return 0;
     }
 
     bool rgb_exist = (header.pixel_format.flags & DDPF_RGB) ? true : false;
@@ -342,7 +357,15 @@ void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
         case FOURCC_RGBA32F: *format = k3fmt::RGBA32_FLOAT; break;
         }
         if (header.pixel_format.fourcc == FOURCC_DX10) {
-            fread(&header10, sizeof(k3DDSHeader10), 1, file_handle);
+            if (file_handle) {
+                fread(&header10, sizeof(k3DDSHeader10), 1, file_handle);
+            } else {
+                if (sizeof(k3DDSHeader10) > mem_size) return 0;
+                read_length += sizeof(k3DDSHeader10);
+                memcpy(&header10, mem8, sizeof(k3DDSHeader10));
+                mem8 += sizeof(k3DDSHeader10);
+                mem_size -= sizeof(k3DDSHeader10);
+            }
             switch (header10.dx_format) {
             case k3DXFmt::R32G32B32A32_FLOAT:   *format = k3fmt::RGBA32_FLOAT; break;
             case k3DXFmt::R32G32B32_FLOAT:      *format = k3fmt::RGB32_FLOAT; break;
@@ -441,15 +464,32 @@ void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
     }
 
     if (*format == k3fmt::UNKNOWN) {
-        fseek(file_handle, start_pos, SEEK_SET);
-        return;
+        if(file_handle) fseek(file_handle, start_pos, SEEK_SET);
+        return 0;
     }
 
     dds_format = *format;
+    return read_length;
 }
 
-void K3CALLBACK k3dds_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice_pitch, void* data)
+void K3CALLBACK k3dds_LoadHeaderInfo(FILE* file_handle,
+    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
 {
+    k3dds_LoadHeaderInfoCommon(file_handle, 0, width, height, depth, format);
+}
+
+uint32_t K3CALLBACK k3dds_LoadHeaderInfoFromMem(void* mem, uint32_t mem_size,
+    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format)
+{
+    if (mem_size == 0) return 0;
+    return k3dds_LoadHeaderInfoCommon(mem, mem_size, width, height, depth, format);
+}
+
+void k3dds_LoadDataCommon(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data)
+{
+    FILE* file_handle = (mem_size == 0) ? (FILE*)mem : NULL;
+    uint8_t* mem8 = (uint8_t*)mem;
+
     uint8_t* bitmap = static_cast<uint8_t*>(data);
     uint8_t* bitmap_row;
     uint32_t format_size = k3imageObj::GetFormatSize(dds_format);
@@ -461,12 +501,33 @@ void K3CALLBACK k3dds_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice
     for (slice = 0; slice < header.depth; slice++) {
         bitmap_row = bitmap;
         for (row = 0; row < header.height; row += block_size) {
-            fread(bitmap_row, 1, row_size, file_handle);
+            if (file_handle) {
+                fread(bitmap_row, 1, row_size, file_handle);
+            } else {
+                uint32_t read_length = row_size;
+                read_length = (read_length > mem_size) ? mem_size : read_length;
+                memcpy(bitmap_row, mem8, read_length);
+                mem8 += read_length;
+                mem_size -= read_length;
+                if (mem_size == 0) return;
+            }
             bitmap_row += pitch;
         }
         bitmap += slice_pitch;
     }
 }
+
+void K3CALLBACK k3dds_LoadData(FILE* file_handle, uint32_t pitch, uint32_t slice_pitch, void* data)
+{
+    k3dds_LoadDataCommon(file_handle, 0, pitch, slice_pitch, data);
+}
+
+void K3CALLBACK k3dds_LoadDataFromMem(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data)
+{
+    if (mem_size == 0) return;
+    k3dds_LoadDataCommon(mem, mem_size, pitch, slice_pitch, data);
+}
+
 
 void K3CALLBACK k3dds_SaveData(FILE* file_handle,
     uint32_t width, uint32_t height, uint32_t depth, 

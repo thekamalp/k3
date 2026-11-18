@@ -13,3 +13,9 @@ void K3CALLBACK k3dds_SaveData(FILE* file_handle,
     uint32_t width, uint32_t height, uint32_t depth, 
     uint32_t pitch, uint32_t slice_pitch, k3fmt format,
     const void* data);
+
+uint32_t K3CALLBACK k3dds_LoadHeaderInfoFromMem(void* mem, uint32_t mem_size,
+    uint32_t* width, uint32_t* height, uint32_t* depth, k3fmt* format);
+
+void K3CALLBACK k3dds_LoadDataFromMem(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t slice_pitch, void* data);
+
