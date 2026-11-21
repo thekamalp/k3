@@ -264,6 +264,7 @@ struct k3anim {
     k3animObj model;
     uint32_t num_anim_objs;
     k3animObj* anim_objs;
+    uint32_t keyframe_offset;
 };
 
 class k3meshImpl
@@ -304,6 +305,7 @@ public:
     k3buffer _ab;  // attribute buffer; contains normals, tangents and uv
     k3buffer _sb;  // skin buffer; contains bone ids and weights (4 per vertex)
     k3buffer _lb;  // light buffer; contains all light attributes
+    k3surf _bt;    // bone texture; contains all bone key values (pos/rot/scale)
 };
 
 class k3winImpl

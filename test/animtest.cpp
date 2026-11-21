@@ -10,8 +10,12 @@ struct obj_prop_t {
     uint32_t diffuse_map_index;
     uint32_t normal_map_index;
     uint32_t prim_start;
+    uint32_t bone_mat_start;
+    uint32_t bone_tex_index;
+    float anim_coord;
     uint32_t dummy0;
     uint32_t dummy1;
+    uint32_t dummy2;
 };
 
 class App
@@ -27,14 +31,16 @@ private:
 
     k3surf depth_surf;
     k3gfxState raster_state;
+    k3computeState compute_bones;
     k3mesh scene;
 
     k3uploadBuffer cb_camera_upload[NUM_VERSIONS];
     k3buffer cb_camera[NUM_VERSIONS];
     k3uploadBuffer cb_obj_upload[NUM_VERSIONS];
     k3buffer cb_obj[NUM_VERSIONS];
-    k3uploadBuffer cb_bone_upload[NUM_VERSIONS];
-    k3buffer cb_bone[NUM_VERSIONS];
+    //k3uploadBuffer cb_bone_upload[NUM_VERSIONS];
+    //k3buffer cb_bone[NUM_VERSIONS];
+    k3buffer cb_bone;
 
     k3timer timer;
 
@@ -81,6 +87,11 @@ void App::Setup()
 
     gfx = win->GetGfx();
     printf("Adapter: %s\n", gfx->AdapterName());
+    if (gfx->GetNonNormalizedSamplerSupport()) {
+        printf("Non-normalized sampler supported\n");
+    } else {
+        printf("Non-normalized sampler not supported, update driver\n");
+    }
 
     cmd_buf = gfx->CreateCmdBuf();
     uint32_t view_index = 0;
@@ -92,12 +103,12 @@ void App::Setup()
     mdesc.view_index = view_index;
     mdesc.cmd_buf = cmd_buf;
     mdesc.up_buf = gfx->CreateUploadBuffer();
-    mdesc.name = "anim_cyl.fbx";
+    mdesc.name = "african-elephant-exp2.fbx";
     mdesc.num_custom_model_props = 1;
     mdesc.custom_model_prop_name = custom_prop_names;
     mdesc.num_custom_anim_props = 2;
     mdesc.custom_anim_prop_name = custom_anim_prop_names;
-    scene = gfx->CreateMesh(&mdesc);
+    scene = gfx->CreateMeshAS(&mdesc);
     view_index = mdesc.view_index;
     _chdir("..\\..\\bin");
 
@@ -152,16 +163,27 @@ void App::Setup()
     }
     uint32_t num_bones = scene->getNumBones();
     if (num_bones) {
-        for (i = 0; i < NUM_VERSIONS; i++) {
-            cb_bone_upload[i] = gfx->CreateUploadBuffer();
-            cb_bone_upload[i]->MapForWrite(num_bones * 32 * sizeof(float));
-            cb_bone_upload[i]->Unmap();
-            bdesc.view_index = view_index++;
-            bdesc.size = num_bones * 32 * sizeof(float);
-            bdesc.shader_resource = true;
-            bdesc.stride = 32 * sizeof(float);
-            cb_bone[i] = gfx->CreateBuffer(&bdesc);
-        }
+        //for (i = 0; i < NUM_VERSIONS; i++) {
+        //    cb_bone_upload[i] = gfx->CreateUploadBuffer();
+        //    cb_bone_upload[i]->MapForWrite(num_bones * 32 * sizeof(float));
+        //    cb_bone_upload[i]->Unmap();
+        //    bdesc.view_index = view_index++;
+        //    bdesc.size = num_bones * 32 * sizeof(float);
+        //    bdesc.shader_resource = true;
+        //    bdesc.shader_writable = true;
+        //    bdesc.stride = 32 * sizeof(float);
+        //    cb_bone[i] = gfx->CreateBuffer(&bdesc);
+        //}
+        bdesc.view_index = view_index++;
+        bdesc.size = num_bones * 32 * sizeof(float);
+        bdesc.shader_resource = true;
+        bdesc.shader_writable = true;
+        bdesc.stride = 32 * sizeof(float);
+        cb_bone = gfx->CreateBuffer(&bdesc);
+
+        k3viewDesc vdesc = { 0 };
+        vdesc.view_index = view_index++;
+        scene->genBoneTexture(gfx, cmd_buf, &vdesc);
     }
 
     k3bindingParam bind_params[6];
@@ -195,7 +217,7 @@ void App::Setup()
     bind_params[4].view_set_desc.space = 0;
     bind_params[4].view_set_desc.offset = 4;
     bind_params[5].type = k3bindingType::VIEW_SET;
-    bind_params[5].view_set_desc.type = k3shaderBindType::SRV;
+    bind_params[5].view_set_desc.type = k3shaderBindType::UAV;
     bind_params[5].view_set_desc.num_views = 1;
     bind_params[5].view_set_desc.reg = 2;
     bind_params[5].view_set_desc.space = 0;
@@ -270,6 +292,20 @@ void App::Setup()
     state_desc.msaa_samples = 1;
     raster_state = gfx->CreateGfxState(&state_desc);
 
+    k3computeStateDesc cs_state_desc = { 0 };
+    k3shader cs = gfx->CreateShaderFromCompiledFile("anim3d_cs.cso");
+    sdesc.filter = k3texFilter::MIN_MAG_LINEAR_MIP_POINT;
+    sdesc.addr_u = k3texAddr::CLAMP;
+    sdesc.addr_v = k3texAddr::CLAMP;
+    sdesc.addr_w = k3texAddr::CLAMP;
+    sdesc.flags = k3samplerDesc::FLAG_NON_NORM_SAMPLER;
+    bind_params[1].view_set_desc.num_views = 1;
+    k3shaderBinding compute_binding = gfx->CreateShaderBinding(6, bind_params, 1, &sdesc);
+
+    cs_state_desc.compute_shader = cs;
+    cs_state_desc.shader_binding = compute_binding;
+    compute_bones = gfx->CreateComputeState(&cs_state_desc);
+
     timer = win->CreateTimer();
 
     k3resource buffer_resource;
@@ -333,14 +369,15 @@ void App::UpdateResources(uint32_t v)
     cb_camera_upload[v]->Unmap();
 
     uint32_t num_anims = scene->getNumAnims();
+    uint32_t t = timer->GetTime();
     if (num_anims) {
-        uint32_t t = timer->GetTime();
         scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
     }
 
     uint32_t i;
     uint32_t num_objects = scene->getNumObjects();
     obj_prop_t* obj_data = (obj_prop_t*)cb_obj_upload[v]->MapForWrite(num_objects * sizeof(obj_prop_t));
+    uint32_t bone_start = 0;
     for (i = 0; i < num_objects; i++) {
         memcpy(obj_data[i].world, scene->getTransform(i), 16 * sizeof(float));
         memcpy(obj_data[i].iworld, scene->getTransform(i), 16 * sizeof(float));
@@ -349,15 +386,19 @@ void App::UpdateResources(uint32_t v)
         obj_data[i].diffuse_map_index = scene->getDiffuseMapIndex(i);
         obj_data[i].normal_map_index = scene->getNormalMapIndex(i);
         obj_data[i].prim_start = scene->getStartPrim(i);
+        obj_data[i].bone_mat_start = bone_start;
+        obj_data[i].bone_tex_index = i;
+        obj_data[i].anim_coord = scene->getAnimCoordinate(anim, t);
+        bone_start += scene->getNumBones();
     }
     cb_obj_upload[v]->Unmap();
 
-    uint32_t num_bones = scene->getNumBones();
-    if (num_bones) {
-        float* bone_data = (float*)cb_bone_upload[v]->MapForWrite(num_bones * 32 * sizeof(float));
-        scene->genBoneMatrices(bone_data, true);
-        cb_bone_upload[v]->Unmap();
-    }
+    //uint32_t num_bones = scene->getNumBones();
+    //if (num_bones) {
+    //    float* bone_data = (float*)cb_bone_upload[v]->MapForWrite(num_bones * 32 * sizeof(float));
+    //    scene->genBoneMatrices(bone_data, true);
+    //    cb_bone_upload[v]->Unmap();
+    //}
 
     k3resource buffer_resource;
     buffer_resource = cb_camera[v]->GetResource();
@@ -368,12 +409,12 @@ void App::UpdateResources(uint32_t v)
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
     cmd_buf->UploadBuffer(cb_obj_upload[v], buffer_resource);
     cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
-    if (cb_bone[v] != NULL) {
-        buffer_resource = cb_bone[v]->GetResource();
-        cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
-        cmd_buf->UploadBuffer(cb_bone_upload[v], buffer_resource);
-        cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
-    }
+    //if (cb_bone[v] != NULL) {
+    //    buffer_resource = cb_bone[v]->GetResource();
+    //    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    //    cmd_buf->UploadBuffer(cb_bone_upload[v], buffer_resource);
+    //    cmd_buf->TransitionResource(buffer_resource, k3resourceState::SHADER_RESOURCE);
+    //}
 }
 
 void App::Keyboard(k3key k, char c, k3keyState state)
@@ -436,6 +477,17 @@ void App::Display()
     fence->WaitGpuFence(version - NUM_VERSIONS);
     UpdateResources(v);
 
+    if (scene->getNumBones()) {
+        cmd_buf->TransitionResource(cb_bone->GetResource(), k3resourceState::UAV);
+        cmd_buf->SetComputeState(compute_bones);
+        cmd_buf->SetComputeConstantBuffer(0, cb_camera[v]);
+        cmd_buf->SetComputeShaderView(1, scene->getBoneTexture());
+        cmd_buf->SetComputeConstantBuffer(2, cb_obj[v]);
+        cmd_buf->SetComputeConstantBuffer(4, scene->getLightBuffer());
+        cmd_buf->SetComputeConstantBuffer(5, cb_bone);
+        cmd_buf->ComputeDispatch(1, 1, 1);
+    }
+
     k3buffer index_buf = scene->getIndexBuffer();
     cmd_buf->TransitionResource(depth_surf->GetResource(), k3resourceState::RENDER_TARGET);
     cmd_buf->ClearDepthTarget(depth_surf, k3depthSelect::DEPTH, 0.0f, 0x0, NULL);
@@ -451,7 +503,8 @@ void App::Display()
     cmd_buf->SetConstantBuffer(2, cb_obj[v]);
     cmd_buf->SetConstantBuffer(4, scene->getLightBuffer());
     if (scene->getNumBones()) {
-        cmd_buf->SetConstantBuffer(5, cb_bone[v]);
+        //cmd_buf->SetConstantBuffer(5, cb_bone[v]);
+        cmd_buf->SetConstantBuffer(5, cb_bone);
     }
     cmd_buf->SetDrawPrim(k3drawPrimType::TRIANGLELIST);
     cmd_buf->SetViewToSurface(back_buffer_resource);

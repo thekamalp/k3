@@ -137,7 +137,8 @@ public:
     ID3D12CommandAllocator* _cmd_alloc[MAX_ALLOC];
     uint64_t _cmd_alloc_fence[MAX_ALLOC];
     uint32_t _cur_alloc;
-    k3shaderBinding _cur_binding;
+    k3shaderBinding _cur_gfx_binding;
+    k3shaderBinding _cur_comp_binding;
     k3rect _cur_viewport;
     k3gfx _gfx;
     bool _index_draw;
@@ -266,7 +267,7 @@ public:
     static D3D12_TEXTURE_ADDRESS_MODE ConvertToDx12AddrMode(k3texAddr addr_mode);
     static D3D12_HIT_GROUP_TYPE ConvertToDx12HitGroupType(k3rtHitGroupType hit_group_type);
     static uint32_t _num_gfx;
-    static IDXGIFactory4* _factory;
+    static IDXGIFactory6* _factory;
 #ifdef _DEBUG
     static ID3D12Debug1* _debug_controller;
 #endif
@@ -275,6 +276,7 @@ public:
     ID3D12Device* _dev;
     ID3D12Device5* _dev5;
     uint32_t _dxr_tier;
+    bool _non_normalized_sampler_support;
 #ifdef _DEBUG
     ID3D12DebugDevice* _dbg_dev;
 #endif

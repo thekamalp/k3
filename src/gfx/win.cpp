@@ -1083,6 +1083,7 @@ k3meshImpl::k3meshImpl()
     _ab = NULL;
     _sb = NULL;
     _lb = NULL;
+    _bt = NULL;
 }
 
 k3meshImpl::~k3meshImpl()
@@ -1502,6 +1503,11 @@ K3API k3buffer k3meshObj::getLightBuffer()
 K3API k3buffer k3meshObj::getSkinBuffer()
 {
     return _data->_sb;
+}
+
+K3API k3surf k3meshObj::getBoneTexture()
+{
+    return _data->_bt;
 }
 
 K3API k3projType k3meshObj::getCameraProjectionType(uint32_t camera)
@@ -2558,6 +2564,105 @@ K3API const float* k3meshObj::getVertSkin(uint32_t model, uint32_t vert)
     return _data->_geom_data + 11 * _data->_num_verts + 8 * v_index;
 }
 
+K3API void k3meshObj::genBoneTexture(k3gfx gfx, k3cmdBuf cmd_buf, k3viewDesc* vdesc)
+{
+    k3resourceDesc rdesc = { 0 };
+    rdesc.width = 3 * _data->_num_bones;
+    // The first row contains the inverse bone pose matrix (first 3 rows; last row assumed to be (0,0,0,1)
+    rdesc.height = 1 + _data->_anim[_data->_num_anims - 1].keyframe_offset + _data->_anim[_data->_num_anims - 1].num_keyframes;
+    rdesc.depth = 1;
+    rdesc.format = k3fmt::RGBA32_FLOAT;
+    rdesc.mip_levels = 1;
+    rdesc.num_samples = 1;
+    _data->_bt = gfx->CreateSurface(&rdesc, NULL, vdesc, NULL);
+    k3uploadImage up_bone_texture = gfx->CreateUploadImage();
+    up_bone_texture->SetDimensions(rdesc.width, rdesc.height, rdesc.depth, rdesc.format);
+    uint32_t bone_tex_pitch = up_bone_texture->GetPitch() / sizeof(float);
+    float* up_bone = (float*)up_bone_texture->MapForWrite();
+
+    uint32_t i, j, a = 0;
+    float* cur_bone = up_bone;
+    // First fill in the inverse bind pose matrix
+    for (i = 0; i < _data->_num_bones; i++) {
+        cur_bone[0] = _data->_bones[i].inv_bind_pose[0];
+        cur_bone[1] = _data->_bones[i].inv_bind_pose[1];
+        cur_bone[2] = _data->_bones[i].inv_bind_pose[2];
+        cur_bone[3] = _data->_bones[i].inv_bind_pose[3];
+        cur_bone[4] = _data->_bones[i].inv_bind_pose[4];
+        cur_bone[5] = _data->_bones[i].inv_bind_pose[5];
+        cur_bone[6] = _data->_bones[i].inv_bind_pose[6];
+        cur_bone[7] = _data->_bones[i].inv_bind_pose[7];
+        cur_bone[8] = _data->_bones[i].inv_bind_pose[8];
+        cur_bone[9] = _data->_bones[i].inv_bind_pose[9];
+        cur_bone[10] = _data->_bones[i].inv_bind_pose[10];
+        cur_bone[11] = _data->_bones[i].inv_bind_pose[11];
+        cur_bone += 12;
+    }
+    // Fill animation keys (rotation/position/scaling)
+    for (j = 1; j < rdesc.height; j++) {
+        while (a < _data->_num_anims && ((j - 1) - _data->_anim[a].keyframe_offset) >= _data->_anim[a].num_keyframes) {
+            a++;
+        }
+        cur_bone = up_bone + j * bone_tex_pitch;
+        uint32_t src_row_start = ((j - 1) - _data->_anim[a].keyframe_offset) * _data->_num_bones;
+        for (i = 0; i < _data->_num_bones; i++) {
+            float parent = (_data->_bones[i].parent >= _data->_num_bones) ? 1024 : _data->_bones[i].parent;
+            cur_bone[0] = _data->_anim[a].bone_data[src_row_start + i].rot_quat[0];
+            cur_bone[1] = _data->_anim[a].bone_data[src_row_start + i].rot_quat[1];
+            cur_bone[2] = _data->_anim[a].bone_data[src_row_start + i].rot_quat[2];
+            cur_bone[3] = _data->_anim[a].bone_data[src_row_start + i].rot_quat[3];
+            cur_bone[4] = _data->_anim[a].bone_data[src_row_start + i].position[0];
+            cur_bone[5] = _data->_anim[a].bone_data[src_row_start + i].position[1];
+            cur_bone[6] = _data->_anim[a].bone_data[src_row_start + i].position[2];
+            cur_bone[7] = parent;
+            cur_bone[8] = _data->_anim[a].bone_data[src_row_start + i].scaling[0];
+            cur_bone[9] = _data->_anim[a].bone_data[src_row_start + i].scaling[1];
+            cur_bone[10] = _data->_anim[a].bone_data[src_row_start + i].scaling[2];
+            cur_bone[11] = parent;
+            cur_bone += 12;
+        }
+    }
+
+    up_bone_texture->Unmap();
+
+    k3resource buf_res;
+    cmd_buf->Reset();
+    if (_data->_bt != NULL) {
+        buf_res = _data->_bt->GetResource();
+        cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        cmd_buf->UploadImage(up_bone_texture, buf_res);
+        cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+        cmd_buf->Close();
+        gfx->SubmitCmdBuf(cmd_buf);
+        gfx->WaitGpuIdle();
+    }
+}
+
+K3API float k3meshObj::getAnimCoordinate(uint32_t anim_index, uint32_t time_msec)
+{
+    if (anim_index >= _data->_num_anims) {
+        // invalid animation index will force first frame of first animation
+        anim_index = 0;
+        time_msec = 0;
+    }
+
+    k3anim* anim = _data->_anim + anim_index;
+    uint32_t duration = anim->keyframe_delta_msec * (anim->num_keyframes - 1);
+    time_msec = (duration == 0) ? 0 : time_msec % duration;
+    float keyframe_f = time_msec / (float)anim->keyframe_delta_msec;
+    uint32_t keyframe = keyframe_f;
+    float keyframe_lerp = keyframe_f - keyframe;
+    keyframe_lerp = (keyframe_lerp < 0.0f) ? 0.0f : ((keyframe_lerp > 1.0f) ? 1.0f : keyframe_lerp);
+    keyframe_lerp += 0.5f;  // offset by 1/2 of a pixel
+    keyframe += anim->keyframe_offset;
+    keyframe_lerp += keyframe + 1;  // First row reserved for inverse bind pose matrix
+
+    // find the final animation
+    //anim = _data->_anim + _data->_num_anims;
+    //uint32_t total_keyframes = anim->keyframe_offset + anim->num_keyframes;
+    //keyframe_lerp /= total_keyframes;
+    return keyframe_lerp;
+}
 
 
 #define K3_FBX_DEBUG 0
@@ -5196,6 +5301,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             mesh_impl->_anim[anim_id].bone_data = NULL;
             mesh_impl->_anim[anim_id].bone_flag = NULL;
             mesh_impl->_anim[anim_id].anim_objs = NULL;
+            mesh_impl->_anim[anim_id].keyframe_offset = 0;
             memcpy(mesh_impl->_anim_custom_props + anim_id * mesh_impl->_num_anim_custom_props, fbx.anim_custom_prop + fbx_anim_id * custom_props.num_anim_custom_props, custom_props.num_anim_custom_props * sizeof(k3flint32));
             obj_id = ~0x0;
             // Find the next object we are animating
@@ -5274,6 +5380,11 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
             }
             mesh_impl->_anim[anim_id].num_keyframes = (total_time + 3 * mesh_impl->_anim[anim_id].keyframe_delta_msec / 2) / mesh_impl->_anim[anim_id].keyframe_delta_msec;
             if (mesh_impl->_anim[anim_id].num_keyframes == 0) mesh_impl->_anim[anim_id].num_keyframes = 1;
+            if (anim_id != 0) {
+                mesh_impl->_anim[anim_id].keyframe_offset = mesh_impl->_anim[anim_id - 1].keyframe_offset + mesh_impl->_anim[anim_id - 1].num_keyframes;
+            } else {
+                mesh_impl->_anim[anim_id].keyframe_offset = 0;
+            }
             //mesh_impl->_anim[anim_id].keyframe_delta_msec /= mesh_impl->_anim[anim_id].num_keyframes;
             strncpy(mesh_impl->_anim[anim_id].name, fbx.anim_layer[fbx_anim_id].name, K3_FBX_MAX_NAME_LENGTH);
             if (use_skin) {
@@ -6588,6 +6699,11 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
             }
             // compute the number of key frames based on the duration and minimum interval
             mesh_impl->_anim[i].num_keyframes = (duration_ticks / min_interval_ticks) + 1;
+            if (i != 0) {
+                mesh_impl->_anim[i].keyframe_offset = mesh_impl->_anim[i - 1].keyframe_offset + mesh_impl->_anim[i - 1].num_keyframes;
+            } else {
+                mesh_impl->_anim[i].keyframe_offset = 0;
+            }
             double keyframe_delta_msec = anim_duration_msec / (mesh_impl->_anim[i].num_keyframes - 1);
             double keyframe_delta_tick = min_interval_ticks; // should be the same as ths: (ticks_per_sec* keyframe_delta_msec) / 1000.0;
             mesh_impl->_anim[i].keyframe_delta_msec = keyframe_delta_msec;

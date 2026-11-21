@@ -1700,6 +1700,9 @@ struct k3samplerDesc {
     float border_color[4];
     float min_lod;
     float max_lod;
+    uint32_t flags;
+    static const uint32_t FLAG_NONE = 0x0;
+    static const uint32_t FLAG_NON_NORM_SAMPLER = 0x1;
 };
 
 struct k3bufferDesc {
@@ -2186,12 +2189,15 @@ public:
     K3API const float* getVertPosition(uint32_t model, uint32_t vert);
     K3API const float* getVertAttrib(uint32_t model, uint32_t vert);
     K3API const float* getVertSkin(uint32_t model, uint32_t vert);
+    K3API void genBoneTexture(k3gfx gfx, k3cmdBuf cmd_buf, k3viewDesc* vdesc);
+    K3API float getAnimCoordinate(uint32_t anim_index, uint32_t time_msec);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();
     K3API k3buffer getAttribBuffer();
     K3API k3buffer getLightBuffer();
     K3API k3buffer getSkinBuffer();
+    K3API k3surf getBoneTexture();
 
     inline float* getDXCameraProjectionLH(float* d, uint32_t camera) { return getCameraProjection(d, camera, true, true, false); }
     inline float* getDXCameraProjectionRH(float* d, uint32_t camera) { return getCameraProjection(d, camera, false, true, false); }
@@ -2780,6 +2786,7 @@ public:
 
     K3API const char* AdapterName();
     K3API uint32_t GetRayTracingSupport();
+    K3API bool GetNonNormalizedSamplerSupport();
 
     K3API k3fence CreateFence();
     K3API void WaitGpuIdle();

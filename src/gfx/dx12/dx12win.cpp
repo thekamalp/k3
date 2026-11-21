@@ -426,7 +426,8 @@ k3cmdBufImpl::k3cmdBufImpl()
         _cmd_alloc_fence[i] = 0;
     }
     _cur_alloc = 0;
-    _cur_binding = NULL;
+    _cur_gfx_binding = NULL;
+    _cur_comp_binding = NULL;
     _cur_viewport.x = 0;
     _cur_viewport.y = 0;
     _cur_viewport.width = 0;
@@ -522,7 +523,8 @@ K3API void k3cmdBufObj::Close()
     if (hr != S_OK) {
         k3error::Handler("Could not close command list", "k3cmdBufObj::Close");
     }
-    _data->_cur_binding = NULL;
+    _data->_cur_gfx_binding = NULL;
+    _data->_cur_comp_binding = NULL;
     _data->_cur_viewport.x = 0;
     _data->_cur_viewport.y = 0;
     _data->_cur_viewport.width = 0;
@@ -677,9 +679,10 @@ K3API void k3cmdBufObj::SetGfxState(k3gfxState state)
 {
     k3gfxStateImpl* state_impl = state->getImpl();
     _data->_cmd_list->SetPipelineState(state_impl->_state);
-    if (_data->_cur_binding != state_impl->_binding) {
-        _data->_cur_binding = state_impl->_binding;
-        k3shaderBindingImpl* bind_impl = _data->_cur_binding->getImpl();
+    if (_data->_cur_gfx_binding != state_impl->_binding) {
+        _data->_cur_gfx_binding = state_impl->_binding;
+        _data->_cur_comp_binding = NULL;
+        k3shaderBindingImpl* bind_impl = _data->_cur_gfx_binding->getImpl();
         _data->_cmd_list->SetGraphicsRootSignature(bind_impl->_binding);
     }
 }
@@ -688,9 +691,10 @@ K3API void k3cmdBufObj::SetComputeState(k3computeState state)
 {
     k3computeStateImpl* state_impl = state->getImpl();
     _data->_cmd_list->SetPipelineState(state_impl->_state);
-    if (_data->_cur_binding != state_impl->_binding) {
-        _data->_cur_binding = state_impl->_binding;
-        k3shaderBindingImpl* bind_impl = _data->_cur_binding->getImpl();
+    if (_data->_cur_comp_binding != state_impl->_binding) {
+        _data->_cur_comp_binding = state_impl->_binding;
+        _data->_cur_gfx_binding = NULL;
+        k3shaderBindingImpl* bind_impl = _data->_cur_comp_binding->getImpl();
         _data->_cmd_list->SetComputeRootSignature(bind_impl->_binding);
     }
 }
@@ -1817,7 +1821,7 @@ K3API void k3uploadBufferObj::UnmapRange(uint64_t offset, uint64_t size)
 // ------------------------------------------------------------
 // gfx
 uint32_t k3gfxImpl::_num_gfx = 0;
-IDXGIFactory4* k3gfxImpl::_factory = NULL;
+IDXGIFactory6* k3gfxImpl::_factory = NULL;
 #ifdef _DEBUG
 ID3D12Debug1* k3gfxImpl::_debug_controller = NULL;
 #endif
@@ -2507,6 +2511,7 @@ k3gfxImpl::k3gfxImpl()
     _dev = NULL;
     _dev5 = NULL;
     _dxr_tier = 0;
+    _non_normalized_sampler_support = false;
 #ifdef _DEBUG
     _dbg_dev = NULL;
 #endif
@@ -2674,7 +2679,8 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     UINT adapter_index;
     bool adapter_found = false;
     if (k3gfxImpl::_adapter == NULL) {
-        for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapters1(adapter_index, &k3gfxImpl::_adapter) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
+        //for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&k3gfxImpl::_adapter)) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
+        for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_MINIMUM_POWER, IID_PPV_ARGS(&k3gfxImpl::_adapter)) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
             k3gfxImpl::_adapter->GetDesc1(&desc);
 
             // Dont select software renderer
@@ -2714,13 +2720,24 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     D3D12_FEATURE_DATA_D3D12_OPTIONS5 opt5 = { 0 };
     hr = gfx->_data->_dev5->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &opt5, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5));
     if (hr != S_OK) {
-        k3error::Handler("Could not get feature support", "k3gfxObj::Create");
+        k3error::Handler("Could not get option5 feature support", "k3gfxObj::Create");
         return NULL;
     }
     switch (opt5.RaytracingTier) {
     case D3D12_RAYTRACING_TIER_NOT_SUPPORTED: gfx->_data->_dxr_tier = 0; break;
     case D3D12_RAYTRACING_TIER_1_0: gfx->_data->_dxr_tier = 10; break;
     case D3D12_RAYTRACING_TIER_1_1: gfx->_data->_dxr_tier = 11; break;
+    }
+
+    // Check for non-normalized coordinates
+    D3D12_FEATURE_DATA_D3D12_OPTIONS17 opt17 = { 0 };
+    hr = gfx->_data->_dev5->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS17, &opt17, sizeof(opt17));
+    if (hr != S_OK) {
+        k3error::Handler("Could not get option17 feature support", "k3gfxObj::Create");
+        return NULL;
+    }
+    if (opt17.NonNormalizedCoordinateSamplersSupported) {
+        gfx->_data->_non_normalized_sampler_support = true;
     }
 
 #ifdef _DEBUG
@@ -2775,6 +2792,11 @@ K3API const char* k3gfxObj::AdapterName()
 K3API uint32_t k3gfxObj::GetRayTracingSupport()
 {
     return _data->_dxr_tier;
+}
+
+K3API bool k3gfxObj::GetNonNormalizedSamplerSupport()
+{
+    return _data->_non_normalized_sampler_support;
 }
 
 K3API k3fence k3gfxObj::CreateFence()
@@ -2846,16 +2868,16 @@ K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3
 {
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc;
     D3D12_ROOT_PARAMETER1* dx12_params = (num_params) ? new D3D12_ROOT_PARAMETER1[num_params] : NULL;
-    D3D12_STATIC_SAMPLER_DESC* dx12_samplers = (num_samplers) ? new D3D12_STATIC_SAMPLER_DESC[num_samplers] : NULL;
-    desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    desc.Desc_1_1.NumParameters = num_params;
-    desc.Desc_1_1.pParameters = dx12_params;
-    desc.Desc_1_1.NumStaticSamplers = num_samplers;
-    desc.Desc_1_1.pStaticSamplers = dx12_samplers;
+    D3D12_STATIC_SAMPLER_DESC1* dx12_samplers = (num_samplers) ? new D3D12_STATIC_SAMPLER_DESC1[num_samplers] : NULL;
+    desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_2;
+    desc.Desc_1_2.NumParameters = num_params;
+    desc.Desc_1_2.pParameters = dx12_params;
+    desc.Desc_1_2.NumStaticSamplers = num_samplers;
+    desc.Desc_1_2.pStaticSamplers = dx12_samplers;
     if (sh_bind_type == k3shaderBindingType::GLOBAL) {
-        desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        desc.Desc_1_2.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
     } else {
-        desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+        desc.Desc_1_2.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
     }
     D3D12_DESCRIPTOR_RANGE1 dx12_desc_range[128];
     uint32_t r = 0;
@@ -2916,6 +2938,10 @@ K3API k3shaderBinding k3gfxObj::CreateTypedShaderBinding(uint32_t num_params, k3
         dx12_samplers[i].ShaderRegister = i;
         dx12_samplers[i].RegisterSpace = 0;
         dx12_samplers[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        dx12_samplers[i].Flags = D3D12_SAMPLER_FLAG_NONE;
+        if (samplers[i].flags & k3samplerDesc::FLAG_NON_NORM_SAMPLER) {
+            dx12_samplers[i].Flags |= D3D12_SAMPLER_FLAG_NON_NORMALIZED_COORDINATES;
+        }
     }
     ID3DBlob* serial_sig;
     ID3DBlob* error;
@@ -3696,6 +3722,10 @@ K3API k3sampler k3gfxObj::CreateSampler(const k3samplerDesc* sdesc)
         k3error::Handler("Sampler heap not created", "k3gfxObj::CreateSampler");
         return NULL;
     }
+    if (sdesc->flags & k3samplerDesc::FLAG_NON_NORM_SAMPLER) {
+        k3error::Handler("Non-normalized sampler not supported until available in release version of Agility DX SDK", "k3gfxObj::CreateSampler");
+        return NULL;
+    }
     D3D12_CPU_DESCRIPTOR_HANDLE dx12_desc_handle(dx12_desc_heap->GetCPUDescriptorHandleForHeapStart());
     D3D12_GPU_DESCRIPTOR_HANDLE dx12_gpu_desc_handle(dx12_desc_heap->GetGPUDescriptorHandleForHeapStart());
     UINT desc_size = _data->_dev->GetDescriptorHandleIncrementSize(dx12_heap_type);
@@ -3757,6 +3787,9 @@ K3API k3buffer k3gfxObj::CreateBuffer(const k3bufferDesc* bdesc)
     dx12_resource_desc.SampleDesc.Quality = 0;
     dx12_resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     dx12_resource_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    if (bdesc->shader_writable) {
+        dx12_resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    }
     if (bdesc->mem_pool == NULL) {
         // no mem pool defined, so create a committed resource
         D3D12_HEAP_PROPERTIES dx12_heap_prop;
