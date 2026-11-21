@@ -2773,6 +2773,7 @@ private:
     void GetFontShaders(k3shader& vs, k3shader& ps);
 
 public:
+    static K3API void PreferLowPowerGPU(bool low_power);
     static k3gfx Create(uint32_t num_views, uint32_t num_samplers);
     virtual ~k3gfxObj();
     k3gfxImpl* getImpl();

@@ -1827,6 +1827,7 @@ ID3D12Debug1* k3gfxImpl::_debug_controller = NULL;
 #endif
 IDXGIAdapter1* k3gfxImpl::_adapter = NULL;
 char k3gfxImpl::_adapter_name[128] = { 0 };
+bool k3gfxImpl::_low_power = false;
 
 void k3gfxImpl::ConvertToDx12Rect(D3D12_RECT* dst, const k3rect* src)
 {
@@ -2572,6 +2573,11 @@ const k3gfxImpl* k3gfxObj::getImpl() const
     return _data;
 }
 
+K3API void k3gfxObj::PreferLowPowerGPU(bool low_power)
+{
+    k3gfxImpl::_low_power = low_power;
+}
+
 void k3gfxObj::WinCreated(k3win w)
 {
     k3win32WinImpl* win_impl = (k3win32WinImpl*)w->getImpl();
@@ -2678,9 +2684,9 @@ k3gfx k3gfxObj::Create(uint32_t num_views, uint32_t num_samplers)
     DXGI_ADAPTER_DESC1 desc;
     UINT adapter_index;
     bool adapter_found = false;
+    DXGI_GPU_PREFERENCE gpu_pref = (k3gfxImpl::_low_power) ? DXGI_GPU_PREFERENCE_MINIMUM_POWER : DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE;
     if (k3gfxImpl::_adapter == NULL) {
-        //for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&k3gfxImpl::_adapter)) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
-        for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_MINIMUM_POWER, IID_PPV_ARGS(&k3gfxImpl::_adapter)) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
+        for (adapter_index = 0; k3gfxImpl::_factory->EnumAdapterByGpuPreference(adapter_index, gpu_pref, IID_PPV_ARGS(&k3gfxImpl::_adapter)) != DXGI_ERROR_NOT_FOUND; adapter_index++) {
             k3gfxImpl::_adapter->GetDesc1(&desc);
 
             // Dont select software renderer

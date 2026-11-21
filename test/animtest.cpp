@@ -83,6 +83,7 @@ App::~App()
 
 void App::Setup()
 {
+    k3gfxObj::PreferLowPowerGPU(true);
     win = k3winObj::CreateWindowed("animtest", 100, 100, 640, 480, 128, 32);
 
     gfx = win->GetGfx();

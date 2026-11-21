@@ -273,6 +273,7 @@ public:
 #endif
     static IDXGIAdapter1* _adapter;
     static char _adapter_name[128];
+    static bool _low_power;
     ID3D12Device* _dev;
     ID3D12Device5* _dev5;
     uint32_t _dxr_tier;
