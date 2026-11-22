@@ -12,9 +12,10 @@ struct obj_prop_t {
     uint32_t prim_start;
     uint32_t bone_mat_start;
     uint32_t bone_tex_index;
-    float anim_coord;
-    uint32_t dummy0;
-    uint32_t dummy1;
+    // anim_coord[0] is the coordinate for the first frame
+    // anim_coord[1] is the coordinate for the second frame
+    // anim_coord[2] is the interpolation between the two
+    float anim_coord[3];
     uint32_t dummy2;
 };
 
@@ -51,6 +52,8 @@ private:
     uint32_t last_mouse_x, last_mouse_y;
     uint32_t mouse_button;
     uint32_t anim;
+    float anim_transition;
+    static const uint32_t ANIM_TRANSITION_TIME_MSEC = 1000;
 
 public:
     App();
@@ -323,6 +326,7 @@ void App::Setup()
     last_mouse_y = 0;
     mouse_button = 0x0;
     anim = 0;
+    anim_transition = -1.0f;
 
     k3AABB scene_aabb;
     scene->getAABB(&scene_aabb, 0, NULL);
@@ -370,6 +374,7 @@ void App::UpdateResources(uint32_t v)
     cb_camera_upload[v]->Unmap();
 
     uint32_t num_anims = scene->getNumAnims();
+    uint32_t delta_t = timer->GetDeltaTime();
     uint32_t t = timer->GetTime();
     if (num_anims) {
         scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
@@ -389,7 +394,17 @@ void App::UpdateResources(uint32_t v)
         obj_data[i].prim_start = scene->getStartPrim(i);
         obj_data[i].bone_mat_start = bone_start;
         obj_data[i].bone_tex_index = i;
-        obj_data[i].anim_coord = scene->getAnimCoordinate(anim, t);
+        if (anim_transition >= 0.0f) {
+            anim_transition += ((float)delta_t) / ANIM_TRANSITION_TIME_MSEC;
+            if (anim_transition >= 1.0f) {
+                anim = !anim;
+                // Stop animation transition
+                anim_transition = -1.0f;
+            }
+            obj_data[i].anim_coord[1] = scene->getAnimCoordinate(!anim, t);
+        }
+        obj_data[i].anim_coord[0] = scene->getAnimCoordinate(anim, t);
+        obj_data[i].anim_coord[2] = anim_transition;
         bone_start += scene->getNumBones();
     }
     cb_obj_upload[v]->Unmap();
@@ -448,7 +463,15 @@ void App::Keyboard(k3key k, char c, k3keyState state)
             k3m4_Mul(model_xform, model_xform, new_xform);
             break;
         case k3key::SPACE:
-            anim = !anim;
+            //anim = !anim;
+            if (anim_transition >= 0.0f) {
+                // Swap the transition back, continue where the current one left off
+                anim_transition = 1.0f - anim_transition;
+                anim = !anim;
+            } else {
+                // Start transition in animation
+                anim_transition = 0.0f;
+            }
             printf("Anim: %s interesting_numer: %d", scene->getAnimName(anim), scene->getAnimCustomProp(anim, 0).i);
             str = scene->getAnimCustomPropString(anim, 1);
             if (str) {

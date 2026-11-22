@@ -57,9 +57,10 @@ struct object_t {
     uint prim_start;
     uint bone_mat_start;
     uint bone_tex_index;
-    float anim_coord;
-    uint dummy0;
-    uint dummy1;
+    // anim_coord.x is the coordinate for the first frame
+    // anim_coord.y is the coordinate for the second frame
+    // anim_coord.z is the interpolation between the two
+    float3 anim_coord;
     uint dummy2;
 };
 
@@ -255,20 +256,33 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
     // Sample the key frame
     float2 bone_coord;
     bone_coord.x = (((float) 3*bone_id) + .5);
-    bone_coord.y = obj_prop[obj_id].anim_coord;
+    bone_coord.y = obj_prop[obj_id].anim_coord.x;
     
     float4 rot_quat = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0);
-    bone_coord.x = (((float) 3 * bone_id + 1) + .5);
+    bone_coord.x += 1.0;
     float4 position = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0);
-    bone_coord.x = (((float) 3 * bone_id + 2) + .5);
+    bone_coord.x += 1.0;
     float3 scaling = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0).xyz;
     parent[bone_id] = (uint) (position.w + 0.5);
+    
+    float frame_lerp = obj_prop[obj_id].anim_coord.z;
+    if (frame_lerp > 0.0) {
+        bone_coord.y = obj_prop[obj_id].anim_coord.y;
+        float3 scaling1 = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0).xyz;
+        bone_coord.x -= 1.0;
+        float3 position1 = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0);
+        bone_coord.x -= 1.0;
+        float4 rot_quat1 = texture_set[bone_tex_index].SampleLevel(sampleLinear, bone_coord, 0.0);
+        scaling = lerp(scaling, scaling1, frame_lerp);
+        position.xyz = lerp(position.xyz, position1, frame_lerp);
+        rot_quat = lerp(rot_quat, rot_quat1, frame_lerp);
+    }
 
     //uint3 bone_coord;
     //bone_coord.x = 3 * bone_id;
-    //bone_coord.y = obj_prop[obj_id].anim_coord - 0.5;
+    //bone_coord.y = obj_prop[obj_id].anim_coord.x - 0.5;
     //bone_coord.z = 0;
-    //float lerp_amount = frac(obj_prop[obj_id].anim_coord - 0.5);
+    //float lerp_amount = frac(obj_prop[obj_id].anim_coord.x - 0.5);
     //
     //float4 rot_quat0 = texture_set[bone_tex_index].Load(bone_coord);
     //bone_coord.x += 1;
@@ -286,6 +300,35 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
     //float3 scaling = lerp(scaling0, scaling1, lerp_amount);
     //float3 position = lerp(position0.xyz, position1, lerp_amount);
     //float4 rot_quat = lerp(rot_quat0, rot_quat1, lerp_amount);
+    //
+    //float frame_lerp = obj_prop[obj_id].anim_coord.z;
+    //if (frame_lerp > 0.0) {
+    //    bone_coord.y = obj_prop[obj_id].anim_coord.y - 0.5;
+    //    lerp_amount = frac(obj_prop[obj_id].anim_coord.y - 0.5);
+    //
+    //    rot_quat0 = texture_set[bone_tex_index].Load(bone_coord);
+    //    bone_coord.x += 1;
+    //    position0 = texture_set[bone_tex_index].Load(bone_coord);
+    //    bone_coord.x += 1;
+    //    scaling0 = texture_set[bone_tex_index].Load(bone_coord).xyz;
+    //    parent[bone_id] = (uint) (position0.w + 0.5);
+    //    bone_coord.y += 1;
+    //    scaling1 = texture_set[bone_tex_index].Load(bone_coord).xyz;
+    //    bone_coord.x -= 1;
+    //    position1 = texture_set[bone_tex_index].Load(bone_coord);
+    //    bone_coord.x -= 1;
+    //    rot_quat1 = texture_set[bone_tex_index].Load(bone_coord);
+    //    
+    //    scaling1 = lerp(scaling0, scaling1, lerp_amount);
+    //    position1 = lerp(position0.xyz, position1, lerp_amount);
+    //    rot_quat1 = lerp(rot_quat0, rot_quat1, lerp_amount);
+    //    
+    //    scaling = lerp(scaling, scaling1, frame_lerp);
+    //    position = lerp(position.xyz, position1, frame_lerp);
+    //    rot_quat = lerp(rot_quat, rot_quat1, frame_lerp);
+    //}
+
+    rot_quat = normalize(rot_quat);
     
     // Load the inverse bind pose matrix
     uint3 pose_coord;
