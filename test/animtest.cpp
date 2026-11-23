@@ -19,10 +19,19 @@ struct obj_prop_t {
     uint32_t dummy2;
 };
 
+struct terrain_vert_t {
+    float pos[3];
+    float normal[3];
+    float texcoord[2];
+    float tang[3];
+};
+
 class App
 {
 private:
     static const uint32_t NUM_VERSIONS = 4;
+    static const uint32_t TERRAIN_RES_X = 16;
+    static const uint32_t TERRAIN_RES_Y = 16;
 
     k3win win;
     k3gfx gfx;
@@ -34,6 +43,13 @@ private:
     k3gfxState raster_state;
     k3computeState compute_bones;
     k3mesh scene;
+
+    k3buffer terrain_ib;
+    k3buffer terrain_vb;
+    k3gfxState terrain_state;
+    k3surf terrain_diffuse_map;
+    k3surf terrain_normal_map;
+    k3surf terrain_rotate_map;
 
     k3uploadBuffer cb_camera_upload[NUM_VERSIONS];
     k3buffer cb_camera[NUM_VERSIONS];
@@ -59,6 +75,7 @@ public:
     App();
     ~App();
 
+    void SetupTerrain(k3uploadBuffer up_ib, k3uploadBuffer up_vb, uint32_t res_x, uint32_t res_y, float width, float height, float* height_map);
     void Setup();
     void UpdateResources(uint32_t v);
     void Keyboard(k3key k, char c, k3keyState state);
@@ -114,6 +131,13 @@ void App::Setup()
     mdesc.custom_anim_prop_name = custom_anim_prop_names;
     scene = gfx->CreateMeshAS(&mdesc);
     view_index = mdesc.view_index;
+
+    k3uploadImage terrain_diffuse_upload = gfx->CreateUploadImage();
+    k3uploadImage terrain_normal_upload = gfx->CreateUploadImage();
+    k3uploadImage terrain_rotate_upload = gfx->CreateUploadImage();
+    k3imageObj::LoadFromFile(terrain_diffuse_upload, "brown_mud_leaves_01_diff_1k.dds");
+    k3imageObj::LoadFromFile(terrain_normal_upload, "brown_mud_leaves_01_nor_gl_1k.png");
+    k3imageObj::LoadFromFile(terrain_rotate_upload, "voronoi.png");
     _chdir("..\\..\\bin");
 
     uint32_t i;
@@ -296,6 +320,37 @@ void App::Setup()
     state_desc.msaa_samples = 1;
     raster_state = gfx->CreateGfxState(&state_desc);
 
+    vs = gfx->CreateShaderFromCompiledFile("terrain_vs.cso");
+    ps = gfx->CreateShaderFromCompiledFile("terrain_ps.cso");
+    bind_params[1].view_set_desc.num_views = 3;
+    raster_binding = gfx->CreateShaderBinding(6, bind_params, 1, &sdesc);
+    elem[0].name = "POSITION";
+    elem[0].index = 0;
+    elem[0].format = k3fmt::RGB32_FLOAT;
+    elem[0].slot = 0;
+    elem[0].offset = 0;
+    elem[0].in_type = k3inputType::VERTEX;
+    elem[0].instance_step = 0;
+    elem[1].name = "NORMAL";
+    elem[1].index = 0;
+    elem[1].format = k3fmt::RGBA32_FLOAT;
+    elem[1].slot = 0;
+    elem[1].offset = 12;
+    elem[1].in_type = k3inputType::VERTEX;
+    elem[1].instance_step = 0;
+    elem[2].name = "TANGENT";
+    elem[2].index = 0;
+    elem[2].format = k3fmt::RGBA32_FLOAT;
+    elem[2].slot = 0;
+    elem[2].offset = 28;
+    elem[2].in_type = k3inputType::VERTEX;
+    elem[2].instance_step = 0;
+    state_desc.num_input_elements = 3;
+    state_desc.input_elements = elem;
+    state_desc.vertex_shader = vs;
+    state_desc.pixel_shader = ps;
+    terrain_state = gfx->CreateGfxState(&state_desc);
+
     k3computeStateDesc cs_state_desc = { 0 };
     k3shader cs = gfx->CreateShaderFromCompiledFile("anim3d_cs.cso");
     sdesc.filter = k3texFilter::MIN_MAG_LINEAR_MIP_POINT;
@@ -310,12 +365,47 @@ void App::Setup()
     cs_state_desc.shader_binding = compute_binding;
     compute_bones = gfx->CreateComputeState(&cs_state_desc);
 
+    k3uploadBuffer terrain_up_ib = gfx->CreateUploadBuffer();
+    k3uploadBuffer terrain_up_vb = gfx->CreateUploadBuffer();
+    SetupTerrain(terrain_up_ib, terrain_up_vb, TERRAIN_RES_X, TERRAIN_RES_Y, 256, 256, NULL);
+
+    k3resource img_res;
+    terrain_diffuse_upload->GetDesc(&rdesc);
+    vdesc.view_index = view_index++;
+    terrain_diffuse_map = gfx->CreateSurface(&rdesc, NULL, &vdesc, NULL);
+    terrain_normal_upload->GetDesc(&rdesc);
+    vdesc.view_index = view_index++;
+    terrain_normal_map = gfx->CreateSurface(&rdesc, NULL, &vdesc, NULL);
+    terrain_rotate_upload->GetDesc(&rdesc);
+    vdesc.view_index = view_index++;
+    terrain_rotate_map = gfx->CreateSurface(&rdesc, NULL, &vdesc, NULL);
+
     timer = win->CreateTimer();
 
     k3resource buffer_resource;
     cmd_buf->Reset();
     cmd_buf->TransitionResource(depth_surf->GetResource(), k3resourceState::RENDER_TARGET);
     cmd_buf->TransitionResource(scene->getLightBuffer()->GetResource(), k3resourceState::SHADER_BUFFER);
+    buffer_resource = terrain_ib->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadBuffer(terrain_up_ib, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
+    buffer_resource = terrain_vb->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadBuffer(terrain_up_vb, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
+    buffer_resource = terrain_diffuse_map->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadImage(terrain_diffuse_upload, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
+    buffer_resource = terrain_normal_map->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadImage(terrain_normal_upload, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
+    buffer_resource = terrain_rotate_map->GetResource();
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COPY_DEST);
+    cmd_buf->UploadImage(terrain_rotate_upload, buffer_resource);
+    cmd_buf->TransitionResource(buffer_resource, k3resourceState::COMMON);
     cmd_buf->Close();
     gfx->SubmitCmdBuf(cmd_buf);
     for (i = 0; i < NUM_VERSIONS; i++) {
@@ -342,6 +432,58 @@ void App::Setup()
     win->SetIdleFunc(DisplayCallback);
     win->SetResizeFunc(ResizeCallback);
     win->SetMouseFunc(MouseMoveCallback, MouseButtonCallback, MouseScrollCallback);
+}
+
+void App::SetupTerrain(k3uploadBuffer up_ib, k3uploadBuffer up_vb, uint32_t res_x, uint32_t res_y, float width, float height, float* height_map)
+{
+    uint32_t num_verts = (res_x + 1) * (res_y + 1);
+    uint32_t num_indices = 6 * res_x * res_y;
+
+    k3bufferDesc bdesc = { 0 };
+    bdesc.size = num_indices * sizeof(uint32_t);
+    bdesc.format = k3fmt::R32_UINT;
+    bdesc.stride = 3 * sizeof(uint32_t);
+    terrain_ib = gfx->CreateBuffer(&bdesc);
+
+    bdesc.size = num_verts * sizeof(terrain_vert_t);
+    bdesc.format = k3fmt::UNKNOWN;
+    bdesc.stride = sizeof(terrain_vert_t);
+    terrain_vb = gfx->CreateBuffer(&bdesc);
+
+    uint32_t i, j;
+    uint32_t* ib_data = (uint32_t*)up_ib->MapForWrite(num_indices * sizeof(uint32_t));
+    for (j = 0; j < res_y; j++) {
+        for (i = 0; i < res_x; i++) {
+            ib_data[0] = (res_x + 1) * j + i;
+            ib_data[1] = (res_x + 1) * j + i + 1;
+            ib_data[2] = (res_x + 1) * (j + 1) + i;
+            ib_data[3] = (res_x + 1) * (j + 1) + i;
+            ib_data[4] = (res_x + 1) * j + i + 1;
+            ib_data[5] = (res_x + 1) * (j + 1) + i + 1;
+            ib_data += 6;
+        }
+    }
+    up_ib->Unmap();
+
+    terrain_vert_t* vb_data = (terrain_vert_t*)up_vb->MapForWrite(num_verts * sizeof(terrain_vert_t));
+    float res_width = width / res_x;
+    float res_height = height / res_y;
+    for (j = 0; j <= res_y; j++) {
+        for (i = 0; i <= res_x; i++) {
+            vb_data[(res_x + 1) * j + i].pos[0] = i * res_width - width / 2.0f;
+            vb_data[(res_x + 1) * j + i].pos[1] = j * res_height - height / 2.0f;
+            vb_data[(res_x + 1) * j + i].pos[2] = 0.0f;
+            vb_data[(res_x + 1) * j + i].normal[0] = 0.0f;
+            vb_data[(res_x + 1) * j + i].normal[1] = 0.0f;
+            vb_data[(res_x + 1) * j + i].normal[2] = 1.0f;
+            vb_data[(res_x + 1) * j + i].texcoord[0] = 256.0f * (i / width);
+            vb_data[(res_x + 1) * j + i].texcoord[1] = 256.0f * (j / height);
+            vb_data[(res_x + 1) * j + i].tang[0] = 1.0f;
+            vb_data[(res_x + 1) * j + i].tang[1] = 0.0f;
+            vb_data[(res_x + 1) * j + i].tang[2] = 0.0f;
+        }
+    }
+    up_vb->Unmap();
 }
 
 void App::UpdateResources(uint32_t v)
@@ -544,6 +686,14 @@ void App::Display()
             }
         }
     }
+
+    cmd_buf->SetGfxState(terrain_state);
+    cmd_buf->SetIndexBuffer(terrain_ib);
+    cmd_buf->SetVertexBuffer(0, terrain_vb);
+    cmd_buf->SetConstantBuffer(0, cb_camera[v]);
+    cmd_buf->SetShaderView(1, terrain_diffuse_map);
+    cmd_buf->SetConstantBuffer(4, scene->getLightBuffer());
+    cmd_buf->Draw(6 * TERRAIN_RES_X * TERRAIN_RES_Y);
 
     cmd_buf->TransitionResource(back_buffer_resource, k3resourceState::COMMON);
     cmd_buf->Close();

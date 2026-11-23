@@ -8,6 +8,13 @@ struct VS_IN {
     float4 bone_weight : BLENDWEIGHT;
 };
 
+struct TERRAIN_VS_IN
+{
+    float3 pos : POSITION;
+    float4 norm : NORMAL;
+    float4 tang : TANGENT;
+};
+
 struct VS2PS {
     float4 pos : SV_POSITION;
     float4 light : COLOR;
@@ -379,4 +386,62 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
     //             0, 1, 0, 0,
     //             0, 0, 1, 0,
     //             0, 0, 0, 1);
+}
+
+VS2PS terrain_vs(TERRAIN_VS_IN i)
+{
+    float4 world_pos = float4(i.pos, 1.0);
+    float3 light_dir = normalize(light[0].position);
+
+    VS2PS o;
+    o.pos = mul(vp, world_pos);
+    float3 normal = i.norm.xyz;
+    float3 tangent = i.tang.yzw;
+    float3 bitangent = cross(tangent, normal);
+    float3x3 tan_mat = float3x3(tangent, bitangent, normal);
+
+    o.light.xyz = mul(tan_mat, light_dir);
+    o.light.w = 1.0;
+    o.texcoord = float2(i.norm.w, i.tang.x);
+    return o;
+}
+
+float4 terrain_ps(VS2PS i) : SV_Target
+{
+    float2 uv = i.texcoord;
+    float3 light_dir = normalize(i.light.xyz);
+    float3 normal;
+    float4 color;
+    uint diffuse_texture_index = 0;
+    uint normal_texture_index = 1;
+    uint rotate_texture_index = 2;
+    if (rotate_texture_index != 0xffffffff) {
+        float2 uv2 = 17.0 * uv / 7.0;
+        float rot_amount = texture_set[rotate_texture_index].Sample(sampleLinear, uv2);
+        rot_amount = trunc(24.0 * rot_amount);
+        rot_amount = rot_amount / 24.0;
+        rot_amount = rot_amount * 2 * 3.14159;
+        float c = cos(rot_amount);
+        float s = sin(rot_amount);
+        float2x2 rot_mat = float2x2(c, -s, s, c);
+        uv = frac(uv) - 0.5;
+        uv = mul(rot_mat, uv);
+        uv = uv + 0.5;
+    }
+    if (diffuse_texture_index != 0xffffffff)
+    {
+        color = texture_set[diffuse_texture_index].Sample(sampleLinear, uv);
+    } else {
+        color = float4(1.0, 0.0, 0.0, 1.0);
+    }
+    if (normal_texture_index != 0xffffffff)
+    {
+        normal = normalize(2.0 * texture_set[normal_texture_index].Sample(sampleLinear, uv).xyz - 1.0);
+    } else {
+        normal = float3(0.0, 0.0, 1.0);
+    }
+
+    color = color * dot(normal, light_dir);
+
+    return color;
 }

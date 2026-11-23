@@ -1,7 +1,7 @@
 add_executable (onetri onetri.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_ps.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_cs.cso)
 add_executable (raytri raytri.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple_ray.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple3d_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/simple3d_ps.cso)
 add_executable (gradtest gradtest.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/color_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/color_ps.cso)
-add_executable (animtest animtest.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_ps.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_cs.cso )
+add_executable (animtest animtest.cpp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_ps.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/anim3d_cs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/terrain_vs.cso ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/terrain_ps.cso)
 
 function(add_hlsl_shader SHADER_TYPE INPUT_FILE OUTPUT_FILE ENTRY)
 	add_custom_command(
@@ -23,6 +23,8 @@ add_hlsl_shader(ps_5_1 "shaders/color.hlsl" "color_ps.cso" "ps_main")
 add_hlsl_shader(vs_5_1 "shaders/anim3d.hlsl" "anim3d_vs.cso" "vs_main")
 add_hlsl_shader(ps_5_1 "shaders/anim3d.hlsl" "anim3d_ps.cso" "ps_main")
 add_hlsl_shader(cs_6_0 "shaders/anim3d.hlsl" "anim3d_cs.cso" "cs_main")
+add_hlsl_shader(vs_5_1 "shaders/anim3d.hlsl" "terrain_vs.cso" "terrain_vs")
+add_hlsl_shader(ps_5_1 "shaders/anim3d.hlsl" "terrain_ps.cso" "terrain_ps")
 
 target_link_libraries(onetri ${PROJ})
 target_link_libraries(raytri ${PROJ})
