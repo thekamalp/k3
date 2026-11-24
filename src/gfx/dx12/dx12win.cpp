@@ -604,7 +604,34 @@ K3API void k3cmdBufObj::UploadImage(k3uploadImage img, k3resource resource)
     dst.pResource = resource_impl->_dx12_resource;
     dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     dst.SubresourceIndex = 0;
-    _data->_cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+    if (src.PlacedFootprint.Footprint.Depth == 0) {
+        // for mipmaps, upload the entire resource, one resource at a time
+        src.PlacedFootprint.Footprint.Depth = 1;
+        uint32_t num_mips = 1;
+        uint32_t min_dim = (src.PlacedFootprint.Footprint.Width < src.PlacedFootprint.Footprint.Height) ? src.PlacedFootprint.Footprint.Width : src.PlacedFootprint.Footprint.Height;
+        int32_t i;
+        for (i = 15; i >= 0; i--) {
+            if (min_dim & (1 << i)) {
+                num_mips = i + 1;
+                break;
+            }
+        }
+        uint32_t slice_pitch;
+        for (i = 0; i < num_mips; i++) {
+            dst.SubresourceIndex = i;
+            _data->_cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+            slice_pitch = (src.PlacedFootprint.Footprint.Height + k3imageObj::GetFormatBlockSize(img->GetFormat()) - 1) / k3imageObj::GetFormatBlockSize(img->GetFormat());
+            slice_pitch *= src.PlacedFootprint.Footprint.RowPitch;
+            src.PlacedFootprint.Offset += slice_pitch;
+            src.PlacedFootprint.Footprint.Width >>= 1;
+            src.PlacedFootprint.Footprint.RowPitch >>= 1;
+            src.PlacedFootprint.Footprint.RowPitch = (src.PlacedFootprint.Footprint.RowPitch + k3imageObj::GetFormatSize(img->GetFormat()) - 1) / k3imageObj::GetFormatSize(img->GetFormat());
+            src.PlacedFootprint.Footprint.RowPitch *= k3imageObj::GetFormatSize(img->GetFormat());
+            src.PlacedFootprint.Footprint.Height >>= 1;
+        }
+    } else {
+        _data->_cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+    }
 }
 
 K3API void k3cmdBufObj::DownloadImage(k3downloadImage img, k3resource resource)
@@ -1508,6 +1535,28 @@ K3API void* k3uploadImageObj::MapForWrite()
     HRESULT hr;
     void* ptr = NULL;
     uint32_t size = _data->_depth * GetSlicePitch();
+    uint32_t miplevels = 1;
+    if (_data->_depth == 0) {
+        uint32_t min_dim = (_data->_width < _data->_height) ? _data->_width : _data->_height;
+        int32_t i;
+        for (i = 15; i >= 0; i--) {
+            if (min_dim & (1 << i)) {
+                miplevels = i + 1;
+                break;
+            }
+        }
+        size = GetSlicePitch();
+        uint32_t pitch = GetPitch() >> 1;
+        uint32_t height = GetHeight() >> 1;
+        for (i = 1; i < miplevels; i++) {
+            pitch = (pitch+ k3imageObj::GetFormatSize(_data->_fmt) - 1) / k3imageObj::GetFormatSize(_data->_fmt);
+            pitch *= k3imageObj::GetFormatSize(_data->_fmt);
+            height = (height + k3imageObj::GetFormatBlockSize(_data->_fmt) - 1) / k3imageObj::GetFormatBlockSize(_data->_fmt);
+            size += pitch * height;
+            pitch = pitch >> 1;
+            height = height >> 1;
+        }
+    }
     if (_upload_data->_resource == NULL) _data->_size = 0;
     if (_data->_size < size) {
         if (_upload_data->_resource) _upload_data->_resource->Release();
@@ -1565,6 +1614,17 @@ K3API void k3uploadImageObj::GetDesc(k3resourceDesc* desc)
         desc->num_samples = 1;
         desc->mem_pool = NULL;
         desc->mem_offset = 0;
+        if (_data->_depth == 0) {
+            desc->depth = 1;
+            uint32_t min_dim = (desc->width < desc->height) ? desc->width : desc->height;
+            int32_t i;
+            for (i = 15; i >= 0; i--) {
+                if (min_dim & (1 << i)) {
+                    desc->mip_levels = i + 1;
+                    break;
+                }
+            }
+        }
     }
 }
 

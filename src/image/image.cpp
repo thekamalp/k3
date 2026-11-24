@@ -93,6 +93,17 @@ K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
         if (src_format != k3fmt::UNKNOWN) break;
     }
     if (src_format != k3fmt::UNKNOWN) {
+        bool use_mipmap = (src_depth == 0);
+        if (use_mipmap) {
+            uint32_t min_dim = (src_width < src_height) ? src_width : src_height;
+            int32_t i;
+            for (i = 15; i >= 0; i--) {
+                if (min_dim & (1 << i)) {
+                    src_depth = i + 1;
+                    break;
+                }
+            }
+        }
         if (dest_width == 0) dest_width = src_width;
         if (dest_height == 0) dest_height = src_height;
         if (dest_depth == 0) dest_depth = src_depth;
@@ -107,6 +118,34 @@ K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
 
         uint32_t src_image_size = src_depth * src_slice_pitch;
         uint32_t dest_image_size = dest_depth * dest_slice_pitch;
+        if (use_mipmap) {
+            uint32_t i;
+            uint32_t cur_pitch = src_pitch, cur_height = src_height;
+            uint32_t cur_slice_pitch = src_slice_pitch;
+            src_image_size = 0;
+            for (i = 0; i < src_depth; i++) {
+                src_image_size += cur_slice_pitch;
+                cur_pitch = cur_pitch >> 1;
+                cur_pitch = (cur_pitch + GetFormatSize(src_format) - 1) / GetFormatSize(src_format);
+                cur_pitch *= GetFormatSize(src_format);
+                cur_height = cur_height >> 1;
+                cur_slice_pitch = (cur_height + GetFormatBlockSize(src_format) - 1) / GetFormatBlockSize(src_format);
+                cur_slice_pitch *= cur_pitch;
+            }
+            cur_pitch = dest_pitch;
+            cur_height = dest_height;
+            cur_slice_pitch = dest_slice_pitch;
+            dest_image_size = 0;
+            for (i = 0; i < dest_depth; i++) {
+                dest_image_size += cur_slice_pitch;
+                cur_pitch = cur_pitch >> 1;
+                cur_pitch = (cur_pitch + GetFormatSize(dest_format) - 1) / GetFormatSize(dest_format);
+                cur_pitch *= GetFormatSize(dest_format);
+                cur_height = cur_height >> 1;
+                cur_slice_pitch = (cur_height + GetFormatBlockSize(dest_format) - 1) / GetFormatBlockSize(dest_format);
+                cur_slice_pitch *= cur_pitch;
+            }
+        }
         bool inplace = (src_width == dest_width && src_height == dest_height &&
             src_depth == dest_depth && src_image_size == dest_image_size && transform == NULL &&
             src_pitch == dest_pitch && src_slice_pitch == dest_slice_pitch);
@@ -118,7 +157,24 @@ K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
             src_data = static_cast<void*>(src_data_byte_ptr);
         } // if( inplace )
 
+        uint32_t mip_levels = (use_mipmap) ? src_depth : 1;
+        src_depth = (use_mipmap) ? 1 : src_depth;
+
         _fh[fhi]->LoadData(file_handle, src_pitch, src_slice_pitch, src_data);
+
+        //uint32_t i;
+        //uint32_t cur_pitch = src_pitch, cur_height = src_height, cur_slice_pitch = src_slice_pitch;
+        //uint8_t* cur_data = (uint8_t*)src_data;
+        //for (i = 0; i < mip_levels; i++) {
+        //    _fh[fhi]->LoadData(file_handle, cur_pitch, cur_slice_pitch, cur_data);
+        //    cur_data += cur_slice_pitch;
+        //    cur_pitch = cur_pitch >> 1;
+        //    cur_pitch = (cur_pitch + GetFormatSize(dest_format) - 1) / GetFormatSize(dest_format);
+        //    cur_pitch *= GetFormatSize(dest_format);
+        //    cur_height = cur_height >> 1;
+        //    cur_slice_pitch = (cur_height + GetFormatBlockSize(src_format) - 1) / GetFormatBlockSize(src_format);
+        //    cur_slice_pitch *= cur_pitch;
+        //}
 
         if (inplace) {
             if (src_format != dest_format) k3imageObj::ReformatBuffer(src_width, src_height, src_depth,
@@ -135,6 +191,10 @@ K3API void k3imageObj::ReformatFromFileHandle(k3image img, FILE* file_handle,
                 x_addr_mode, y_addr_mode, z_addr_mode);
             delete[] src_data_byte_ptr;
         } // if( inplace )
+
+        if (use_mipmap) {
+            img->_data->_depth = 0;
+        }
     } // if (src_format != k3fmt::UNKNOWN)
 }
 

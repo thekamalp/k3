@@ -246,7 +246,7 @@ k3image_file_handler_t k3DDSHandler = { k3dds_LoadHeaderInfo,
                                         k3dds_LoadHeaderInfoFromMem,
                                         k3dds_LoadDataFromMem };
 
-k3DDSHeader header;
+k3DDSHeader dds_header;
 k3DDSHeader10 header10;
 k3fmt dds_format;
 
@@ -304,45 +304,47 @@ uint32_t k3dds_LoadHeaderInfoCommon(void* mem, uint32_t mem_size,
     uint32_t read_length = sizeof(k3DDSHeader);
     if (file_handle) {
         start_pos = ftell(file_handle);
-        fread(&header, sizeof(k3DDSHeader), 1, file_handle);
+        fread(&dds_header, sizeof(k3DDSHeader), 1, file_handle);
     } else {
         if (read_length > mem_size) return 0;
-        memcpy(&header, mem8, read_length);
+        memcpy(&dds_header, mem8, read_length);
         mem8 += read_length;
         mem_size -= read_length;
     }
 
-    //bool caps_exist          = (header.flags & DDSD_CAPS) ? true : false;
-    bool height_exist = (header.flags & DDSD_HEIGHT) ? true : false;
-    bool width_exist = (header.flags & DDSD_WIDTH) ? true : false;
-    //bool pitch_exist         = (header.flags & DDSD_PITCH) ? true : false;
-    //bool pixelformat_exist   = (header.flags & DDSD_PIXELFORMAT) ? true : false;
-    //bool mipmap_count_exist  = (header.flags & DDSD_MIPMAPCOUNT) ? true : false;
-    bool depth_exist = (header.flags & DDSD_DEPTH) ? true : false;
+    //bool caps_exist          = (dds_header.flags & DDSD_CAPS) ? true : false;
+    bool height_exist = (dds_header.flags & DDSD_HEIGHT) ? true : false;
+    bool width_exist = (dds_header.flags & DDSD_WIDTH) ? true : false;
+    //bool pitch_exist         = (dds_header.flags & DDSD_PITCH) ? true : false;
+    //bool pixelformat_exist   = (dds_header.flags & DDSD_PIXELFORMAT) ? true : false;
+    bool mipmap_count_exist  = (dds_header.flags & DDSD_MIPMAPCOUNT) ? true : false;
+    bool depth_exist = (dds_header.flags & DDSD_DEPTH) ? true : false;
 
-    // Check all the header info, to make sure it's a legal DDS file
-    if (header.id != FOURCC_DDS || header.header_size != sizeof(k3DDSHeader) - 4 ||
+    // Check all the dds_header info, to make sure it's a legal DDS file
+    if (dds_header.id != FOURCC_DDS || dds_header.header_size != sizeof(k3DDSHeader) - 4 ||
         //!caps_exist || !pixelformat_exist ||
         !width_exist || !height_exist ||
-        header.pixel_format.format_size != sizeof(k3dds_format)) {
+        dds_header.pixel_format.format_size != sizeof(k3dds_format)) {
         if(file_handle) fseek(file_handle, start_pos, SEEK_SET);
         return 0;
     }
 
-    bool rgb_exist = (header.pixel_format.flags & DDPF_RGB) ? true : false;
-    bool alpha_exist = ( //(header.pixel_format.flags & DDPF_ALPHAPIXELS) &&  // NV dds photoshop plugin doens't set this flag on alpha8 format
-        (header.pixel_format.abit_mask != 0)) ? true : false;
-    bool fourcc_exist = (header.pixel_format.flags & DDPF_FOURCC) ? true : false;
+    bool rgb_exist = (dds_header.pixel_format.flags & DDPF_RGB) ? true : false;
+    bool alpha_exist = ( //(dds_header.pixel_format.flags & DDPF_ALPHAPIXELS) &&  // NV dds photoshop plugin doens't set this flag on alpha8 format
+        (dds_header.pixel_format.abit_mask != 0)) ? true : false;
+    bool fourcc_exist = (dds_header.pixel_format.flags & DDPF_FOURCC) ? true : false;
 
-    if (!depth_exist) header.depth = 1;
+    if (!depth_exist) dds_header.depth = 1;
+    if (!mipmap_count_exist) dds_header.mipmap_count = 1;
 
-    *width = header.width;
-    *height = header.height;
-    *depth = header.depth;
+    *width = dds_header.width;
+    *height = dds_header.height;
+    *depth = (mipmap_count_exist && dds_header.depth == 1) ? 0 : dds_header.depth;
+    dds_header.depth = (mipmap_count_exist && dds_header.depth == 1) ? 0 : dds_header.depth;
     *format = k3fmt::UNKNOWN;
 
     if (fourcc_exist) {
-        switch (header.pixel_format.fourcc) {
+        switch (dds_header.pixel_format.fourcc) {
         case FOURCC_DXT1:    *format = k3fmt::BC1_UNORM; break;
         case FOURCC_DXT3:    *format = k3fmt::BC2_UNORM; break;
         case FOURCC_DXT5:    *format = k3fmt::BC3_UNORM; break;
@@ -356,7 +358,7 @@ uint32_t k3dds_LoadHeaderInfoCommon(void* mem, uint32_t mem_size,
         case FOURCC_RG32F:   *format = k3fmt::RG32_FLOAT; break;
         case FOURCC_RGBA32F: *format = k3fmt::RGBA32_FLOAT; break;
         }
-        if (header.pixel_format.fourcc == FOURCC_DX10) {
+        if (dds_header.pixel_format.fourcc == FOURCC_DX10) {
             if (file_handle) {
                 fread(&header10, sizeof(k3DDSHeader10), 1, file_handle);
             } else {
@@ -407,9 +409,9 @@ uint32_t k3dds_LoadHeaderInfoCommon(void* mem, uint32_t mem_size,
         }
     } else if (rgb_exist || alpha_exist) {
 
-        bool red_exist = (rgb_exist && (header.pixel_format.rbit_mask != 0)) ? true : false;
-        bool green_exist = (rgb_exist && (header.pixel_format.gbit_mask != 0)) ? true : false;
-        bool blue_exist = (rgb_exist && (header.pixel_format.bbit_mask != 0)) ? true : false;
+        bool red_exist = (rgb_exist && (dds_header.pixel_format.rbit_mask != 0)) ? true : false;
+        bool green_exist = (rgb_exist && (dds_header.pixel_format.gbit_mask != 0)) ? true : false;
+        bool blue_exist = (rgb_exist && (dds_header.pixel_format.bbit_mask != 0)) ? true : false;
 
         // Find an appropriate format
         switch ((static_cast<int>(alpha_exist) << 3) |
@@ -417,47 +419,47 @@ uint32_t k3dds_LoadHeaderInfoCommon(void* mem, uint32_t mem_size,
             (static_cast<int>(green_exist) << 1) |
             (static_cast<int>(red_exist))) {
         case 0x1: // Red only
-            if (header.pixel_format.rbit_mask == 0x000000ff)      *format = k3fmt::R8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x0000ffff) *format = k3fmt::R16_UNORM;
-            else if (header.pixel_format.rbit_mask == 0xffffffff) *format = k3fmt::R32_UNORM;
+            if (dds_header.pixel_format.rbit_mask == 0x000000ff)      *format = k3fmt::R8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x0000ffff) *format = k3fmt::R16_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0xffffffff) *format = k3fmt::R32_UNORM;
             break;
         case 0x8: // alpha only
-            if (header.pixel_format.abit_mask == 0x000000ff) *format = k3fmt::A8_UNORM;
+            if (dds_header.pixel_format.abit_mask == 0x000000ff) *format = k3fmt::A8_UNORM;
             break;
         case 0x3: // red and green
-            if (header.pixel_format.rbit_mask == 0x000000ff &&
-                header.pixel_format.gbit_mask == 0x0000ff00) *format = k3fmt::RG8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x0000ffff &&
-                header.pixel_format.gbit_mask == 0xffff0000) *format = k3fmt::RG16_UNORM;
+            if (dds_header.pixel_format.rbit_mask == 0x000000ff &&
+                dds_header.pixel_format.gbit_mask == 0x0000ff00) *format = k3fmt::RG8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x0000ffff &&
+                dds_header.pixel_format.gbit_mask == 0xffff0000) *format = k3fmt::RG16_UNORM;
             break;
         case 0x7: // red, green and blue
-            if (header.pixel_format.rbit_mask == 0x000000ff &&
-                header.pixel_format.gbit_mask == 0x0000ff00 &&
-                header.pixel_format.bbit_mask == 0x00ff0000) *format = (header.pixel_format.rgb_bit_count == 24) ? k3fmt::RGB8_UNORM : k3fmt::RGBX8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x00ff0000 &&
-                header.pixel_format.gbit_mask == 0x0000ff00 &&
-                header.pixel_format.bbit_mask == 0x000000ff) *format = (header.pixel_format.rgb_bit_count == 24) ? k3fmt::BGR8_UNORM : k3fmt::BGRX8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x0000f800 &&
-                header.pixel_format.gbit_mask == 0x000007e0 &&
-                header.pixel_format.bbit_mask == 0x0000001f) *format = k3fmt::B5G6R5_UNORM;
+            if (dds_header.pixel_format.rbit_mask == 0x000000ff &&
+                dds_header.pixel_format.gbit_mask == 0x0000ff00 &&
+                dds_header.pixel_format.bbit_mask == 0x00ff0000) *format = (dds_header.pixel_format.rgb_bit_count == 24) ? k3fmt::RGB8_UNORM : k3fmt::RGBX8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x00ff0000 &&
+                dds_header.pixel_format.gbit_mask == 0x0000ff00 &&
+                dds_header.pixel_format.bbit_mask == 0x000000ff) *format = (dds_header.pixel_format.rgb_bit_count == 24) ? k3fmt::BGR8_UNORM : k3fmt::BGRX8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x0000f800 &&
+                dds_header.pixel_format.gbit_mask == 0x000007e0 &&
+                dds_header.pixel_format.bbit_mask == 0x0000001f) *format = k3fmt::B5G6R5_UNORM;
             break;
         case 0xf: // red, green, blue, and alpha
-            if (header.pixel_format.rbit_mask == 0x000000ff &&
-                header.pixel_format.gbit_mask == 0x0000ff00 &&
-                header.pixel_format.bbit_mask == 0x00ff0000 &&
-                header.pixel_format.abit_mask == 0xff000000) *format = k3fmt::RGBA8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x00ff0000 &&
-                header.pixel_format.gbit_mask == 0x0000ff00 &&
-                header.pixel_format.bbit_mask == 0x000000ff &&
-                header.pixel_format.abit_mask == 0xff000000) *format = k3fmt::BGRA8_UNORM;
-            else if (header.pixel_format.rbit_mask == 0xffc00000 &&
-                header.pixel_format.gbit_mask == 0x003ff000 &&
-                header.pixel_format.bbit_mask == 0x00000ffc &&
-                header.pixel_format.abit_mask == 0x00000003) *format = k3fmt::RGB10A2_UNORM;
-            else if (header.pixel_format.rbit_mask == 0x0000003e &&
-                header.pixel_format.gbit_mask == 0x000007c0 &&
-                header.pixel_format.bbit_mask == 0x0000f800 &&
-                header.pixel_format.abit_mask == 0x00000001) *format = k3fmt::BGR5A1_UNORM;
+            if (dds_header.pixel_format.rbit_mask == 0x000000ff &&
+                dds_header.pixel_format.gbit_mask == 0x0000ff00 &&
+                dds_header.pixel_format.bbit_mask == 0x00ff0000 &&
+                dds_header.pixel_format.abit_mask == 0xff000000) *format = k3fmt::RGBA8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x00ff0000 &&
+                dds_header.pixel_format.gbit_mask == 0x0000ff00 &&
+                dds_header.pixel_format.bbit_mask == 0x000000ff &&
+                dds_header.pixel_format.abit_mask == 0xff000000) *format = k3fmt::BGRA8_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0xffc00000 &&
+                dds_header.pixel_format.gbit_mask == 0x003ff000 &&
+                dds_header.pixel_format.bbit_mask == 0x00000ffc &&
+                dds_header.pixel_format.abit_mask == 0x00000003) *format = k3fmt::RGB10A2_UNORM;
+            else if (dds_header.pixel_format.rbit_mask == 0x0000003e &&
+                dds_header.pixel_format.gbit_mask == 0x000007c0 &&
+                dds_header.pixel_format.bbit_mask == 0x0000f800 &&
+                dds_header.pixel_format.abit_mask == 0x00000001) *format = k3fmt::BGR5A1_UNORM;
             break;
         }
 
@@ -494,13 +496,15 @@ void k3dds_LoadDataCommon(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t
     uint8_t* bitmap_row;
     uint32_t format_size = k3imageObj::GetFormatSize(dds_format);
     uint32_t block_size = k3imageObj::GetFormatBlockSize(dds_format);
-    uint32_t row_size = ((header.width + block_size - 1) / block_size) * format_size;
-    //uint32_t image_size = k3imageObj::GetImageSize(header.width, header.height, header.depth, dds_format);
+    uint32_t row_size = ((dds_header.width + block_size - 1) / block_size) * format_size;
+    uint32_t height = dds_header.height;
+    uint32_t depth = (dds_header.depth == 0) ? dds_header.mipmap_count : dds_header.depth;
+    //uint32_t image_size = k3imageObj::GetImageSize(dds_header.width, dds_header.height, dds_header.depth, dds_format);
 
     uint32_t slice, row;
-    for (slice = 0; slice < header.depth; slice++) {
+    for (slice = 0; slice < depth; slice++) {
         bitmap_row = bitmap;
-        for (row = 0; row < header.height; row += block_size) {
+        for (row = 0; row < height; row += block_size) {
             if (file_handle) {
                 fread(bitmap_row, 1, row_size, file_handle);
             } else {
@@ -513,7 +517,45 @@ void k3dds_LoadDataCommon(void* mem, uint32_t mem_size, uint32_t pitch, uint32_t
             }
             bitmap_row += pitch;
         }
+        
+        // Compressonator seems to bork the index placement when mip size is less than block size
+        // for all practical purposes, this happens when the height is 2
+        if (k3imageObj::GetFormatBlockSize(dds_format) == 4 && height == 2) {
+            uint8_t* cur_bitmap = bitmap;
+            if (dds_format == k3fmt::BC2_UNORM) {
+                if (cur_bitmap[2] == 0x00) {
+                    cur_bitmap[2] = cur_bitmap[1];
+                }
+                cur_bitmap += 8;
+            } else if (dds_format == k3fmt::BC3_UNORM || dds_format == k3fmt::BC4_UNORM || dds_format == k3fmt::BC5_UNORM) {
+                uint64_t* bc3_block = (uint64_t*)cur_bitmap;
+                if ((*bc3_block & 0x3f0000000) == 0x0) {
+                    *bc3_block |= (*bc3_block << 6) & 0x3f0000000;
+                }
+                cur_bitmap += 8;
+            }
+            if (dds_format == k3fmt::BC1_UNORM || dds_format == k3fmt::BC2_UNORM || dds_format == k3fmt::BC3_UNORM) {
+                if (cur_bitmap[5] == 0x00) {
+                    cur_bitmap[5] = cur_bitmap[4] >> 4;
+                }
+            } else if (dds_format == k3fmt::BC5_UNORM) {
+                uint64_t* bc3_block = (uint64_t*)cur_bitmap;
+                if ((*bc3_block & 0x3f0000000) == 0x0) {
+                    *bc3_block |= (*bc3_block << 6) & 0x3f0000000;
+                }
+            }
+        }
+
         bitmap += slice_pitch;
+        if (dds_header.depth == 0) {
+            row_size = row_size >> 1;
+            row_size = (row_size + k3imageObj::GetFormatSize(dds_format) - 1) / k3imageObj::GetFormatSize(dds_format);
+            row_size *= k3imageObj::GetFormatSize(dds_format);
+            height = height >> 1;
+            pitch = row_size;
+            slice_pitch = (height + k3imageObj::GetFormatBlockSize(dds_format) - 1) / k3imageObj::GetFormatBlockSize(dds_format);
+            slice_pitch *= pitch;
+        }
     }
 }
 
@@ -539,7 +581,7 @@ void K3CALLBACK k3dds_SaveData(FILE* file_handle,
     const uint8_t* bitmap;
     uint32_t image_size;
 
-    // Common DDS header fields
+    // Common DDS dds_header fields
     wheader.id = FOURCC_DDS;
     wheader.header_size = sizeof(k3DDSHeader) - 4;
     wheader.flags = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT;

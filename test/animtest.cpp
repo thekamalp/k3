@@ -256,6 +256,7 @@ void App::Setup()
     sdesc.addr_u = k3texAddr::WRAP;
     sdesc.addr_v = k3texAddr::WRAP;
     sdesc.addr_w = k3texAddr::CLAMP;
+    sdesc.max_lod = 16.0f;
     k3shaderBinding raster_binding = gfx->CreateShaderBinding(6, bind_params, 1, &sdesc);
 
     k3shader vs, ps;
@@ -357,6 +358,7 @@ void App::Setup()
     sdesc.addr_u = k3texAddr::CLAMP;
     sdesc.addr_v = k3texAddr::CLAMP;
     sdesc.addr_w = k3texAddr::CLAMP;
+    sdesc.max_lod = 0.0f;
     sdesc.flags = k3samplerDesc::FLAG_NON_NORM_SAMPLER;
     bind_params[1].view_set_desc.num_views = 1;
     k3shaderBinding compute_binding = gfx->CreateShaderBinding(6, bind_params, 1, &sdesc);
