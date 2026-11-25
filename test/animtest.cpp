@@ -136,8 +136,8 @@ void App::Setup()
     k3uploadImage terrain_normal_upload = gfx->CreateUploadImage();
     k3uploadImage terrain_rotate_upload = gfx->CreateUploadImage();
     k3imageObj::LoadFromFile(terrain_diffuse_upload, "brown_mud_leaves_01_diff_1k.dds");
-    k3imageObj::LoadFromFile(terrain_normal_upload, "brown_mud_leaves_01_nor_gl_1k.png");
-    k3imageObj::LoadFromFile(terrain_rotate_upload, "voronoi.png");
+    k3imageObj::LoadFromFile(terrain_normal_upload, "brown_mud_leaves_01_nor_gl_1k.dds");
+    k3imageObj::LoadFromFile(terrain_rotate_upload, "voronoi.dds");
     _chdir("..\\..\\bin");
 
     uint32_t i;
@@ -252,7 +252,8 @@ void App::Setup()
     bind_params[5].view_set_desc.offset = 5;
 
     k3samplerDesc sdesc = { 0 };
-    sdesc.filter = k3texFilter::MIN_MAG_MIP_LINEAR;
+    sdesc.filter = k3texFilter::ANISOTROPIC;
+    sdesc.max_anisotropy = 16;
     sdesc.addr_u = k3texAddr::WRAP;
     sdesc.addr_v = k3texAddr::WRAP;
     sdesc.addr_w = k3texAddr::CLAMP;
@@ -478,8 +479,8 @@ void App::SetupTerrain(k3uploadBuffer up_ib, k3uploadBuffer up_vb, uint32_t res_
             vb_data[(res_x + 1) * j + i].normal[0] = 0.0f;
             vb_data[(res_x + 1) * j + i].normal[1] = 0.0f;
             vb_data[(res_x + 1) * j + i].normal[2] = 1.0f;
-            vb_data[(res_x + 1) * j + i].texcoord[0] = 256.0f * (i / width);
-            vb_data[(res_x + 1) * j + i].texcoord[1] = 256.0f * (j / height);
+            vb_data[(res_x + 1) * j + i].texcoord[0] = (0.125f * width * i) / res_x;
+            vb_data[(res_x + 1) * j + i].texcoord[1] = (0.125f * height * j) / res_y;
             vb_data[(res_x + 1) * j + i].tang[0] = 1.0f;
             vb_data[(res_x + 1) * j + i].tang[1] = 0.0f;
             vb_data[(res_x + 1) * j + i].tang[2] = 0.0f;

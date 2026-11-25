@@ -424,9 +424,9 @@ float4 terrain_ps(VS2PS i) : SV_Target
         float c = cos(rot_amount);
         float s = sin(rot_amount);
         float2x2 rot_mat = float2x2(c, -s, s, c);
-        uv = frac(uv) - 0.5;
+        //uv = frac(uv) - 0.5;
         uv = mul(rot_mat, uv);
-        uv = uv + 0.5;
+        //uv = uv + 0.5;
     }
     if (diffuse_texture_index != 0xffffffff)
     {
@@ -436,7 +436,9 @@ float4 terrain_ps(VS2PS i) : SV_Target
     }
     if (normal_texture_index != 0xffffffff)
     {
-        normal = normalize(2.0 * texture_set[normal_texture_index].Sample(sampleLinear, uv).xyz - 1.0);
+        //normal = normalize(2.0 * texture_set[normal_texture_index].Sample(sampleLinear, uv).xyz - 1.0);
+        normal.xy = 2.0 * texture_set[normal_texture_index].Sample(sampleLinear, uv).xy - 1.0;
+        normal.z = sqrt(1.0 - normal.x * normal.x - normal.y - normal.y);
     } else {
         normal = float3(0.0, 0.0, 1.0);
     }
