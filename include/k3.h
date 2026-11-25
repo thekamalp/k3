@@ -2012,6 +2012,13 @@ struct k3meshDesc {
     const char** custom_anim_prop_name;
 };
 
+struct k3meshUploadDesc {
+    k3gfx gfx;
+    k3cmdBuf cmd_buf;
+    k3uploadBuffer up_buf;
+    uint32_t view_index;
+};
+
 struct k3AABB {
     float min[3];
     float max[3];
@@ -2191,6 +2198,7 @@ public:
     K3API const float* getVertSkin(uint32_t model, uint32_t vert);
     K3API void genBoneTexture(k3gfx gfx, k3cmdBuf cmd_buf, k3viewDesc* vdesc);
     K3API float getAnimCoordinate(uint32_t anim_index, uint32_t time_msec);
+    K3API void uploadBuffers(k3meshUploadDesc* desc);
 
     K3API k3buffer getIndexBuffer();
     K3API k3buffer getVertexBuffer();

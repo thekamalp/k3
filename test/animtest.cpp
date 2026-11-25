@@ -521,9 +521,9 @@ void App::UpdateResources(uint32_t v)
     uint32_t num_anims = scene->getNumAnims();
     uint32_t delta_t = timer->GetDeltaTime();
     uint32_t t = timer->GetTime();
-    if (num_anims) {
-        scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
-    }
+    //if (num_anims) {
+    //    scene->setAnimation(anim, t, k3meshObj::ANIM_FLAG_MORPHED);
+    //}
 
     uint32_t i;
     uint32_t num_objects = scene->getNumObjects();

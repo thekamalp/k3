@@ -306,6 +306,7 @@ public:
     k3buffer _sb;  // skin buffer; contains bone ids and weights (4 per vertex)
     k3buffer _lb;  // light buffer; contains all light attributes
     k3surf _bt;    // bone texture; contains all bone key values (pos/rot/scale)
+    bool _use_ib;
 };
 
 class k3winImpl

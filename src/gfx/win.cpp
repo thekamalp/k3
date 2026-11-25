@@ -2664,6 +2664,121 @@ K3API float k3meshObj::getAnimCoordinate(uint32_t anim_index, uint32_t time_msec
     return keyframe_lerp;
 }
 
+K3API void k3meshObj::uploadBuffers(k3meshUploadDesc* desc)
+{
+    if (desc->cmd_buf == NULL || desc->up_buf == NULL) {
+        k3error::Handler("Invlaid NULL parameters", "k3meshObj::uploadBuffers");
+        return;
+    }
+
+    bool use_skin = (_data->_num_anims != 0);
+    uint32_t vert_size = (use_skin) ? 19 : 11;
+    uint32_t num_verts = _data->_num_verts;
+
+    uint32_t geom_size = (vert_size * num_verts * sizeof(float)) + ((_data->_use_ib) ? 3 * _data->_num_tris * sizeof(uint32_t) : 0);
+    uint32_t lbuf_size = _data->_num_lights * sizeof(k3lightBufferData);
+    uint32_t up_buf_size = geom_size + lbuf_size;
+
+    float* verts = (float*)(desc->up_buf->MapForWrite(up_buf_size));
+    memcpy(verts, _data->_geom_data, geom_size);
+
+    k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
+    uint32_t i;
+    for (i = 0; i < _data->_num_lights; i++) {
+        lb_data[i].color[0] = _data->_lights[i].color[0];
+        lb_data[i].color[1] = _data->_lights[i].color[1];
+        lb_data[i].color[2] = _data->_lights[i].color[2];
+        lb_data[i].intensity = _data->_lights[i].intensity;
+        if (_data->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
+            float mat[16];
+            lb_data[i].position[0] = 0.0f;
+            lb_data[i].position[1] = 1.0f;
+            lb_data[i].position[2] = 0.0f;
+            k3m4_QuatToMat(mat, _data->_lights[i].rot_quat);
+            k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
+        } else {
+            lb_data[i].position[0] = _data->_lights[i].position[0];
+            lb_data[i].position[1] = _data->_lights[i].position[1];
+            lb_data[i].position[2] = _data->_lights[i].position[2];
+        }
+        lb_data[i].decay_start = _data->_lights[i].decay_start;
+        lb_data[i].decay_type = _data->_lights[i].decay_type;
+        lb_data[i].light_type = _data->_lights[i].light_type;
+        lb_data[i].cast_shadows = (_data->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
+        lb_data[i].spot_angle = 45.0f;
+    }
+
+    desc->up_buf->Unmap();
+    k3bufferDesc bdesc = { 0 };
+    if (_data->_use_ib) {
+        bdesc.size = 3 * _data->_num_tris * sizeof(uint32_t);
+        bdesc.stride = 3 * sizeof(uint32_t);
+        bdesc.format = k3fmt::R32_UINT;
+        _data->_ib = desc->gfx->CreateBuffer(&bdesc);
+    }
+
+    bdesc.size = 3 * _data->_num_verts * sizeof(float);
+    bdesc.stride = 3 * sizeof(float);
+    bdesc.format = k3fmt::RGB32_FLOAT;
+    _data->_vb = desc->gfx->CreateBuffer(&bdesc);
+
+    bdesc.size = 8 * _data->_num_verts * sizeof(float);
+    bdesc.stride = 8 * sizeof(float);
+    bdesc.format = k3fmt::UNKNOWN;
+    bdesc.view_index = desc->view_index++;
+    bdesc.shader_resource = true;
+    _data->_ab = desc->gfx->CreateBuffer(&bdesc);
+
+    if (use_skin) {
+        bdesc.size = 8 * _data->_num_verts * sizeof(float);
+        bdesc.stride = 8 * sizeof(float);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        _data->_sb = desc->gfx->CreateBuffer(&bdesc);
+    }
+
+    if (_data->_num_lights) {
+        bdesc.size = lbuf_size;
+        bdesc.stride = sizeof(k3lightBufferData);
+        bdesc.format = k3fmt::UNKNOWN;
+        bdesc.view_index = desc->view_index++;
+        bdesc.shader_resource = true;
+        _data->_lb = desc->gfx->CreateBuffer(&bdesc);
+    }
+
+    k3resource buf_res;
+    desc->cmd_buf->Reset();
+    if (_data->_use_ib) {
+        buf_res = _data->_ib->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, vert_size * _data->_num_verts * sizeof(float), 3 * _data->_num_tris * sizeof(uint32_t));
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
+    buf_res = _data->_vb->GetResource();
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 0, 3 * _data->_num_verts * sizeof(float));
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    buf_res = _data->_ab->GetResource();
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * _data->_num_verts * sizeof(float), 8 * _data->_num_verts * sizeof(float));
+    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    if (use_skin) {
+        buf_res = _data->_sb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * _data->_num_verts * sizeof(float), 8 * _data->_num_verts * sizeof(float));
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
+    if (lbuf_size) {
+        buf_res = _data->_lb->GetResource();
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
+        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    }
+    desc->cmd_buf->Close();
+    desc->gfx->SubmitCmdBuf(desc->cmd_buf);
+}
+
 
 #define K3_FBX_DEBUG 0
 
@@ -5078,55 +5193,34 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
-    bool use_ib = (fbx.num_tangent_indices == 0) && (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
+    mesh_impl->_use_ib = (fbx.num_tangent_indices == 0) && (fbx.num_normal_indices == 0) && (fbx.num_uv_indices == 0);
     for (i = 0; i < fbx.num_meshes; i++) {
-        use_ib = use_ib && (fbx.mesh[i].normal_mapping == k3fbxMapping::ByVert);
-        use_ib = use_ib && (fbx.mesh[i].tangent_mapping == k3fbxMapping::ByVert);
-        use_ib = use_ib && (fbx.mesh[i].uv_mapping == k3fbxMapping::ByVert);
-        use_ib = use_ib && (fbx.mesh[i].material_mapping == k3fbxMapping::AllSame);
+        mesh_impl->_use_ib = mesh_impl->_use_ib && (fbx.mesh[i].normal_mapping == k3fbxMapping::ByVert);
+        mesh_impl->_use_ib = mesh_impl->_use_ib && (fbx.mesh[i].tangent_mapping == k3fbxMapping::ByVert);
+        mesh_impl->_use_ib = mesh_impl->_use_ib && (fbx.mesh[i].uv_mapping == k3fbxMapping::ByVert);
+        mesh_impl->_use_ib = mesh_impl->_use_ib && (fbx.mesh[i].material_mapping == k3fbxMapping::AllSame);
     }
-    if (!use_ib) num_verts = 3 * num_tris;
+    if (!mesh_impl->_use_ib) num_verts = 3 * num_tris;
 
     bool use_skin = (fbx.num_skins > 0) && (fbx.num_clusters > 0);
     uint32_t vert_size = (use_skin) ? 19 : 11;
     mesh_impl->_num_bones = (use_skin) ? fbx.num_clusters : 0;
 
-    uint32_t geom_size = (vert_size * num_verts * sizeof(float)) + ((use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
+    uint32_t geom_size = (vert_size * num_verts * sizeof(float)) + ((mesh_impl->_use_ib) ? 3 * num_tris * sizeof(uint32_t) : 0);
     uint32_t lbuf_size = mesh_impl->_num_lights * sizeof(k3lightBufferData);
     uint32_t up_buf_size = geom_size + lbuf_size;
-    float* verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
+    mesh_impl->_geom_data = new float[geom_size];
+    float* verts = (float*)mesh_impl->_geom_data;
     float* attrs = verts + 3 * num_verts;
     float* skin_f = verts + 11 * num_verts;
     uint32_t* skin_i = (uint32_t*)(skin_f);
-    float* bones = verts + (geom_size + lbuf_size) / sizeof(float);
 
-    float* alloc_skin_f = (use_ib) ? skin_f : new float[8 * num_verts];
+    float* alloc_skin_f = (mesh_impl->_use_ib) ? skin_f : new float[8 * num_verts];
     uint32_t* alloc_skin_i = (uint32_t*)alloc_skin_f;
 
     mesh_impl->_num_verts = num_verts;
-    mesh_impl->_geom_data = new float[geom_size];
-
-    k3bufferDesc bdesc = { 0 };
-    bdesc.size = 3 * num_verts * sizeof(float);
-    bdesc.stride = 3 * sizeof(float);
-    bdesc.format = k3fmt::RGB32_FLOAT;
-    mesh_impl->_vb = CreateBuffer(&bdesc);
-
-    bdesc.size = 8 * num_verts * sizeof(float);
-    bdesc.stride = 8 * sizeof(float);
-    bdesc.format = k3fmt::UNKNOWN;
-    bdesc.view_index = desc->view_index++;
-    bdesc.shader_resource = true;
-    mesh_impl->_ab = CreateBuffer(&bdesc);
 
     if (use_skin) {
-        bdesc.size = 8 * num_verts * sizeof(float);
-        bdesc.stride = 8 * sizeof(float);
-        bdesc.format = k3fmt::UNKNOWN;
-        bdesc.view_index = desc->view_index++;
-        bdesc.shader_resource = true;
-        mesh_impl->_sb = CreateBuffer(&bdesc);
-
         // clear the skin data
         memset(alloc_skin_i, 0, 8 * num_verts * sizeof(float));
     }
@@ -5629,43 +5723,6 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         }
     }
 
-    uint32_t num_lights = mesh_impl->_num_lights;
-    if (num_lights) {
-        bdesc.size = lbuf_size;
-        bdesc.stride = sizeof(k3lightBufferData);
-        bdesc.format = k3fmt::UNKNOWN;
-        bdesc.view_index = desc->view_index++;
-        bdesc.shader_resource = true;
-        mesh_impl->_lb = CreateBuffer(&bdesc);
-
-        k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
-
-        for (i = 0; i < num_lights; i++) {
-            lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
-            lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
-            lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
-            lb_data[i].intensity = mesh_impl->_lights[i].intensity;
-            if (mesh_impl->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
-                float mat[16];
-                lb_data[i].position[0] = 0.0f;
-                lb_data[i].position[1] = 1.0f;
-                lb_data[i].position[2] = 0.0f;
-                k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
-                k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
-            } else {
-                lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
-                lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
-                lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
-            }
-            lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
-            lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
-            lb_data[i].light_type = mesh_impl->_lights[i].light_type;
-            lb_data[i].cast_shadows = (mesh_impl->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
-            lb_data[i].spot_angle = 45.0f;
-        }
-    }
-
-
     if ((mesh_impl->_num_bones)) {
         delete[] sorted_obj_id;
     }
@@ -5685,7 +5742,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     uint32_t i0, i1, i2, j;
     float bitangent[3];
     o = 0;
-    if(use_ib) {
+    if(mesh_impl->_use_ib) {
         uint32_t* indices = (uint32_t*)(verts + vert_size * num_verts);
         poly_start = ipos;
         for (i = 0; i < num_verts; i++) {
@@ -5989,34 +6046,102 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
         delete[] attr_nodes;
     }
 
-    memcpy(mesh_impl->_geom_data, verts, geom_size);
-
-    desc->up_buf->Unmap();
-
-    k3resource buf_res;
-    desc->cmd_buf->Reset();
-    buf_res = mesh_impl->_vb->GetResource();
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 0, 3 * num_verts * sizeof(float));
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    buf_res = mesh_impl->_ab->GetResource();
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    if (use_skin) {
-        buf_res = mesh_impl->_sb->GetResource();
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+    if (desc->up_buf != NULL) {
+        k3meshUploadDesc up_desc;
+        up_desc.gfx = this;
+        up_desc.cmd_buf = desc->cmd_buf;
+        up_desc.up_buf = desc->up_buf;
+        up_desc.view_index = desc->view_index;
+        mesh->uploadBuffers(&up_desc);
+        
+        //verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
+        //memcpy(verts, mesh_impl->_geom_data, geom_size);
+        //
+        //uint32_t num_lights = mesh_impl->_num_lights;
+        //k3bufferDesc bdesc = { 0 };
+        //bdesc.size = 3 * num_verts * sizeof(float);
+        //bdesc.stride = 3 * sizeof(float);
+        //bdesc.format = k3fmt::RGB32_FLOAT;
+        //mesh_impl->_vb = CreateBuffer(&bdesc);
+        //
+        //bdesc.size = 8 * num_verts * sizeof(float);
+        //bdesc.stride = 8 * sizeof(float);
+        //bdesc.format = k3fmt::UNKNOWN;
+        //bdesc.view_index = desc->view_index++;
+        //bdesc.shader_resource = true;
+        //mesh_impl->_ab = CreateBuffer(&bdesc);
+        //
+        //if (use_skin) {
+        //    bdesc.size = 8 * num_verts * sizeof(float);
+        //    bdesc.stride = 8 * sizeof(float);
+        //    bdesc.format = k3fmt::UNKNOWN;
+        //    bdesc.view_index = desc->view_index++;
+        //    bdesc.shader_resource = true;
+        //    mesh_impl->_sb = CreateBuffer(&bdesc);
+        //}
+        //
+        //if (num_lights) {
+        //    bdesc.size = lbuf_size;
+        //    bdesc.stride = sizeof(k3lightBufferData);
+        //    bdesc.format = k3fmt::UNKNOWN;
+        //    bdesc.view_index = desc->view_index++;
+        //    bdesc.shader_resource = true;
+        //    mesh_impl->_lb = CreateBuffer(&bdesc);
+        //
+        //    k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
+        //
+        //    for (i = 0; i < num_lights; i++) {
+        //        lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
+        //        lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
+        //        lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
+        //        lb_data[i].intensity = mesh_impl->_lights[i].intensity;
+        //        if (mesh_impl->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
+        //            float mat[16];
+        //            lb_data[i].position[0] = 0.0f;
+        //            lb_data[i].position[1] = 1.0f;
+        //            lb_data[i].position[2] = 0.0f;
+        //            k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
+        //            k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
+        //        } else {
+        //            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
+        //            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
+        //            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
+        //        }
+        //        lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
+        //        lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
+        //        lb_data[i].light_type = mesh_impl->_lights[i].light_type;
+        //        lb_data[i].cast_shadows = (mesh_impl->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
+        //        lb_data[i].spot_angle = 45.0f;
+        //    }
+        //}
+        //
+        //desc->up_buf->Unmap();
+        //
+        //k3resource buf_res;
+        //desc->cmd_buf->Reset();
+        //buf_res = mesh_impl->_vb->GetResource();
+        //desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        //desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 0, 3 * num_verts * sizeof(float));
+        //desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+        //buf_res = mesh_impl->_ab->GetResource();
+        //desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        //desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
+        //desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+        //if (use_skin) {
+        //    buf_res = mesh_impl->_sb->GetResource();
+        //    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        //    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * num_verts * sizeof(float), 8 * num_verts * sizeof(float));
+        //    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+        //}
+        //if (lbuf_size) {
+        //    buf_res = mesh_impl->_lb->GetResource();
+        //    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
+        //    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
+        //    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
+        //}
+        //desc->cmd_buf->Close();
+        //SubmitCmdBuf(desc->cmd_buf);
     }
-    if (lbuf_size) {
-        buf_res = mesh_impl->_lb->GetResource();
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    }
-    desc->cmd_buf->Close();
-    SubmitCmdBuf(desc->cmd_buf);
 
     delete[] fbx.mesh;
     delete[] fbx.model;
@@ -6036,7 +6161,7 @@ K3API k3mesh k3gfxObj::CreateMesh(k3meshDesc* desc)
     if (fbx.cluster) delete[] fbx.cluster;
     if (fbx.cluster_indexes) delete[] fbx.cluster_indexes;
     if (fbx.cluster_weights) delete[] fbx.cluster_weights;
-    if (!use_ib) delete[] alloc_skin_f;
+    if (!mesh_impl->_use_ib) delete[] alloc_skin_f;
     if (fbx.anim_layer) {
         uint32_t i;
         for (i = 0; i < fbx.num_anim_layers; i++) {
@@ -6634,6 +6759,7 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
         mesh_impl->_bones = new k3bone[mesh_impl->_num_bones];
         use_skin = true;
     }
+    mesh_impl->_use_ib = true;
     uint32_t vert_size = (use_skin) ? 19 : 11;
     uint32_t geom_size = vert_size * mesh_impl->_num_verts * sizeof(float) + 3 * mesh_impl->_num_tris * sizeof(uint32_t);
     uint32_t lbuf_size = mesh_impl->_num_lights * sizeof(k3lightBufferData);
@@ -6852,99 +6978,14 @@ K3API k3mesh k3gfxObj::CreateMeshAS(k3meshDesc* desc)
     mesh_impl->_num_custom_prop_strings = 0;
     mesh_impl->_custom_prop_strings  = NULL;
 
-    float* verts = (float*)desc->up_buf->MapForWrite(up_buf_size);
-    memcpy(verts, mesh_impl->_geom_data, geom_size);
-
-    k3lightBufferData* lb_data = (k3lightBufferData*)(verts + geom_size / sizeof(float));
-    for (i = 0; i < mesh_impl->_num_lights; i++) {
-        lb_data[i].color[0] = mesh_impl->_lights[i].color[0];
-        lb_data[i].color[1] = mesh_impl->_lights[i].color[1];
-        lb_data[i].color[2] = mesh_impl->_lights[i].color[2];
-        lb_data[i].intensity = mesh_impl->_lights[i].intensity;
-        if (mesh_impl->_lights[i].light_type == k3lightBufferData::DIRECTIONAL) {
-            float mat[16];
-            lb_data[i].position[0] = 0.0f;
-            lb_data[i].position[1] = 1.0f;
-            lb_data[i].position[2] = 0.0f;
-            k3m4_QuatToMat(mat, mesh_impl->_lights[i].rot_quat);
-            k3mv4_Mul(lb_data[i].position, mat, lb_data[i].position);
-        } else {
-            lb_data[i].position[0] = mesh_impl->_lights[i].position[0];
-            lb_data[i].position[1] = mesh_impl->_lights[i].position[1];
-            lb_data[i].position[2] = mesh_impl->_lights[i].position[2];
-        }
-        lb_data[i].decay_start = mesh_impl->_lights[i].decay_start;
-        lb_data[i].decay_type = mesh_impl->_lights[i].decay_type;
-        lb_data[i].light_type = mesh_impl->_lights[i].light_type;
-        lb_data[i].cast_shadows = (mesh_impl->_lights[i].flags & k3light::FLAG_CAST_SHADOWS) ? 0x1 : 0x0;
-        lb_data[i].spot_angle = 45.0f;
+    if (desc->up_buf != NULL) {
+        k3meshUploadDesc up_desc;
+        up_desc.gfx = this;
+        up_desc.cmd_buf = desc->cmd_buf;
+        up_desc.up_buf = desc->up_buf;
+        up_desc.view_index = desc->view_index;
+        mesh->uploadBuffers(&up_desc);
     }
-
-    desc->up_buf->Unmap();
-    k3bufferDesc bdesc = { 0 };
-    bdesc.size = 3 * mesh_impl->_num_tris * sizeof(uint32_t);
-    bdesc.stride = 3 * sizeof(uint32_t);
-    bdesc.format = k3fmt::R32_UINT;
-    mesh_impl->_ib = CreateBuffer(&bdesc);
-
-    bdesc.size = 3 * mesh_impl->_num_verts * sizeof(float);
-    bdesc.stride = 3 * sizeof(float);
-    bdesc.format = k3fmt::RGB32_FLOAT;
-    mesh_impl->_vb = CreateBuffer(&bdesc);
-
-    bdesc.size = 8 * mesh_impl->_num_verts * sizeof(float);
-    bdesc.stride = 8 * sizeof(float);
-    bdesc.format = k3fmt::UNKNOWN;
-    bdesc.view_index = desc->view_index++;
-    bdesc.shader_resource = true;
-    mesh_impl->_ab = CreateBuffer(&bdesc);
-
-    if (use_skin) {
-        bdesc.size = 8 * mesh_impl->_num_verts * sizeof(float);
-        bdesc.stride = 8 * sizeof(float);
-        bdesc.format = k3fmt::UNKNOWN;
-        bdesc.view_index = desc->view_index++;
-        bdesc.shader_resource = true;
-        mesh_impl->_sb = CreateBuffer(&bdesc);
-    }
-
-    if (mesh_impl->_num_lights) {
-        bdesc.size = lbuf_size;
-        bdesc.stride = sizeof(k3lightBufferData);
-        bdesc.format = k3fmt::UNKNOWN;
-        bdesc.view_index = desc->view_index++;
-        bdesc.shader_resource = true;
-        mesh_impl->_lb = CreateBuffer(&bdesc);
-    }
-
-    k3resource buf_res;
-    desc->cmd_buf->Reset();
-    buf_res = mesh_impl->_ib->GetResource();
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, vert_size * mesh_impl->_num_verts * sizeof(float), 3 * mesh_impl->_num_tris * sizeof(uint32_t));
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    buf_res = mesh_impl->_vb->GetResource();
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 0, 3 * mesh_impl->_num_verts * sizeof(float));
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    buf_res = mesh_impl->_ab->GetResource();
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-    desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 3 * mesh_impl->_num_verts * sizeof(float), 8 * mesh_impl->_num_verts * sizeof(float));
-    desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    if (use_skin) {
-        buf_res = mesh_impl->_sb->GetResource();
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, 11 * mesh_impl->_num_verts * sizeof(float), 8 * mesh_impl->_num_verts * sizeof(float));
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    }
-    if (lbuf_size) {
-        buf_res = mesh_impl->_lb->GetResource();
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COPY_DEST);
-        desc->cmd_buf->UploadBufferSrcRange(desc->up_buf, buf_res, geom_size, lbuf_size);
-        desc->cmd_buf->TransitionResource(buf_res, k3resourceState::COMMON);
-    }
-    desc->cmd_buf->Close();
-    SubmitCmdBuf(desc->cmd_buf);
 
     if (mat2tex) {
         delete[] mat2tex;
